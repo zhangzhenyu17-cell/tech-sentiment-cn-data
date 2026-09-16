@@ -1,0 +1,4 @@
+provider,evidence_role,scope,qualification_rule,production_authority
+EastMoney/Tiantian Fund,dated fund holding disclosure candidate pool,159992 2020-2023,"Q2/Q4 with >10 securities may be a full-report candidate set; never sufficient alone for index membership",none
+Sina Finance,dated index add/remove interval cross-check,931152 stock-level intervals,"usable only with reproducible URL/hash and independent set consistency checks",none
+CSI/SZSE/SSE/fund manager,first-party index or ETF evidence,931152 and tracking ETF,"preferred first-party evidence when available",none
