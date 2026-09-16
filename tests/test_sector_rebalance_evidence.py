@@ -6,6 +6,7 @@ import pytest
 from tech_sentiment.sector_rebalance_evidence import (
     announcement_payload,
     extract_attachments,
+    extract_effective_boundary,
     extract_effective_date,
     extract_index_changes_from_sheets,
     has_index_rows,
@@ -47,10 +48,41 @@ def test_extract_attachment_and_effective_date() -> None:
         ],
     }
     assert extract_effective_date(detail) == "2023-12-11"
+    assert extract_effective_boundary(detail) == ("2023-12-11", "on_date")
     rows = extract_attachments(detail)
     assert len(rows) == 1
     assert rows[0].effective_date == "2023-12-11"
+    assert rows[0].effect_timing == "on_date"
     assert rows[0].file_name == "调整名单.xlsx"
+
+
+def test_after_close_is_not_treated_as_same_day_membership_start() -> None:
+    detail = {
+        "id": 12470,
+        "title": "定期调整",
+        "publishDate": "2021-05-28",
+        "content": "<p>本次调整于2021年6月11日收盘后生效。</p>",
+        "enclosureList": [],
+    }
+    assert extract_effective_boundary(detail) == ("2021-06-11", "after_close")
+
+
+def test_inline_legacy_attachment_is_recovered() -> None:
+    detail = {
+        "id": 11529,
+        "title": "关于调整指数样本股的公告",
+        "publishDate": "2019-12-02",
+        "content": (
+            '<p>于2019年12月16日调整。</p>'
+            '<a href="https://oss-ch.csindex.com.cn/static/files/调整名单.xlsx">附件</a>'
+        ),
+        "enclosureList": [],
+    }
+    rows = extract_attachments(detail)
+    assert len(rows) == 1
+    assert rows[0].file_url.endswith("/调整名单.xlsx")
+    assert rows[0].file_name == "调整名单.xlsx"
+    assert rows[0].effective_date == "2019-12-16"
 
 
 def test_extract_931152_rows_when_workbook_contains_many_indices() -> None:
