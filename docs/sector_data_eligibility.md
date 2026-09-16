@@ -29,16 +29,16 @@ The registered chain contains **11 required evidence periods**: the 2019-04 laun
 Evidence is ranked by provenance, but non-official evidence is not rejected merely because it is non-official.
 
 - **Primary evidence**: official CSI adjustment/effective-sample files, exchange or fund-company dated ETF PCF baskets, and equivalent first-party dated constituent material.
-- **Secondary evidence**: reproducible historical data from established market-data publishers such as EastMoney / Tiantian Fund, provided the exact dated rows can be retained with a source URL and content hash.
-- **Cross-check only**: current constituents, quarterly top-ten fund holdings, search snippets, news summaries, or individual-stock pages that do not prove the whole index set by themselves.
+- **Secondary evidence**: reproducible historical data from established market-data publishers such as EastMoney / Tiantian Fund or Sina, provided the exact dated rows can be retained with a source URL and content hash.
+- **Cross-check only**: current constituents, quarterly top-ten fund holdings, search snippets, news summaries, or a single stock's membership page when used alone.
 
-A secondary source may satisfy a missing historical anchor when all of the following hold:
+A secondary reconstruction may satisfy a missing historical period when all of the following hold:
 
-1. it represents a dated **full-set** or near-full-set disclosure rather than a top-ten subset;
-2. the fund/index relationship is independently documented for the relevant period;
-3. the set is reconciled against at least one independent dated membership/change source;
-4. any unexplained set differences remain fail-closed rather than being silently discarded;
-5. the exact response/source is retained with a hash so the reconstruction is reproducible.
+1. one source supplies a dated candidate universe broad enough to contain the expected index set;
+2. the fund/index relationship is independently documented for the relevant period when a tracking fund is used;
+3. a different source supplies dated index-membership or add/remove evidence for the individual candidates;
+4. the resulting set passes internal consistency checks and unexplained differences remain fail-closed;
+5. the exact source responses are retained with hashes so the reconstruction is reproducible.
 
 This allows research to proceed when official historical downloads are unavailable while preserving a clear distinction between source grades. Evidence grade does not change model logic or grant production authority.
 
@@ -65,17 +65,17 @@ python -m pip install -e ".[sector-data]"
 python scripts/research/probe_csi_931152_adjustments.py --output-dir /tmp/931152-csi-evidence
 ```
 
-### EastMoney / Tiantian Fund secondary anchor collector
+### EastMoney / Tiantian Fund candidate-pool collector
 
 `src/tech_sentiment/eastmoney_fund_holdings_evidence.py` and
-`scripts/research/probe_eastmoney_159992_holdings.py` provide a reproducible secondary-evidence path for ETF `159992`, which tracks `931152`.
+`scripts/research/probe_eastmoney_159992_holdings.py` provide a reproducible secondary-data path for ETF `159992`, which tracks `931152`.
 
 The adapter uses EastMoney / Tiantian Fund's historical holdings endpoint and stores the raw response hash. It deliberately distinguishes:
 
-- Q2/Q4 report batches with more than ten distinct stock codes: `eastmoney_tiantian_full_report_anchor_candidate`;
+- Q2/Q4 report batches with more than ten distinct stock codes: `eastmoney_tiantian_full_fund_holdings_candidate_set`;
 - Q1/Q3 or ten-stock-only disclosures: `eastmoney_tiantian_partial_holdings_crosscheck_only`.
 
-The first label means **candidate anchor**, not automatic index membership. A Q2/Q4 fund portfolio can still differ from the exact index basket because of fund implementation, corporate actions, temporary substitutions, disclosure conventions, or timing. Therefore the one-shot probe never edits the formal membership manifest. Candidate anchors must still be reconciled with official adjustment rows, PCF evidence, EastMoney/Choice historical index-membership data, or another independent dated membership source.
+**Neither label is an index anchor.** Real probe data showed that full fund reports can contain substantially more securities than the tracked index universe because an ETF can hold IPO allocations, substitutions and other non-index positions. Therefore the fund report is used only as a dated candidate pool / coverage cross-check. It must be filtered and validated against independent dated index-membership evidence before any formal reconstruction can qualify.
 
 Run the outcome-free probe with:
 
