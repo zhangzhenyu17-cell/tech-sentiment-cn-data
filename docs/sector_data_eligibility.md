@@ -9,7 +9,7 @@ It governs only two public-input questions:
 
 ## Membership evidence
 
-`audit_membership_evidence()` is outcome-free and fail-closed. Every expected scheduled-rebalance period must have one manifest row. A row is complete only when it records:
+`audit_membership_evidence()` is outcome-free and fail-closed. Every expected evidence period must have one manifest row. A row is complete only when it records:
 
 - the exact effective date;
 - `changed` or `no_change`;
@@ -22,9 +22,30 @@ For the first sector, CSI Brand Name Drug Industry Index (`931152`), the design-
 
 `data/reference/sector_931152_membership_evidence.csv`
 
-The registered expected periods cover June/December 2019 through June/December 2023. They remain `pending` until primary dated evidence is versioned. This file is therefore an evidence-gap registry, not a reconstructed constituent history.
+The registered chain contains **11 required evidence periods**: the 2019-04 launch anchor plus June/December scheduled rebalances from 2019 through 2023. They remain `pending` until dated membership evidence is captured and reviewed. This file is therefore an evidence-gap registry, not a reconstructed constituent history.
 
 Useful source classes include official index-provider adjustment/effective-sample material and dated ETF creation/redemption baskets when the ETF is documented to track the same index. The existence of a tracking ETF or a PCF publication rule does not by itself prove any historical membership date; the dated source must still be captured.
+
+### Official CSI adjustment collector
+
+`src/tech_sentiment/csi_adjustment_evidence.py` and the one-shot script
+`scripts/research/probe_csi_931152_adjustments.py` provide a reproducible, outcome-free path for locating official CSI rebalance announcements and extracting rows for index `931152` from their Excel attachments.
+
+The collector follows the public CSI announcement APIs used by established open-source index collectors:
+
+- `announcement/queryAnnouncementByVo` to locate notices;
+- `announcement/queryAnnouncementById` to retrieve notice details and `enclosureList` attachment URLs.
+
+The script stores source URLs, raw attachment hashes and candidate add/remove rows. It deliberately **does not edit the membership manifest** and labels its output `CANDIDATE_MEMBERSHIP_EVIDENCE_ONLY`.
+
+An attachment is not automatically qualifying evidence merely because it was downloaded. Before a manifest period can become `complete`, the research process must still confirm the effective date, confirm that the attachment actually contains `931152` rows or otherwise proves a no-change state, and reconcile the resulting membership chain against an independent dated anchor. Absence of `931152` rows in an adjustment workbook is not, by itself, proof of `no_change`.
+
+Excel parsing is research-only and available through:
+
+```bash
+python -m pip install -e ".[sector-data]"
+python scripts/research/probe_csi_931152_adjustments.py --output-dir /tmp/931152-csi-evidence
+```
 
 Reference pages used to establish the public-data source path include:
 
