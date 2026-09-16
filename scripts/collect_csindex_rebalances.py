@@ -12,6 +12,7 @@ import pandas as pd
 
 from tech_sentiment.sector_rebalance_evidence import (
     CSINDEX_HOME,
+    RebalanceNotice,
     announcement_payload,
     extract_attachments,
     extract_index_changes_from_sheets,
@@ -44,8 +45,15 @@ def _request_json(url: str, *, body: dict[str, object] | None = None) -> dict[st
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _ascii_url(url: str) -> str:
+    parts = urllib.parse.urlsplit(url)
+    path = urllib.parse.quote(parts.path, safe="/%:@")
+    query = urllib.parse.quote(parts.query, safe="=&%:@/?")
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, path, query, parts.fragment))
+
+
 def _request_bytes(url: str) -> bytes:
-    req = urllib.request.Request(url, headers=_headers(), method="GET")
+    req = urllib.request.Request(_ascii_url(url), headers=_headers(), method="GET")
     with urllib.request.urlopen(req, timeout=60) as resp:
         return resp.read()
 
@@ -59,6 +67,18 @@ def _read_workbook(content: bytes) -> dict[str, pd.DataFrame]:
     return pd.read_excel(BytesIO(content), sheet_name=None, dtype=str)
 
 
+def _direct_notice_rows(notice_ids: tuple[int, ...]) -> dict[int, RebalanceNotice]:
+    return {
+        notice_id: RebalanceNotice(
+            notice_id=notice_id,
+            title="",
+            publish_date="",
+            detail_url=f"{CSINDEX_HOME}/announcement/queryAnnouncementById?id={notice_id}",
+        )
+        for notice_id in notice_ids
+    }
+
+
 def collect(
     *,
     index_code: str,
@@ -66,35 +86,49 @@ def collect(
     until: str,
     output_dir: Path,
     search_terms: tuple[str, ...] = DEFAULT_TERMS,
+    notice_ids: tuple[int, ...] = (),
 ) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     attachment_dir = output_dir / "attachments"
     attachment_dir.mkdir(exist_ok=True)
 
-    notices_by_id: dict[int, object] = {}
+    notices_by_id: dict[int, RebalanceNotice] = {}
     diagnostics: list[dict[str, object]] = []
-    for term in search_terms:
-        try:
-            payload = _request_json(
-                f"{CSINDEX_HOME}/announcement/queryAnnouncementByVo",
-                body=announcement_payload(term, page=1, rows=200),
-            )
-            rows = parse_notice_rows(payload, since=since, until=until)
-            diagnostics.append({"search_term": term, "status": "ok", "notice_rows": len(rows)})
-            for row in rows:
-                notices_by_id[row.notice_id] = row
-        except Exception as exc:  # network/upstream diagnostic; collection remains fail-closed
-            diagnostics.append({"search_term": term, "status": "error", "reason": repr(exc)})
+    if notice_ids:
+        notices_by_id.update(_direct_notice_rows(notice_ids))
+        diagnostics.append(
+            {
+                "search_term": "DIRECT_NOTICE_IDS",
+                "status": "ok",
+                "notice_rows": len(notice_ids),
+                "notice_ids": "|".join(str(value) for value in notice_ids),
+            }
+        )
+    else:
+        for term in search_terms:
+            try:
+                payload = _request_json(
+                    f"{CSINDEX_HOME}/announcement/queryAnnouncementByVo",
+                    body=announcement_payload(term, page=1, rows=200),
+                )
+                rows = parse_notice_rows(payload, since=since, until=until)
+                diagnostics.append({"search_term": term, "status": "ok", "notice_rows": len(rows)})
+                for row in rows:
+                    notices_by_id[row.notice_id] = row
+            except Exception as exc:  # network/upstream diagnostic; collection remains fail-closed
+                diagnostics.append({"search_term": term, "status": "error", "reason": repr(exc)})
 
     evidence_rows: list[dict[str, object]] = []
     change_frames: list[pd.DataFrame] = []
-    for notice in sorted(notices_by_id.values(), key=lambda row: (row.publish_date, row.notice_id)):
+    for notice in sorted(notices_by_id.values(), key=lambda row: row.notice_id):
         detail_url = f"{CSINDEX_HOME}/announcement/queryAnnouncementById?{urllib.parse.urlencode({'id': notice.notice_id})}"
         try:
             payload = _request_json(detail_url)
             detail = payload.get("data")
             if str(payload.get("code")) != "200" or not isinstance(detail, dict):
                 raise ValueError(f"detail API unavailable: code={payload.get('code')!r}")
+            title = str(detail.get("title") or notice.title)
+            publish_date = str(detail.get("publishDate") or notice.publish_date)
             attachments = extract_attachments(detail)
         except Exception as exc:
             evidence_rows.append(
@@ -113,8 +147,8 @@ def collect(
             evidence_rows.append(
                 {
                     "notice_id": notice.notice_id,
-                    "publish_date": notice.publish_date,
-                    "title": notice.title,
+                    "publish_date": publish_date,
+                    "title": title,
                     "detail_url": detail_url,
                     "status": "no_attachment",
                 }
@@ -122,16 +156,18 @@ def collect(
             continue
 
         for n, attachment in enumerate(attachments, start=1):
-            suffix = Path(urllib.parse.urlparse(attachment.file_url).path).suffix or ".bin"
+            parsed_path = urllib.parse.urlsplit(attachment.file_url).path
+            suffix = Path(parsed_path).suffix.lower() or ".bin"
             file_name = _safe_name(attachment.file_name, f"notice_{notice.notice_id}_{n}{suffix}")
             if not Path(file_name).suffix:
                 file_name += suffix
             local_path = attachment_dir / f"{notice.notice_id}_{n}_{file_name}"
             row = {
                 "notice_id": notice.notice_id,
-                "publish_date": notice.publish_date,
+                "publish_date": publish_date,
                 "effective_date": attachment.effective_date,
-                "title": notice.title,
+                "effect_timing": attachment.effect_timing,
+                "title": title,
                 "detail_url": detail_url,
                 "attachment_name": attachment.file_name,
                 "attachment_url": attachment.file_url,
@@ -141,6 +177,10 @@ def collect(
                 "change_rows": 0,
                 "reason": "",
             }
+            if suffix not in {".xls", ".xlsx", ".xlsm"}:
+                row["status"] = "non_excel_attachment"
+                evidence_rows.append(row)
+                continue
             try:
                 content = _request_bytes(attachment.file_url)
                 local_path.write_bytes(content)
@@ -155,8 +195,9 @@ def collect(
                         index_code=index_code,
                         effective_date=attachment.effective_date,
                     )
+                    changes["effect_timing"] = attachment.effect_timing
                     changes["notice_id"] = notice.notice_id
-                    changes["publish_date"] = notice.publish_date
+                    changes["publish_date"] = publish_date
                     changes["attachment_url"] = attachment.file_url
                     changes["attachment_name"] = attachment.file_name
                     change_frames.append(changes)
@@ -179,6 +220,7 @@ def collect(
             columns=[
                 "index_code",
                 "effective_date",
+                "effect_timing",
                 "change_type",
                 "security_code",
                 "security_name",
@@ -212,12 +254,14 @@ def main() -> None:
     parser.add_argument("--since", required=True)
     parser.add_argument("--until", required=True)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--notice-id", action="append", type=int, default=[])
     args = parser.parse_args()
     collect(
         index_code=args.index_code,
         since=args.since,
         until=args.until,
         output_dir=args.output_dir,
+        notice_ids=tuple(args.notice_id),
     )
 
 
