@@ -1,0 +1,11 @@
+index_code,expected_period,effective_date,change_status,evidence_type,source_url,evidence_status,notes
+931152,2019-06,,,,,pending,"Index launched 2019-04-22; exact scheduled-rebalance membership evidence not yet captured."
+931152,2019-12,,,,,pending,"Exact scheduled-rebalance membership evidence not yet captured."
+931152,2020-06,,,,,pending,"159992 existed by this period and its historical PCF is a candidate primary evidence type, but the dated PCF has not yet been captured."
+931152,2020-12,,,,,pending,"Historical PCF or official CSI adjustment/effective-sample evidence required."
+931152,2021-06,,,,,pending,"Historical PCF or official CSI adjustment/effective-sample evidence required."
+931152,2021-12,,,,,pending,"Historical PCF or official CSI adjustment/effective-sample evidence required."
+931152,2022-06,,,,,pending,"Historical PCF or official CSI adjustment/effective-sample evidence required."
+931152,2022-12,,,,,pending,"Historical PCF or official CSI adjustment/effective-sample evidence required."
+931152,2023-06,,,,,pending,"Historical PCF or official CSI adjustment/effective-sample evidence required."
+931152,2023-12,,,,,pending,"Historical PCF or official CSI adjustment/effective-sample evidence required."
