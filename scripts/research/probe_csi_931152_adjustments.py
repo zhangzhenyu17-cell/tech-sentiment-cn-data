@@ -58,8 +58,10 @@ def main() -> None:
 
     out_dir = args.output_dir
     attachment_dir = out_dir / "attachments"
+    detail_dir = out_dir / "details"
     out_dir.mkdir(parents=True, exist_ok=True)
     attachment_dir.mkdir(parents=True, exist_ok=True)
+    detail_dir.mkdir(parents=True, exist_ok=True)
 
     search_terms = tuple(args.search_terms) if args.search_terms else DEFAULT_SEARCH_TERMS
     notices = query_design_announcements(
@@ -74,6 +76,10 @@ def main() -> None:
     for notice in notices:
         try:
             detail = fetch_announcement_detail(notice.notice_id, timeout=args.timeout)
+            (detail_dir / f"{notice.notice_id}.json").write_text(
+                json.dumps(detail, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
         except Exception as exc:  # network evidence probe: retain failure explicitly
             failures.append(
                 {
@@ -84,16 +90,18 @@ def main() -> None:
             )
             continue
 
+        refs = attachment_refs_from_detail(detail)
         notice_rows.append(
             {
                 **asdict(notice),
                 "detail_title": str(detail.get("title", "")),
                 "detail_publish_date": str(detail.get("publishDate", "")),
                 "has_enclosure_list": isinstance(detail.get("enclosureList"), list),
+                "attachment_refs": len(refs),
             }
         )
 
-        for attachment in attachment_refs_from_detail(detail):
+        for attachment in refs:
             row = asdict(attachment)
             row["status"] = "located_not_yet_qualified"
             try:
@@ -164,6 +172,7 @@ def main() -> None:
         "design_window": ["2019-04-22", "2023-12-31"],
         "search_terms": list(search_terms),
         "notices_located": len(notice_rows),
+        "details_saved": len(list(detail_dir.glob("*.json"))),
         "attachments_located": len(attachment_rows),
         "change_rows_extracted": len(change_rows),
         "failures": len(failures),

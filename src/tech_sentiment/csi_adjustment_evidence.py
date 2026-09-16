@@ -5,9 +5,10 @@ from datetime import date
 from hashlib import sha256
 from io import BytesIO
 import json
+from pathlib import Path
 import re
 from typing import Iterable, Mapping
-from urllib.parse import urlencode, urljoin
+from urllib.parse import quote, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 import pandas as pd
@@ -19,6 +20,7 @@ CSI_931152 = "931152"
 CSI_931152_NAME = "中证创新药产业指数"
 DESIGN_START = pd.Timestamp("2019-04-22")
 DESIGN_END = pd.Timestamp("2023-12-31")
+_ALLOWED_ATTACHMENT_SUFFIXES = {".xls", ".xlsx", ".csv", ".zip", ".pdf"}
 
 DEFAULT_SEARCH_TERMS = (
     "中证创新药产业指数",
@@ -137,6 +139,8 @@ def parse_announcement_search(
             continue
         title = _clean_text(row.get("title"))
         theme = _clean_text(row.get("theme"))
+        if theme and theme != "指数调样":
+            continue
         out.append(
             AnnouncementRef(
                 notice_id=notice_id,
@@ -198,6 +202,30 @@ def extract_effective_date(content_html: object) -> str:
     return ""
 
 
+def _is_official_csindex_host(hostname: str | None) -> bool:
+    host = (hostname or "").lower().rstrip(".")
+    return host == "csindex.com.cn" or host.endswith(".csindex.com.cn")
+
+
+def canonicalize_attachment_url(raw_url: object) -> str:
+    text = _clean_text(raw_url)
+    if not text:
+        return ""
+    joined = urljoin(CSINDEX_SITE, text)
+    parts = urlsplit(joined)
+    if not _is_official_csindex_host(parts.hostname):
+        return ""
+    scheme = "https" if parts.scheme in {"", "http", "https"} else parts.scheme
+    if scheme != "https":
+        return ""
+    return urlunsplit((scheme, parts.netloc, parts.path, parts.query, parts.fragment))
+
+
+def _downloadable_content_link(url: str) -> bool:
+    suffix = Path(urlsplit(url).path).suffix.lower()
+    return suffix in _ALLOWED_ATTACHMENT_SUFFIXES
+
+
 def attachment_refs_from_detail(detail: Mapping[str, object]) -> list[AttachmentRef]:
     try:
         notice_id = int(str(detail.get("id", "")).strip())
@@ -205,20 +233,24 @@ def attachment_refs_from_detail(detail: Mapping[str, object]) -> list[Attachment
         return []
     title = _clean_text(detail.get("title"))
     publish_date = _clean_text(detail.get("publishDate"))
-    effective_date = extract_effective_date(detail.get("content"))
+    content = str(detail.get("content") or "")
+    effective_date = extract_effective_date(content)
     detail_url = f"{CSINDEX_SITE}/zh-CN/about/newsDetail?id={notice_id}"
-    raw = detail.get("enclosureList")
-    if not isinstance(raw, list):
-        return []
     out: list[AttachmentRef] = []
-    for item in raw:
+    seen: set[str] = set()
+
+    raw_enclosures = detail.get("enclosureList")
+    enclosures = raw_enclosures if isinstance(raw_enclosures, list) else []
+    for item in enclosures:
         if not isinstance(item, Mapping):
             continue
-        file_url = _clean_text(item.get("fileUrl") or item.get("url"))
-        if not file_url:
+        file_url = canonicalize_attachment_url(item.get("fileUrl") or item.get("url"))
+        if not file_url or file_url in seen:
             continue
+        seen.add(file_url)
         file_name = _clean_text(item.get("fileName") or item.get("name"))
-        file_url = urljoin(CSINDEX_SITE, file_url)
+        if not file_name:
+            file_name = Path(urlsplit(file_url).path).name
         out.append(
             AttachmentRef(
                 notice_id=notice_id,
@@ -230,14 +262,42 @@ def attachment_refs_from_detail(detail: Mapping[str, object]) -> list[Attachment
                 detail_url=detail_url,
             )
         )
+
+    hrefs = re.findall(r"href\s*=\s*[\"']([^\"']+)[\"']", content, flags=re.IGNORECASE)
+    for href in hrefs:
+        file_url = canonicalize_attachment_url(href)
+        if not file_url or file_url in seen or not _downloadable_content_link(file_url):
+            continue
+        seen.add(file_url)
+        out.append(
+            AttachmentRef(
+                notice_id=notice_id,
+                title=title,
+                publish_date=publish_date,
+                effective_date=effective_date,
+                file_name=Path(urlsplit(file_url).path).name,
+                file_url=file_url,
+                detail_url=detail_url,
+            )
+        )
     return out
 
 
+def _request_safe_url(url: str) -> str:
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not _is_official_csindex_host(parts.hostname):
+        raise ValueError("attachment URL must be an official CSIndex https URL")
+    safe_path = quote(parts.path, safe="/%:@-._~!$&'()*+,;=")
+    safe_query = quote(parts.query, safe="=&%:@-._~!$'()*+,;/?")
+    return urlunsplit((parts.scheme, parts.netloc, safe_path, safe_query, parts.fragment))
+
+
 def download_attachment(url: str, *, timeout: int = 30) -> tuple[bytes, str]:
-    if not url.startswith("https://"):
-        raise ValueError("attachment URL must use https")
-    request = Request(url, headers=_headers(), method="GET")
-    with urlopen(request, timeout=timeout) as response:  # noqa: S310 - evidence URL is recorded
+    canonical = canonicalize_attachment_url(url)
+    if not canonical:
+        raise ValueError("attachment URL must be an official CSIndex URL")
+    request = Request(_request_safe_url(canonical), headers=_headers(), method="GET")
+    with urlopen(request, timeout=timeout) as response:  # noqa: S310 - host restricted above
         raw = response.read()
     if not raw:
         raise ValueError("empty adjustment attachment")

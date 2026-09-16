@@ -37,8 +37,10 @@ jobs:
           python scripts/research/probe_csi_931152_adjustments.py \
             --output-dir output/931152-csi-evidence \
             --search-term "关于调整沪深300和中证香港100等指数样本" \
+            --search-term "沪深300、中证500、中证1000" \
+            --search-term "关于沪深300、中证500、中证1000等指数定期调整结果的公告" \
+            --search-term "沪深300等指数样本" \
             --search-term "中证创新药产业指数" \
-            --search-term "CS创新药" \
             --search-term "931152" \
             > output/931152-csi-evidence/probe_stdout.txt \
             2> output/931152-csi-evidence/probe_stderr.txt

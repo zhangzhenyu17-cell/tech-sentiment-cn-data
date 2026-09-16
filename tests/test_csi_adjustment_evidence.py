@@ -3,14 +3,16 @@ from __future__ import annotations
 import pandas as pd
 
 from tech_sentiment.csi_adjustment_evidence import (
+    _request_safe_url,
     attachment_refs_from_detail,
+    canonicalize_attachment_url,
     extract_effective_date,
     extract_index_changes_from_sheets,
     parse_announcement_search,
 )
 
 
-def test_parse_announcement_search_filters_to_design_window() -> None:
+def test_parse_announcement_search_filters_to_design_window_and_theme() -> None:
     payload = {
         "code": 200,
         "data": [
@@ -25,6 +27,12 @@ def test_parse_announcement_search_filters_to_design_window() -> None:
                 "title": "holdout notice",
                 "publishDate": "2024-05-31",
                 "theme": "指数调样",
+            },
+            {
+                "id": 1003,
+                "title": "中证创新药产业指数新闻",
+                "publishDate": "2021-08-11",
+                "theme": "其他",
             },
         ],
     }
@@ -50,6 +58,37 @@ def test_attachment_refs_extracts_effective_date_and_relative_url() -> None:
     assert len(refs) == 1
     assert refs[0].effective_date == "2023-12-11"
     assert refs[0].file_url == "https://www.csindex.com.cn/uploads/example/adjustment.xlsx"
+
+
+def test_attachment_refs_falls_back_to_content_href_and_deduplicates() -> None:
+    detail = {
+        "id": 2002,
+        "title": "关于调整沪深300和中证香港100等指数样本股的公告",
+        "publishDate": "2020-06-01",
+        "content": (
+            '<p><a href="/notice/202006/中证指数调入调出名单.xlsx">下载附件</a></p>'
+            "<p><a href='https://example.com/not-official.xlsx'>外部链接</a></p>"
+        ),
+        "enclosureList": [],
+    }
+    refs = attachment_refs_from_detail(detail)
+    assert len(refs) == 1
+    assert refs[0].file_url == "https://www.csindex.com.cn/notice/202006/中证指数调入调出名单.xlsx"
+    assert refs[0].file_name == "中证指数调入调出名单.xlsx"
+
+
+def test_unicode_attachment_url_is_encoded_for_http_request() -> None:
+    canonical = canonicalize_attachment_url(
+        "https://oss-ch.csindex.com.cn/notice/20211130195824-中证指数调入调出名单.xlsx"
+    )
+    request_url = _request_safe_url(canonical)
+    assert "中证" not in request_url
+    assert "%E4%B8%AD%E8%AF%81" in request_url
+    assert request_url.startswith("https://oss-ch.csindex.com.cn/")
+
+
+def test_non_csindex_attachment_host_is_rejected() -> None:
+    assert canonicalize_attachment_url("https://example.com/adjustment.xlsx") == ""
 
 
 def test_extract_effective_date_accepts_implementation_wording() -> None:
