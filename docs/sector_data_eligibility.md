@@ -24,6 +24,24 @@ For the first sector, CSI Brand Name Drug Industry Index (`931152`), the design-
 
 The registered chain contains **11 required evidence periods**: the 2019-04 launch anchor plus June/December scheduled rebalances from 2019 through 2023. They remain `pending` until dated membership evidence is captured and reviewed. This file is therefore an evidence-gap registry, not a reconstructed constituent history.
 
+### Evidence hierarchy
+
+Evidence is ranked by provenance, but non-official evidence is not rejected merely because it is non-official.
+
+- **Primary evidence**: official CSI adjustment/effective-sample files, exchange or fund-company dated ETF PCF baskets, and equivalent first-party dated constituent material.
+- **Secondary evidence**: reproducible historical data from established market-data publishers such as EastMoney / Tiantian Fund or Sina, provided the exact dated rows can be retained with a source URL and content hash.
+- **Cross-check only**: current constituents, quarterly top-ten fund holdings, search snippets, news summaries, or a single stock's membership page when used alone.
+
+A secondary reconstruction may satisfy a missing historical period when all of the following hold:
+
+1. one source supplies a dated candidate universe broad enough to contain the expected index set;
+2. the fund/index relationship is independently documented for the relevant period when a tracking fund is used;
+3. a different source supplies dated index-membership or add/remove evidence for the individual candidates;
+4. the resulting set passes internal consistency checks and unexplained differences remain fail-closed;
+5. the exact source responses are retained with hashes so the reconstruction is reproducible.
+
+This allows research to proceed when official historical downloads are unavailable while preserving a clear distinction between source grades. Evidence grade does not change model logic or grant production authority.
+
 Useful source classes include official index-provider adjustment/effective-sample material and dated ETF creation/redemption baskets when the ETF is documented to track the same index. The existence of a tracking ETF or a PCF publication rule does not by itself prove any historical membership date; the dated source must still be captured.
 
 ### Official CSI adjustment collector
@@ -47,10 +65,31 @@ python -m pip install -e ".[sector-data]"
 python scripts/research/probe_csi_931152_adjustments.py --output-dir /tmp/931152-csi-evidence
 ```
 
+### EastMoney / Tiantian Fund candidate-pool collector
+
+`src/tech_sentiment/eastmoney_fund_holdings_evidence.py` and
+`scripts/research/probe_eastmoney_159992_holdings.py` provide a reproducible secondary-data path for ETF `159992`, which tracks `931152`.
+
+The adapter uses EastMoney / Tiantian Fund's historical holdings endpoint and stores the raw response hash. It deliberately distinguishes:
+
+- Q2/Q4 report batches with more than ten distinct stock codes: `eastmoney_tiantian_full_fund_holdings_candidate_set`;
+- Q1/Q3 or ten-stock-only disclosures: `eastmoney_tiantian_partial_holdings_crosscheck_only`.
+
+**Neither label is an index anchor.** Real probe data showed that full fund reports can contain substantially more securities than the tracked index universe because an ETF can hold IPO allocations, substitutions and other non-index positions. Therefore the fund report is used only as a dated candidate pool / coverage cross-check. It must be filtered and validated against independent dated index-membership evidence before any formal reconstruction can qualify.
+
+Run the outcome-free probe with:
+
+```bash
+python scripts/research/probe_eastmoney_159992_holdings.py \
+  --output-dir /tmp/931152-eastmoney-evidence \
+  --start-year 2020 --end-year 2023
+```
+
 Reference pages used to establish the public-data source path include:
 
 - CSI 931152 factsheet: https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/931152factsheet.pdf
 - Shenzhen Stock Exchange notice for ETF 159992 listing and start of creation/redemption on 2020-04-10: https://www.szse.cn/disclosure/notice/general/t20200407_576104.html
+- Tiantian Fund 159992 holdings page: https://fundf10.eastmoney.com/ccmx_159992.html
 
 ## Stock-day price-limit semantics
 
