@@ -95,14 +95,25 @@ def parse_membership_intervals(
     response_sha256: str,
     index_code: str = CSI_931152,
 ) -> list[IndexMembershipInterval]:
+    """Parse exact index-code rows from Sina's related-index table.
+
+    Matching is deliberately cell-exact. Codes such as ``931152USD200`` must
+    never be admitted merely because they contain the target code as a prefix.
+    Dates are parsed only from cells after the exact code cell.
+    """
+
     parser = _TableParser()
     parser.feed(html)
     out: list[IndexMembershipInterval] = []
+    target_code = _clean_text(index_code)
     for cells in parser.rows:
-        joined = " | ".join(cells)
-        if index_code not in joined:
+        cleaned = [_clean_text(cell) for cell in cells]
+        code_positions = [idx for idx, cell in enumerate(cleaned) if cell == target_code]
+        if not code_positions:
             continue
-        dates = re.findall(r"(?:19|20)\d{2}-\d{2}-\d{2}", joined)
+        code_pos = code_positions[0]
+        trailing = " | ".join(cleaned[code_pos + 1 :])
+        dates = re.findall(r"(?:19|20)\d{2}-\d{2}-\d{2}", trailing)
         if not dates:
             continue
         start = dates[0]
@@ -114,15 +125,11 @@ def parse_membership_intervals(
             continue
         if end_date is not None and end_date <= start_date:
             continue
-        name = ""
-        for cell in cells:
-            if "创新药" in cell:
-                name = cell
-                break
+        name = cleaned[code_pos - 1] if code_pos > 0 else ""
         out.append(
             IndexMembershipInterval(
                 symbol=symbol,
-                index_code=index_code,
+                index_code=target_code,
                 index_name=name,
                 start_date=start,
                 end_date=end,
