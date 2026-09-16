@@ -31,7 +31,7 @@ def test_parse_eastmoney_envelope_decodes_content_and_years() -> None:
     assert years == (2023, 2022, 2021)
 
 
-def test_q2_full_batch_is_candidate_but_q1_top_ten_is_not() -> None:
+def test_q2_full_report_is_candidate_set_but_q1_top_ten_is_not() -> None:
     html = (
         '<div class="box"><div class="boxitem"><h4>2023年1季度股票投资明细</h4>'
         f'<table><tbody>{_table_rows(10)}</tbody></table></div></div>'
@@ -46,14 +46,14 @@ def test_q2_full_batch_is_candidate_but_q1_top_ten_is_not() -> None:
     )
     assert [batch.report_date for batch in batches] == ["2023-03-31", "2023-06-30"]
     assert len(batches[0].symbols) == 10
-    assert batches[0].anchor_candidate is False
+    assert batches[0].full_report_candidate_set is False
     assert batches[0].evidence_kind.endswith("crosscheck_only")
     assert len(batches[1].symbols) == 12
-    assert batches[1].anchor_candidate is True
-    assert batches[1].evidence_kind.endswith("anchor_candidate")
+    assert batches[1].full_report_candidate_set is True
+    assert batches[1].evidence_kind.endswith("candidate_set")
 
 
-def test_q4_full_batch_is_candidate() -> None:
+def test_q4_full_report_remains_candidate_set_not_index_anchor() -> None:
     html = (
         '<div class="box"><h4>2022年第4季度股票投资明细</h4>'
         f'<table><tbody>{_table_rows(20)}</tbody></table></div>'
@@ -65,7 +65,8 @@ def test_q4_full_batch_is_candidate() -> None:
         response_sha256="abc",
     )[0]
     assert batch.report_date == "2022-12-31"
-    assert batch.anchor_candidate is True
+    assert batch.full_report_candidate_set is True
+    assert "anchor" not in batch.evidence_kind
 
 
 def test_holdings_url_is_deterministic_and_year_scoped() -> None:
@@ -76,7 +77,7 @@ def test_holdings_url_is_deterministic_and_year_scoped() -> None:
     assert "topline=100" in url
 
 
-def test_less_than_eleven_symbols_never_becomes_full_anchor() -> None:
+def test_less_than_eleven_symbols_never_becomes_full_report_candidate_set() -> None:
     html = (
         '<div class="box"><h4>2023年4季度股票投资明细</h4>'
         f'<table><tbody>{_table_rows(10)}</tbody></table></div>'
@@ -87,4 +88,4 @@ def test_less_than_eleven_symbols_never_becomes_full_anchor() -> None:
         source_url="https://example.test/holdings",
         response_sha256="abc",
     )[0]
-    assert batch.anchor_candidate is False
+    assert batch.full_report_candidate_set is False
