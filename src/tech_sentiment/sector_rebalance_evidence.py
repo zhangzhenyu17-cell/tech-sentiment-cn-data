@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import html
+from pathlib import PurePosixPath
 import re
 from typing import Mapping, Sequence
+from urllib.parse import unquote, urlsplit
 
 import pandas as pd
 
@@ -25,6 +28,7 @@ class RebalanceAttachment:
     title: str
     publish_date: str
     effective_date: str
+    effect_timing: str
     file_name: str
     file_url: str
 
@@ -93,15 +97,54 @@ def parse_notice_rows(
     return sorted(out.values(), key=lambda row: (row.publish_date, row.notice_id))
 
 
-def extract_effective_date(detail: Mapping[str, object]) -> str:
-    html = _clean(detail.get("content"))
-    text = re.sub(r"<[^>]+>", "", html)
+def extract_effective_boundary(detail: Mapping[str, object]) -> tuple[str, str]:
+    raw_html = _clean(detail.get("content"))
+    text = html.unescape(re.sub(r"<[^>]+>", "", raw_html))
     compact = re.sub(r"\s+", "", text)
-    match = re.search(r"于?(\d{4})年(\d{1,2})月(\d{1,2})日[^。；;]{0,40}(?:生效|实施)", compact)
-    if not match:
-        return ""
-    year, month, day = (int(part) for part in match.groups())
-    return date(year, month, day).isoformat()
+
+    after_close = re.search(
+        r"(?:于)?(\d{4})年(\d{1,2})月(\d{1,2})日(?:收盘|收市)后(?:正式)?生效",
+        compact,
+    )
+    if after_close:
+        year, month, day = (int(part) for part in after_close.groups())
+        return date(year, month, day).isoformat(), "after_close"
+
+    on_date = re.search(
+        r"(?:于)?(\d{4})年(\d{1,2})月(\d{1,2})日[^。；;]{0,40}(?:调整|生效|实施)",
+        compact,
+    )
+    if on_date:
+        year, month, day = (int(part) for part in on_date.groups())
+        return date(year, month, day).isoformat(), "on_date"
+    return "", "unknown"
+
+
+def extract_effective_date(detail: Mapping[str, object]) -> str:
+    return extract_effective_boundary(detail)[0]
+
+
+def _content_attachment_urls(detail: Mapping[str, object]) -> list[tuple[str, str]]:
+    raw_html = html.unescape(str(detail.get("content") or ""))
+    matches = re.findall(
+        r"href\s*=\s*[\"']([^\"']+?\.(?:xlsx?|xlsm|pdf)(?:\?[^\"']*)?)[\"']",
+        raw_html,
+        flags=re.IGNORECASE,
+    )
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for raw_url in matches:
+        url = raw_url.strip().replace("\\/", "/")
+        if url.startswith("//"):
+            url = "https:" + url
+        elif url.startswith("/"):
+            url = "https://www.csindex.com.cn" + url
+        if not url.startswith(("http://", "https://")) or url in seen:
+            continue
+        seen.add(url)
+        name = unquote(PurePosixPath(urlsplit(url).path).name)
+        out.append((name, url))
+    return out
 
 
 def extract_attachments(detail: Mapping[str, object]) -> list[RebalanceAttachment]:
@@ -111,25 +154,34 @@ def extract_attachments(detail: Mapping[str, object]) -> list[RebalanceAttachmen
         raise ValueError("notice detail missing integer id") from exc
     title = _clean(detail.get("title"))
     publish_date = _clean(detail.get("publishDate"))
-    effective_date = extract_effective_date(detail)
+    effective_date, effect_timing = extract_effective_boundary(detail)
     raw_list = detail.get("enclosureList") or []
     if not isinstance(raw_list, Sequence) or isinstance(raw_list, (str, bytes)):
         raise ValueError("enclosureList must be a list")
 
-    out: list[RebalanceAttachment] = []
+    candidates: list[tuple[str, str]] = []
     for raw in raw_list:
         if not isinstance(raw, Mapping):
             continue
         file_url = _clean(raw.get("fileUrl"))
         file_name = _clean(raw.get("fileName") or raw.get("name"))
-        if not file_url:
+        if file_url:
+            candidates.append((file_name, file_url))
+    candidates.extend(_content_attachment_urls(detail))
+
+    out: list[RebalanceAttachment] = []
+    seen: set[str] = set()
+    for file_name, file_url in candidates:
+        if file_url in seen:
             continue
+        seen.add(file_url)
         out.append(
             RebalanceAttachment(
                 notice_id=notice_id,
                 title=title,
                 publish_date=publish_date,
                 effective_date=effective_date,
+                effect_timing=effect_timing,
                 file_name=file_name,
                 file_url=file_url,
             )
