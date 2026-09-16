@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tech-sentiment-cn-data"
+version = "0.1.0"
+description = "Public A-share index-universe and market-data preparation tools"
+requires-python = ">=3.10"
+dependencies = [
+  "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+data = ["akshare>=1.18.94"]
+
+[project.scripts]
+tech-sentiment-data = "tech_sentiment.data_cli:main"
+tech-sentiment-index-price = "tech_sentiment.index_price_cli:main"
+tech-sentiment-bundle = "tech_sentiment.bundle:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

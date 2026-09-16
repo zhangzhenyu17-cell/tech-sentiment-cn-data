@@ -1,0 +1,152 @@
+import pandas as pd
+
+from tech_sentiment.data_akshare import (
+    download_universe_history,
+    fetch_current_csindex_universe,
+    fetch_stock_history,
+)
+
+
+class FakeAKShare:
+    def __init__(self):
+        self.last_tencent_symbol = None
+
+    def index_stock_cons_csindex(self, symbol: str):
+        if symbol == "000688":
+            return pd.DataFrame(
+                {
+                    "成分券代码": ["688001", "300750"],
+                    "成分券名称": ["示例科创", "示例创业"],
+                }
+            )
+        if symbol == "931000":
+            return pd.DataFrame(
+                {
+                    "成分券代码": ["300750", "600000"],
+                    "成分券名称": ["示例创业", "示例主板"],
+                }
+            )
+        return pd.DataFrame()
+
+    def stock_zh_a_hist(
+        self,
+        *,
+        symbol: str,
+        period: str,
+        start_date: str,
+        end_date: str,
+        adjust: str,
+    ):
+        if symbol in {"600000", "688999"}:
+            raise RuntimeError("eastmoney failure")
+        return pd.DataFrame(
+            {
+                "日期": ["2026-01-02", "2026-01-05"],
+                "开盘": [10.0, 10.2],
+                "收盘": [10.1, 10.3],
+                "最高": [10.4, 10.5],
+                "最低": [9.9, 10.0],
+                "涨跌幅": [1.0, 1.98],
+                "成交额": [1000000, 1200000],
+                "换手率": [1.2, 1.4],
+            }
+        )
+
+    def stock_zh_a_hist_tx(
+        self,
+        *,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        adjust: str,
+        timeout: float,
+    ):
+        self.last_tencent_symbol = symbol
+        if symbol.endswith("688999"):
+            raise RuntimeError("tencent failure")
+        return pd.DataFrame(
+            {
+                "date": ["2026-01-02", "2026-01-05"],
+                "open": [20.0, 20.2],
+                "close": [20.0, 20.4],
+                "high": [20.5, 20.6],
+                "low": [19.8, 20.0],
+                "turnover": [0.012, 0.014],
+                "amount": [2000000, 2200000],
+            }
+        )
+
+
+def test_fetch_current_csindex_universe_deduplicates_symbols():
+    universe = fetch_current_csindex_universe(
+        ["000688", "931000"], client=FakeAKShare()
+    )
+
+    assert list(universe["symbol"]) == ["300750", "600000", "688001"]
+    row = universe[universe["symbol"] == "300750"].iloc[0]
+    assert row["source_index"] == "000688,931000"
+    assert row["board"] == "chinext"
+    assert set(universe["universe_mode"]) == {"current_snapshot"}
+
+
+def test_fetch_stock_history_normalizes_eastmoney_columns():
+    prices = fetch_stock_history(
+        "688001",
+        start_date="2026-01-01",
+        end_date="2026-01-31",
+        client=FakeAKShare(),
+    )
+
+    assert list(prices["symbol"].unique()) == ["688001"]
+    assert prices["date"].dtype.kind == "M"
+    assert prices.loc[0, "pct_chg"] == 1.0
+    assert prices.loc[0, "board"] == "star"
+    assert set(prices["provider"]) == {"eastmoney"}
+
+
+def test_tencent_fallback_derives_percentage_change():
+    prices = fetch_stock_history(
+        "600000",
+        start_date="2026-01-01",
+        end_date="2026-01-31",
+        provider="tencent",
+        client=FakeAKShare(),
+    )
+
+    assert pd.isna(prices.loc[0, "pct_chg"])
+    assert round(prices.loc[1, "pct_chg"], 6) == 2.0
+    assert set(prices["provider"]) == {"tencent"}
+
+
+def test_tencent_uses_explicit_shanghai_prefix_for_689_series():
+    client = FakeAKShare()
+    prices = fetch_stock_history(
+        "689009",
+        start_date="2026-01-01",
+        end_date="2026-01-31",
+        provider="tencent",
+        client=client,
+    )
+
+    assert client.last_tencent_symbol == "sh689009"
+    assert list(prices["symbol"].unique()) == ["689009"]
+
+
+def test_download_universe_history_falls_back_and_records_total_failures():
+    universe = pd.DataFrame({"symbol": ["688001", "600000", "688999"]})
+    result = download_universe_history(
+        universe,
+        start_date="2026-01-01",
+        end_date="2026-01-31",
+        retries=0,
+        sleep_seconds=0,
+        client=FakeAKShare(),
+    )
+
+    assert set(result.prices["symbol"]) == {"688001", "600000"}
+    providers = result.prices.groupby("symbol")["provider"].first().to_dict()
+    assert providers == {"600000": "tencent", "688001": "eastmoney"}
+    assert list(result.errors["symbol"]) == ["688999"]
+    error = result.errors.loc[0, "error"]
+    assert "eastmoney" in error and "tencent" in error
+

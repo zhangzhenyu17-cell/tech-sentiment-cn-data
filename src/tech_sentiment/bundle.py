@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import tarfile
+import tempfile
+
+import pandas as pd
+
+
+REQUIRED_FILES = (
+    "prices.csv",
+    "universe_point_in_time.csv",
+    "universe_segments.csv",
+    "universe_live_snapshot.csv",
+    "download_errors.csv",
+    "index_prices.csv",
+    "production_universe_meta.json",
+)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _quality_metrics(source: Path) -> dict:
+    universe = pd.read_csv(source / "universe_point_in_time.csv", dtype={"symbol": str})
+    prices = pd.read_csv(source / "prices.csv", dtype={"symbol": str})
+    index_prices = pd.read_csv(source / "index_prices.csv")
+    if universe.empty or prices.empty or index_prices.empty:
+        raise ValueError("market bundle inputs must not be empty")
+
+    universe["symbol"] = universe["symbol"].str.zfill(6)
+    prices["symbol"] = prices["symbol"].str.zfill(6)
+    prices["date"] = pd.to_datetime(prices["date"], errors="raise")
+    market_date = prices["date"].max().normalize()
+    starts = pd.to_datetime(universe["effective_start"], errors="raise")
+    ends = pd.to_datetime(universe["effective_end"], errors="coerce")
+    active = universe[(starts <= market_date) & (ends.isna() | (ends >= market_date))]
+    active_symbols = set(active["symbol"])
+    latest_symbols = set(prices.loc[prices["date"].dt.normalize() == market_date, "symbol"])
+    all_symbols = set(universe["symbol"])
+    downloaded_symbols = set(prices["symbol"])
+    history_coverage = len(all_symbols & downloaded_symbols) / len(all_symbols) if all_symbols else 0.0
+    active_coverage = len(active_symbols & latest_symbols) / len(active_symbols) if active_symbols else 0.0
+    if history_coverage < 0.95:
+        raise ValueError(f"historical symbol coverage {history_coverage:.1%} is below 95%")
+    if active_coverage < 0.95:
+        raise ValueError(f"active latest-day coverage {active_coverage:.1%} is below 95%")
+    return {
+        "market_date": market_date.date().isoformat(),
+        "historical_symbol_coverage": round(history_coverage, 6),
+        "active_latest_day_coverage": round(active_coverage, 6),
+        "universe_symbols": len(all_symbols),
+        "active_symbols": len(active_symbols),
+    }
+
+
+def build_market_bundle(input_dir: str | Path, output_dir: str | Path) -> dict:
+    source = Path(input_dir)
+    destination = Path(output_dir)
+    missing = [name for name in REQUIRED_FILES if not (source / name).is_file()]
+    if missing:
+        raise FileNotFoundError(f"market bundle is missing required files: {missing}")
+
+    metadata = json.loads((source / "production_universe_meta.json").read_text(encoding="utf-8"))
+    target_date = metadata.get("target_date")
+    if not isinstance(target_date, str) or len(target_date) != 10:
+        raise ValueError("production metadata has no valid target_date")
+    if metadata.get("universe_mode") != "point_in_time":
+        raise ValueError("only point-in-time universe data may be published")
+    quality = _quality_metrics(source)
+
+    destination.mkdir(parents=True, exist_ok=True)
+    archive_path = destination / "market_bundle_latest.tar.gz"
+    manifest_path = destination / "market_bundle_manifest.json"
+    checksum_path = destination / "market_bundle_latest.sha256"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "market_bundle"
+        root.mkdir()
+        files = []
+        for name in REQUIRED_FILES:
+            copied = root / name
+            shutil.copy2(source / name, copied)
+            files.append({"path": name, "bytes": copied.stat().st_size, "sha256": _sha256(copied)})
+
+        manifest = {
+            "bundle_kind": "public_market_data",
+            "schema_version": "1.0",
+            "target_date": target_date,
+            "market_date": quality["market_date"],
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "contains_model_output": False,
+            "quality": quality,
+            "files": files,
+        }
+        bundle_manifest = root / "manifest.json"
+        bundle_manifest.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        with tarfile.open(archive_path, "w:gz") as archive:
+            archive.add(root, arcname="market_bundle")
+
+    checksum_path.write_text(
+        f"{_sha256(archive_path)}  {archive_path.name}\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Build a public-only market-data bundle.")
+    parser.add_argument("--input-dir", required=True)
+    parser.add_argument("--output-dir", default="dist")
+    return parser
+
+
+def main() -> None:
+    args = _parser().parse_args()
+    manifest = build_market_bundle(args.input_dir, args.output_dir)
+    print(json.dumps(manifest, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
