@@ -5,6 +5,7 @@ from datetime import date
 from hashlib import sha256
 from html.parser import HTMLParser
 import re
+from typing import Iterable, Mapping
 from urllib.request import Request, urlopen
 
 
@@ -135,6 +136,38 @@ def parse_membership_intervals(
         for item in out
     }
     return sorted(dedup.values(), key=lambda item: (item.start_date, item.end_date))
+
+
+def summarize_interval_coverage(
+    intervals_by_symbol: Mapping[str, list[IndexMembershipInterval]],
+    *,
+    candidate_symbols: Iterable[str],
+) -> dict[str, int]:
+    """Summarize interval evidence without counting empty fetches as evidence.
+
+    ``intervals_by_symbol`` deliberately contains successful Sina page fetches
+    even when a stock has no 931152 row.  Reporting ``len(mapping)`` would
+    therefore overstate evidence coverage.  This helper counts only non-empty
+    interval lists and is kept network-free so the reporting contract can be
+    regression-tested without repeating the one-shot research scrape.
+    """
+
+    candidates = set(candidate_symbols)
+    with_intervals = {
+        symbol
+        for symbol in candidates
+        if intervals_by_symbol.get(symbol)
+    }
+    interval_rows = sum(
+        len(intervals_by_symbol.get(symbol, ()))
+        for symbol in candidates
+    )
+    return {
+        "candidate_symbols": len(candidates),
+        "symbols_with_intervals": len(with_intervals),
+        "symbols_without_intervals": len(candidates - with_intervals),
+        "interval_rows": interval_rows,
+    }
 
 
 def fetch_related_page(symbol: str, *, timeout: int = 20) -> tuple[str, str, str]:

@@ -16,6 +16,7 @@ from tech_sentiment.sina_index_membership_evidence import (
     IndexMembershipInterval,
     fetch_related_page,
     parse_membership_intervals,
+    summarize_interval_coverage,
 )
 
 
@@ -137,7 +138,11 @@ def main() -> None:
             )
             interval_rows.extend(asdict(interval) for interval in intervals)
 
-    successful_symbols = {row["symbol"] for row in fetch_audit if str(row["status"]).startswith("ok_")}
+    successful_symbols = {
+        str(row["symbol"])
+        for row in fetch_audit
+        if str(row["status"]).startswith("ok_")
+    }
     failed_symbols = sorted(candidate_union - successful_symbols)
     reconstruction_rows: list[dict[str, object]] = []
 
@@ -147,6 +152,8 @@ def main() -> None:
         for symbol, intervals in intervals_by_symbol.items():
             if any(interval.active_on(effective_date) for interval in intervals):
                 active.add(symbol)
+        missing_from_same_report = sorted(active - report_candidates)
+        same_report_nonmembers = sorted(report_candidates - active)
         reconstruction_rows.append(
             {
                 "expected_period": expected_period,
@@ -155,8 +162,11 @@ def main() -> None:
                 "candidate_report_size": len(report_candidates),
                 "reconstructed_size": len(active),
                 "reconstructed_symbols": sorted(active),
-                "reconstructed_missing_from_same_report": sorted(active - report_candidates),
-                "same_report_nonmembers": sorted(report_candidates - active),
+                "reconstructed_missing_from_same_report": missing_from_same_report,
+                "reconstructed_missing_from_same_report_count": len(missing_from_same_report),
+                "same_report_nonmembers": same_report_nonmembers,
+                "same_report_nonmember_count": len(same_report_nonmembers),
+                "all_reconstructed_in_same_report": not missing_from_same_report,
                 "formal_manifest_qualified": False,
             }
         )
@@ -172,7 +182,10 @@ def main() -> None:
             for batch in all_batches
         ],
     )
-    _dump_jsonl(out_dir / "sina_fetch_audit.jsonl", sorted(fetch_audit, key=lambda row: str(row["symbol"])))
+    _dump_jsonl(
+        out_dir / "sina_fetch_audit.jsonl",
+        sorted(fetch_audit, key=lambda row: str(row["symbol"])),
+    )
     _dump_jsonl(out_dir / "sina_931152_intervals.jsonl", interval_rows)
     _dump_jsonl(out_dir / "reconstructed_sets.jsonl", reconstruction_rows)
     _dump_jsonl(out_dir / "eastmoney_failures.jsonl", eastmoney_failures)
@@ -182,6 +195,10 @@ def main() -> None:
         if candidate_union
         else 0.0
     )
+    interval_coverage = summarize_interval_coverage(
+        intervals_by_symbol,
+        candidate_symbols=candidate_union,
+    )
     report = {
         "status": STATUS,
         "target_index": "931152",
@@ -190,10 +207,20 @@ def main() -> None:
         "sina_fetch_successes": len(successful_symbols),
         "sina_fetch_failures": len(failed_symbols),
         "sina_fetch_coverage": coverage,
-        "symbols_with_931152_intervals": len(intervals_by_symbol),
+        "symbols_with_931152_intervals": interval_coverage["symbols_with_intervals"],
+        "symbols_without_931152_intervals": interval_coverage["symbols_without_intervals"],
+        "sina_931152_interval_rows": interval_coverage["interval_rows"],
         "reconstructed_periods": len(reconstruction_rows),
         "reconstructed_sizes": {
             str(row["expected_period"]): int(row["reconstructed_size"])
+            for row in reconstruction_rows
+        },
+        "all_periods_reconstructed_inside_same_report": all(
+            bool(row["all_reconstructed_in_same_report"])
+            for row in reconstruction_rows
+        ),
+        "same_report_nonmember_counts": {
+            str(row["expected_period"]): int(row["same_report_nonmember_count"])
             for row in reconstruction_rows
         },
         "eastmoney_failures": len(eastmoney_failures),

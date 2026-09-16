@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from tech_sentiment.sina_index_membership_evidence import (
+    IndexMembershipInterval,
     parse_membership_intervals,
     related_url,
+    summarize_interval_coverage,
 )
 
 
@@ -75,3 +77,29 @@ def test_related_url_rejects_non_six_digit_symbol() -> None:
         pass
     else:
         raise AssertionError("expected invalid symbol to fail closed")
+
+
+def test_interval_coverage_does_not_count_empty_successes_as_evidence() -> None:
+    interval = IndexMembershipInterval(
+        symbol="600276",
+        index_code="931152",
+        index_name="CS创新药",
+        start_date="2019-04-22",
+        end_date="",
+        source_url="https://example.test/600276",
+        response_sha256="abc",
+    )
+    coverage = summarize_interval_coverage(
+        {
+            "600276": [interval],
+            "600380": [],
+            "600196": [interval, interval],
+        },
+        candidate_symbols={"600276", "600380", "600196", "000513"},
+    )
+    assert coverage == {
+        "candidate_symbols": 4,
+        "symbols_with_intervals": 2,
+        "symbols_without_intervals": 2,
+        "interval_rows": 3,
+    }
