@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/probe-csi-931152.yml"
-      - "scripts/research/probe_csi_931152_old_adjustments.py"
+      - "scripts/research/probe_csi_931152_old_attachments.py"
 
 permissions:
   contents: read
@@ -22,21 +22,19 @@ jobs:
           cache: pip
       - name: Install research dependencies
         run: python -m pip install -e ".[sector-data]"
-      - name: Run targeted old official CSI evidence probe
+      - name: Run legacy official CSI attachment fallback probe
         run: |
-          python scripts/research/probe_csi_931152_old_adjustments.py \
-            --output-dir /tmp/931152-csi-old-evidence \
-            --timeout 45 \
-            --max-pages 12 \
-            --rows 100
+          python scripts/research/probe_csi_931152_old_attachments.py \
+            --output-dir /tmp/931152-csi-legacy-evidence \
+            --timeout 45
       - name: Show report
         if: always()
-        run: cat /tmp/931152-csi-old-evidence/report.json || true
+        run: cat /tmp/931152-csi-legacy-evidence/report.json || true
       - name: Upload evidence artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: 931152-csi-old-official-evidence
-          path: /tmp/931152-csi-old-evidence
+          name: 931152-csi-legacy-official-evidence
+          path: /tmp/931152-csi-legacy-evidence
           if-no-files-found: error
           retention-days: 14
