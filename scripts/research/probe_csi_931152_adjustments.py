@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from tech_sentiment.csi_adjustment_evidence import (
     CSI_931152,
+    DEFAULT_SEARCH_TERMS,
     attachment_refs_from_detail,
     build_adjustment_rows,
     download_attachment,
@@ -44,6 +45,15 @@ def main() -> None:
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=30)
+    parser.add_argument(
+        "--search-term",
+        action="append",
+        dest="search_terms",
+        help=(
+            "Repeatable CSI announcement search term. If omitted, the checked-in "
+            "default terms are used."
+        ),
+    )
     args = parser.parse_args()
 
     out_dir = args.output_dir
@@ -51,7 +61,11 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     attachment_dir.mkdir(parents=True, exist_ok=True)
 
-    notices = query_design_announcements(timeout=args.timeout)
+    search_terms = tuple(args.search_terms) if args.search_terms else DEFAULT_SEARCH_TERMS
+    notices = query_design_announcements(
+        search_terms=search_terms,
+        timeout=args.timeout,
+    )
     notice_rows: list[dict[str, object]] = []
     attachment_rows: list[dict[str, object]] = []
     change_rows: list[dict[str, object]] = []
@@ -148,6 +162,7 @@ def main() -> None:
         "status": STATUS,
         "index_code": CSI_931152,
         "design_window": ["2019-04-22", "2023-12-31"],
+        "search_terms": list(search_terms),
         "notices_located": len(notice_rows),
         "attachments_located": len(attachment_rows),
         "change_rows_extracted": len(change_rows),
