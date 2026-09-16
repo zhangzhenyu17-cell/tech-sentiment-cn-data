@@ -11,7 +11,7 @@ from tech_sentiment.eastmoney_fund_holdings_evidence import (
 )
 
 
-STATUS = "SECONDARY_MEMBERSHIP_EVIDENCE_CANDIDATE_ONLY"
+STATUS = "SECONDARY_CANDIDATE_POOL_ONLY"
 
 
 def main() -> None:
@@ -55,8 +55,10 @@ def main() -> None:
                 row["symbol_count"] = len(batch.symbols)
                 row["formal_manifest_qualified"] = False
                 row["qualification_note"] = (
-                    "Q2/Q4 >10-stock batches are secondary anchor candidates only; "
-                    "independent index-membership cross-check remains required."
+                    "Fund holdings are candidate-pool/cross-check evidence only. "
+                    "A tracking ETF can contain IPO allocations, substitutions and "
+                    "other non-index positions; independent dated index-membership "
+                    "evidence is required before reconstruction can qualify."
                 )
                 batch_rows.append(row)
         except Exception as exc:  # preserve failures rather than silently skipping
@@ -74,7 +76,7 @@ def main() -> None:
         for row in failures:
             handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
 
-    anchors = [row for row in batch_rows if row["anchor_candidate"]]
+    candidate_sets = [row for row in batch_rows if row["full_report_candidate_set"]]
     report = {
         "status": STATUS,
         "fund_code": TRACKING_ETF_931152,
@@ -82,8 +84,11 @@ def main() -> None:
         "requested_years": [args.start_year, args.end_year],
         "advertised_years": sorted(advertised_years),
         "report_batches": len(batch_rows),
-        "anchor_candidates": len(anchors),
-        "anchor_dates": sorted(str(row["report_date"]) for row in anchors),
+        "full_report_candidate_sets": len(candidate_sets),
+        "candidate_set_dates": sorted(str(row["report_date"]) for row in candidate_sets),
+        "candidate_set_sizes": {
+            str(row["report_date"]): int(row["symbol_count"]) for row in candidate_sets
+        },
         "failures": len(failures),
         "manifest_updated": False,
         "model_results_read": False,
