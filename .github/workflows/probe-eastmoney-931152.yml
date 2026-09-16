@@ -1,4 +1,4 @@
-name: one-shot 931152 EastMoney evidence probe
+name: one-shot 931152 secondary evidence probe
 
 on:
   pull_request:
@@ -6,8 +6,11 @@ on:
     paths:
       - ".github/workflows/probe-eastmoney-931152.yml"
       - "src/tech_sentiment/eastmoney_fund_holdings_evidence.py"
+      - "src/tech_sentiment/sina_index_membership_evidence.py"
       - "scripts/research/probe_eastmoney_159992_holdings.py"
+      - "scripts/research/probe_secondary_931152_reconstruction.py"
       - "tests/test_eastmoney_fund_holdings_evidence.py"
+      - "tests/test_sina_index_membership_evidence.py"
 
 permissions:
   contents: read
@@ -30,14 +33,32 @@ jobs:
             --output-dir /tmp/931152-eastmoney-evidence \
             --start-year 2020 \
             --end-year 2023
-      - name: Show probe report
+      - name: Reconstruct 931152 candidate sets with independent Sina intervals
+        run: |
+          python scripts/research/probe_secondary_931152_reconstruction.py \
+            --output-dir /tmp/931152-secondary-reconstruction \
+            --workers 4 \
+            --timeout 20
+      - name: Show probe reports
         if: always()
-        run: cat /tmp/931152-eastmoney-evidence/report.json || true
-      - name: Upload evidence candidate artifact
+        run: |
+          echo '--- EastMoney candidate pool ---'
+          cat /tmp/931152-eastmoney-evidence/report.json || true
+          echo '--- Secondary reconstruction ---'
+          cat /tmp/931152-secondary-reconstruction/report.json || true
+      - name: Upload EastMoney candidate-pool artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: 931152-eastmoney-secondary-evidence
           path: /tmp/931152-eastmoney-evidence
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload reconstructed candidate-set artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 931152-secondary-reconstruction
+          path: /tmp/931152-secondary-reconstruction
           if-no-files-found: error
           retention-days: 14
