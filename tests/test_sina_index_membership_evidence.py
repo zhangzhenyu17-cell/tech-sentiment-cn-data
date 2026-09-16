@@ -57,6 +57,25 @@ def test_unrelated_index_rows_are_ignored() -> None:
     ) == []
 
 
+def test_prefixed_currency_variant_code_is_not_target_index() -> None:
+    html = """
+    <table>
+      <tr><td>CS创新药</td><td>931152</td><td>2019-04-22</td><td></td></tr>
+      <tr><td>CS创新药USD</td><td>931152USD200</td><td>2025-06-23</td><td></td></tr>
+      <tr><td>CS创新药(全)USD</td><td>931152USD210</td><td>2025-06-23</td><td></td></tr>
+    </table>
+    """
+    intervals = parse_membership_intervals(
+        html,
+        symbol="000513",
+        source_url="https://example.test/000513",
+        response_sha256="abc",
+    )
+    assert len(intervals) == 1
+    assert intervals[0].index_name == "CS创新药"
+    assert intervals[0].start_date == "2019-04-22"
+
+
 def test_duplicate_rendering_is_deduplicated() -> None:
     row = "<tr><td>CS创新药</td><td>931152</td><td>2020-06-15</td><td>2021-12-13</td></tr>"
     html = f"<table>{row}{row}</table>"
