@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 import re
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 import pandas as pd
 
@@ -137,20 +137,25 @@ def extract_attachments(detail: Mapping[str, object]) -> list[RebalanceAttachmen
     return out
 
 
-def _normalize_index_code(value: object) -> str:
+def _normalize_six_digit_code(value: object) -> str:
     text = _clean(value)
     if not text:
         return ""
-    match = re.search(r"(\d{6})", text)
-    return match.group(1) if match else text
+    exact = re.search(r"(?<!\d)(\d{6})(?!\d)", text)
+    if exact:
+        return exact.group(1)
+    if re.fullmatch(r"\d{1,6}(?:\.0+)?", text):
+        integer_text = text.split(".", 1)[0]
+        return integer_text.zfill(6)
+    return ""
+
+
+def _normalize_index_code(value: object) -> str:
+    return _normalize_six_digit_code(value)
 
 
 def _normalize_security_code(value: object) -> str:
-    text = _clean(value)
-    if not text:
-        return ""
-    match = re.search(r"(\d{6})", text)
-    return match.group(1) if match else ""
+    return _normalize_six_digit_code(value)
 
 
 def extract_index_changes_from_sheets(
@@ -169,6 +174,8 @@ def extract_index_changes_from_sheets(
     expected = {"调入": "add", "调出": "remove"}
     rows: list[dict[str, str]] = []
     wanted = _normalize_index_code(index_code)
+    if not wanted:
+        raise ValueError(f"invalid six-digit index code: {index_code!r}")
     for sheet_name, change_type in expected.items():
         frame = sheets.get(sheet_name)
         if frame is None or frame.empty:
@@ -210,6 +217,8 @@ def extract_index_changes_from_sheets(
 
 def has_index_rows(sheets: Mapping[str, pd.DataFrame], *, index_code: str) -> bool:
     wanted = _normalize_index_code(index_code)
+    if not wanted:
+        raise ValueError(f"invalid six-digit index code: {index_code!r}")
     for frame in sheets.values():
         if frame is None or frame.empty or "指数代码" not in frame.columns:
             continue
