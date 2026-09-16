@@ -1,0 +1,38 @@
+name: collect-931152-evidence-once
+
+on:
+  push:
+    branches:
+      - data/sector-v0-official-rebalance-collector
+    paths:
+      - .github/workflows/collect-931152-evidence-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install research data dependencies
+        run: python -m pip install -e ".[sector-data]"
+      - name: Collect official CSIndex rebalance evidence
+        run: >-
+          python scripts/collect_csindex_rebalances.py
+          --index-code 931152
+          --since 2019-01-01
+          --until 2023-12-31
+          --output-dir output/931152_official_rebalances
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 931152-official-rebalance-evidence
+          path: output/931152_official_rebalances
+          if-no-files-found: error
+          retention-days: 14
