@@ -6,6 +6,7 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import re
+from urllib.parse import urlparse
 
 from tech_sentiment.csi_adjustment_evidence import (
     CSI_931152,
@@ -23,6 +24,15 @@ STATUS = "CANDIDATE_MEMBERSHIP_EVIDENCE_ONLY"
 def _safe_name(value: str) -> str:
     name = re.sub(r"[^0-9A-Za-z._-]+", "_", value).strip("._")
     return name or "attachment"
+
+
+def _attachment_filename(notice_id: int, file_name: str, file_url: str) -> tuple[str, str]:
+    suffix = Path(file_name).suffix.lower()
+    if not suffix:
+        suffix = Path(urlparse(file_url).path).suffix.lower()
+    stem = Path(file_name).stem if file_name else "attachment"
+    safe_stem = _safe_name(stem)
+    return f"{notice_id}_{safe_stem}{suffix}", suffix
 
 
 def main() -> None:
@@ -74,13 +84,16 @@ def main() -> None:
             row["status"] = "located_not_yet_qualified"
             try:
                 raw, digest = download_attachment(attachment.file_url, timeout=args.timeout)
-                filename = f"{attachment.notice_id}_{_safe_name(attachment.file_name)}"
+                filename, suffix = _attachment_filename(
+                    attachment.notice_id,
+                    attachment.file_name,
+                    attachment.file_url,
+                )
                 local_path = attachment_dir / filename
                 local_path.write_bytes(raw)
                 row["sha256"] = digest
                 row["local_path"] = str(local_path)
 
-                suffix = local_path.suffix.lower()
                 if suffix in {".xls", ".xlsx"}:
                     parsed = build_adjustment_rows(
                         attachment,
