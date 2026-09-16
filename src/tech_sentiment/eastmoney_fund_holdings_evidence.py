@@ -25,16 +25,11 @@ class FundHoldingBatch:
     source_url: str
     response_sha256: str
     evidence_kind: str
-    anchor_candidate: bool
+    full_report_candidate_set: bool
 
 
 class _FundBoxParser(HTMLParser):
-    """Parse the report boxes returned inside EastMoney's ``content`` field.
-
-    The adapter intentionally avoids browser-state assumptions.  It records the
-    report heading and six-digit stock codes from each report table.  Evidence
-    qualification is handled separately and remains fail-closed.
-    """
+    """Parse report boxes returned inside EastMoney's ``content`` field."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -138,15 +133,13 @@ def _extract_js_quoted_field(text: str, key: str) -> str:
             raw = "".join(chars)
             if quote == '"':
                 return json.loads('"' + raw + '"')
-            # EastMoney normally uses double quotes.  Keep a conservative
-            # single-quote fallback for simple escaped HTML strings.
             return bytes(raw, "utf-8").decode("unicode_escape")
         chars.append(char)
     raise ValueError(f"EastMoney response has unterminated field {key!r}")
 
 
 def parse_eastmoney_envelope(text: str) -> tuple[str, tuple[int, ...]]:
-    """Return the embedded holdings HTML and advertised years."""
+    """Return embedded holdings HTML and advertised years."""
 
     content = _extract_js_quoted_field(text, "content")
     years_match = re.search(r"\barryear\s*:\s*\[([^\]]*)\]", text, re.S)
@@ -188,18 +181,20 @@ def parse_holdings_html(
     fund_code: str,
     source_url: str,
     response_sha256: str,
-    minimum_full_anchor_symbols: int = 11,
+    minimum_full_report_symbols: int = 11,
 ) -> list[FundHoldingBatch]:
-    """Parse report batches without upgrading them to formal membership evidence.
+    """Parse fund disclosure batches for candidate-pool/cross-check use only.
 
-    Only Q2/Q4 batches with more than ten distinct stock codes are labelled
-    ``anchor_candidate``.  This rejects ordinary quarterly top-ten disclosures.
-    A candidate still requires an independent index-membership cross-check before
-    it can satisfy the formal membership manifest.
+    Q2/Q4 disclosures with more than ten distinct stock codes are labelled
+    ``full_report_candidate_set`` because they contain substantially more than
+    the ordinary quarterly top-ten disclosure.  They are **never** labelled an
+    index anchor: a tracking ETF can hold IPO allocations, substitutions and
+    other non-index stocks.  Independent dated index-membership evidence is
+    required to filter/validate these candidate sets.
     """
 
-    if minimum_full_anchor_symbols < 11:
-        raise ValueError("minimum_full_anchor_symbols must be >= 11")
+    if minimum_full_report_symbols < 11:
+        raise ValueError("minimum_full_report_symbols must be >= 11")
     parser = _FundBoxParser()
     parser.feed(html)
     out: list[FundHoldingBatch] = []
@@ -209,10 +204,12 @@ def parse_holdings_html(
             continue
         year, quarter = parsed
         symbols = _symbols_from_rows(rows)
-        anchor_candidate = quarter in {2, 4} and len(symbols) >= minimum_full_anchor_symbols
+        full_report_candidate_set = (
+            quarter in {2, 4} and len(symbols) >= minimum_full_report_symbols
+        )
         evidence_kind = (
-            "eastmoney_tiantian_full_report_anchor_candidate"
-            if anchor_candidate
+            "eastmoney_tiantian_full_fund_holdings_candidate_set"
+            if full_report_candidate_set
             else "eastmoney_tiantian_partial_holdings_crosscheck_only"
         )
         out.append(
@@ -225,7 +222,7 @@ def parse_holdings_html(
                 source_url=source_url,
                 response_sha256=response_sha256,
                 evidence_kind=evidence_kind,
-                anchor_candidate=anchor_candidate,
+                full_report_candidate_set=full_report_candidate_set,
             )
         )
     return sorted(out, key=lambda item: item.report_date)
