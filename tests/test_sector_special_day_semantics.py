@@ -46,6 +46,35 @@ def test_chinext_post_reform_uses_first_five_trading_rows_not_calendar_days() ->
     assert audit.no_limit_rows == 5
 
 
+def test_old_ipo_truncated_history_does_not_reset_trading_rank() -> None:
+    daily = pd.DataFrame(
+        {
+            "date": ["2022-01-04", "2022-01-05"],
+            "code": ["sh.600123", "sh.600123"],
+            "tradestatus": ["1", "1"],
+        }
+    )
+    basic = pd.DataFrame({"code": ["sh.600123"], "ipoDate": ["2010-01-01"], "outDate": [""]})
+    out, audit = derive_special_day_status(daily, basic)
+    assert out["special_day_status"].tolist() == ["ordinary", "ordinary"]
+    assert audit.unknown_rows == 0
+
+
+def test_recent_post_reform_ipo_truncated_history_fails_closed() -> None:
+    daily = pd.DataFrame(
+        {
+            "date": ["2021-01-06", "2021-01-07"],
+            "code": ["sz.300999", "sz.300999"],
+            "tradestatus": ["1", "1"],
+        }
+    )
+    basic = pd.DataFrame({"code": ["sz.300999"], "ipoDate": ["2021-01-04"], "outDate": [""]})
+    out, audit = derive_special_day_status(daily, basic)
+    assert out["special_day_status"].tolist() == ["unknown", "unknown"]
+    assert set(out["special_day_reason"]) == {"ipo_window_not_fully_observed"}
+    assert audit.unknown_rows == 2
+
+
 def test_main_board_listing_day_fails_closed_then_becomes_ordinary() -> None:
     daily = pd.DataFrame(
         {
