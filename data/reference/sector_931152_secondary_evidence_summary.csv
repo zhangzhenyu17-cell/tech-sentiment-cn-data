@@ -1,0 +1,9 @@
+expected_period,effective_date,reconstructed_size,start_events,end_events,same_report_missing_count,eastmoney_fund_code,artifact_run_id,artifact_sha256,sina_fetch_coverage,exact_interval_rows,exact_interval_symbols,qualification_scope
+2020-06,2020-06-15,43,7,0,0,159992,35135574595,97c8b6b24f3fd048f0f148c61c58678db66ef3efed8f9e7f73218cac2ffc2982,1.0,87,69,historical_research_input_only
+2020-12,2020-12-14,45,3,1,0,159992,35135574595,97c8b6b24f3fd048f0f148c61c58678db66ef3efed8f9e7f73218cac2ffc2982,1.0,87,69,historical_research_input_only
+2021-06,2021-06-15,50,8,3,0,159992,35135574595,97c8b6b24f3fd048f0f148c61c58678db66ef3efed8f9e7f73218cac2ffc2982,1.0,87,69,historical_research_input_only
+2021-12,2021-12-13,50,4,4,0,159992,35135574595,97c8b6b24f3fd048f0f148c61c58678db66ef3efed8f9e7f73218cac2ffc2982,1.0,87,69,historical_research_input_only
+2022-06,2022-06-13,50,4,4,0,159992,35135574595,97c8b6b24f3fd048f0f148c61c58678db66ef3efed8f9e7f73218cac2ffc2982,1.0,87,69,historical_research_input_only
+2022-12,2022-12-12,50,4,4,0,159992,35135574595,97c8b6b24f3fd048f0f148c61c58678db66ef3efed8f9e7f73218cac2ffc2982,1.0,87,69,historical_research_input_only
+2023-06,2023-06-12,50,6,6,0,159992,35135574595,97c8b6b24f3fd048f0f148c61c58678db66ef3efed8f9e7f73218cac2ffc2982,1.0,87,69,historical_research_input_only
+2023-12,2023-12-11,50,5,5,0,159992,35135574595,97c8b6b24f3fd048f0f148c61c58678db66ef3efed8f9e7f73218cac2ffc2982,1.0,87,69,historical_research_input_only
