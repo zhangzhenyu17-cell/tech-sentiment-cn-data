@@ -57,15 +57,15 @@ def test_extract_931152_rows_when_workbook_contains_many_indices() -> None:
     sheets = {
         "调入": pd.DataFrame(
             {
-                "指数代码": ["000300", "931152", 931152],
+                "指数代码": [300, "931152", 931152],
                 "证券代码": [600000, 688177, "688235"],
                 "证券简称": ["浦发银行", "百奥泰", "百济神州"],
             }
         ),
         "调出": pd.DataFrame(
             {
-                "指数代码": ["931152", "000905"],
-                "证券代码": ["000661", "600519"],
+                "指数代码": ["931152", 905],
+                "证券代码": [661, 600519],
                 "证券简称": ["长春高新", "贵州茅台"],
             }
         ),
@@ -86,8 +86,8 @@ def test_extract_931152_rows_when_workbook_contains_many_indices() -> None:
 
 def test_missing_index_is_empty_not_no_change() -> None:
     sheets = {
-        "调入": pd.DataFrame({"指数代码": ["000300"], "证券代码": [600000]}),
-        "调出": pd.DataFrame({"指数代码": ["000300"], "证券代码": [600519]}),
+        "调入": pd.DataFrame({"指数代码": [300], "证券代码": [600000]}),
+        "调出": pd.DataFrame({"指数代码": [300], "证券代码": [600519]}),
     }
     assert has_index_rows(sheets, index_code="931152") is False
     result = extract_index_changes_from_sheets(
