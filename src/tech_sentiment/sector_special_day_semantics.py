@@ -9,6 +9,7 @@ import pandas as pd
 BAOSTOCK_BASIC_SOURCE = "https://pypi.org/project/baostock/"
 CHINEXT_REFORM_DATE = pd.Timestamp("2020-08-24")
 STAR_FIRST_TRADING_DATE = pd.Timestamp("2019-07-22")
+IPO_WINDOW_UNCERTAINTY_DAYS = 14
 
 
 @dataclass(frozen=True)
@@ -99,13 +100,16 @@ def derive_special_day_status(
     semantics in the design period: STAR IPO first five trading sessions and
     ChiNext IPO first five trading sessions for IPOs on/after 2020-08-24.
 
-    Main-board IPO first trading day and pre-reform ChiNext IPO first trading day
-    are marked ``unknown`` rather than assigned the ordinary structural limit,
-    because their listing-day mechanisms differ from ordinary 10%/5% rules.
+    IPO trading-session ranks are computed only when the supplied daily history
+    actually includes the IPO date. A truncated window must never make its first row
+    look like the first post-IPO trading day. If a post-reform STAR/ChiNext history
+    begins shortly after IPO but omits the IPO date, that near-IPO window fails
+    closed to ``unknown``.
 
+    Main-board IPO first trading day and pre-reform ChiNext IPO first trading day
+    are marked ``unknown`` rather than assigned the ordinary structural limit.
     Relisting, delisting-transition, and any other exceptional dates must be supplied
-    through ``overrides``. Overrides always take precedence and retain their source.
-    No price movement is inspected when deriving these states.
+    through ``overrides``. No price movement is inspected when deriving these states.
     """
 
     required = {"date", "code", "tradestatus"}
@@ -147,15 +151,43 @@ def derive_special_day_status(
     frame.loc[after_out, "special_day_status"] = "unknown"
     frame.loc[after_out, "special_day_reason"] = "at_or_after_reported_out_date"
 
-    trading_mask = frame["tradestatus"].map(lambda value: _bool01(value, field="tradestatus"))
-    frame["_trading"] = trading_mask
+    frame["_trading"] = frame["tradestatus"].map(
+        lambda value: _bool01(value, field="tradestatus")
+    )
     frame["_post_ipo_trading_rank"] = pd.NA
 
-    for code, idx in frame.groupby("code").groups.items():
+    for _code, idx in frame.groupby("code").groups.items():
         ordered = frame.loc[idx].sort_values("date")
-        valid = ordered["_trading"] & (ordered["date"] >= ordered["ipoDate"])
-        ranks = pd.Series(range(1, int(valid.sum()) + 1), index=ordered.index[valid], dtype="Int64")
-        frame.loc[ranks.index, "_post_ipo_trading_rank"] = ranks
+        trading = ordered[ordered["_trading"] & (ordered["date"] >= ordered["ipoDate"])]
+        if trading.empty:
+            continue
+        ipo_date = pd.Timestamp(ordered["ipoDate"].iloc[0]).normalize()
+        first_observed = pd.Timestamp(trading["date"].iloc[0]).normalize()
+        board = str(ordered["board"].iloc[0])
+        post_reform_no_limit_board = (
+            board == "STAR"
+            or (board == "CHINEXT" and ipo_date >= CHINEXT_REFORM_DATE)
+        )
+
+        if first_observed == ipo_date:
+            ranks = pd.Series(
+                range(1, len(trading) + 1),
+                index=trading.index,
+                dtype="Int64",
+            )
+            frame.loc[ranks.index, "_post_ipo_trading_rank"] = ranks
+        elif post_reform_no_limit_board and first_observed <= ipo_date + pd.Timedelta(days=IPO_WINDOW_UNCERTAINTY_DAYS):
+            uncertain = (
+                frame.index.isin(idx)
+                & frame["date"].between(
+                    first_observed,
+                    ipo_date + pd.Timedelta(days=IPO_WINDOW_UNCERTAINTY_DAYS),
+                    inclusive="both",
+                )
+            )
+            frame.loc[uncertain, "special_day_status"] = "unknown"
+            frame.loc[uncertain, "special_day_source"] = BAOSTOCK_BASIC_SOURCE + ";truncated_ipo_window"
+            frame.loc[uncertain, "special_day_reason"] = "ipo_window_not_fully_observed"
 
     ranks = pd.to_numeric(frame["_post_ipo_trading_rank"], errors="coerce")
     star_no_limit = (
