@@ -9,13 +9,14 @@ import tarfile
 
 from tech_sentiment.materialization_manifest import (
     build_materialization_manifest,
-    build_readiness_matrix,
     file_sha256,
     write_manifest,
 )
+from tech_sentiment.v4a_data_readiness import build_v4a_data_readiness
 
 
-SCHEMA_VERSION = "capital-pit-materialization-v4a"
+SCHEMA_VERSION = "capital-pit-materialization-v4a2"
+PUBLIC_COMPLETED_STATUS = "PUBLIC_MATERIALIZATION_COMPLETED"
 
 MANAGED_RELATIVE_PATHS = (
     "capital_input_qualification/trading_calendar.csv",
@@ -47,12 +48,31 @@ MANAGED_RELATIVE_PATHS = (
     "pit_evidence_materialization/szse_announcement_archive_evidence.csv",
     "pit_evidence_materialization/szse_announcement_archive_coverage.csv",
     "pit_evidence_materialization/szse_announcement_archive_errors.csv",
+    "pit_evidence_materialization/versioned_filing_facts.csv",
+    "pit_evidence_materialization/derived_pit_fundamental_trends.csv",
+    "pit_evidence_materialization/fundamental_state_evidence.csv",
+    "pit_evidence_materialization/fundamental_state_coverage.csv",
+    "pit_evidence_materialization/earnings_direction.csv",
+    "pit_evidence_materialization/earnings_direction_evidence.csv",
+    "pit_evidence_materialization/earnings_direction_coverage.csv",
+    "pit_evidence_materialization/pit_stock_prices.csv",
+    "pit_evidence_materialization/pit_stock_price_coverage.csv",
+    "pit_evidence_materialization/pit_stock_price_errors.csv",
+    "pit_evidence_materialization/trailing_valuation_rail.csv",
+    "pit_evidence_materialization/derived_pit_trailing_valuation.csv",
+    "pit_evidence_materialization/official_policy_regulatory_notice_archive.csv",
+    "pit_evidence_materialization/official_policy_regulatory_coverage.csv",
+    "pit_evidence_materialization/official_policy_regulatory_errors.csv",
+    "pit_evidence_materialization/major_negative_coverage_ledger.csv",
+    "pit_evidence_materialization/major_negative_review.csv",
+    "pit_evidence_materialization/pit_evidence_extended.csv",
+    "pit_evidence_materialization/derived_pit_materialization_manifest.json",
 )
 
 
-def _read_json(path: Path) -> dict[str, object] | None:
+def _read_json(path: Path) -> dict[str, object]:
     if not path.is_file():
-        return None
+        raise FileNotFoundError(path)
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError(f"expected JSON object: {path}")
@@ -67,10 +87,10 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
 
 
 def _managed_files(root: Path) -> list[Path]:
-    files = [root / relative for relative in MANAGED_RELATIVE_PATHS if (root / relative).is_file()]
-    if not files:
-        raise ValueError("no managed Capital/PIT files were materialized")
-    return files
+    missing = [relative for relative in MANAGED_RELATIVE_PATHS if not (root / relative).is_file()]
+    if missing:
+        raise ValueError(f"required V4-A materialization files missing: {missing}")
+    return [root / relative for relative in MANAGED_RELATIVE_PATHS]
 
 
 def _deterministic_tar(archive_path: Path, *, root: Path, files: list[Path]) -> None:
@@ -91,7 +111,7 @@ def _deterministic_tar(archive_path: Path, *, root: Path, files: list[Path]) -> 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Finalize immutable identities for manual Capital/PIT materialization outputs."
+        description="Finalize immutable public V4-A materialization identities; private repo grants qualification."
     )
     parser.add_argument("--output-root", default="output")
     parser.add_argument("--out-dir", default="output/materialization_identity")
@@ -102,23 +122,34 @@ def main() -> None:
     root = Path(args.output_root)
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-
     capital_dir = root / "capital_input_qualification"
     financing_dir = root / "financing_materialization"
     pit_dir = root / "pit_evidence_materialization"
     scope_dir = root / "pit_symbol_scope"
 
     capital_summary = _read_json(capital_dir / "qualification_summary.json")
-    if capital_summary is None:
-        raise SystemExit("capital qualification summary is required")
     financing_summary = _read_json(financing_dir / "financing_manifest.json")
-    pit_summary = _read_json(pit_dir / "pit_materialization_manifest.json")
+    pit_summary = _read_json(pit_dir / "derived_pit_materialization_manifest.json")
+    issuer_summary = _read_json(pit_dir / "pit_materialization_manifest.json")
     scope_summary = _read_json(scope_dir / "capital_pit_symbol_scope.json")
 
-    readiness = build_readiness_matrix(
+    readiness = build_v4a_data_readiness(
         capital_summary=capital_summary,
         financing_summary=financing_summary,
         pit_summary=pit_summary,
+    )
+    required_context_items = (
+        "588000_long_flow",
+        "sse_szse_a_shares_turnover",
+        "fundamental_pit",
+        "earnings_pit",
+        "valuation_pit",
+        "major_event_pit",
+        "major_negative_exclusion",
+        "clean_forward_external_evidence",
+    )
+    data_ready_for_private_verification = all(
+        readiness.get(item) == "QUALIFIED_INPUT" for item in required_context_items
     )
 
     coverage_matrix: dict[str, object] = {
@@ -137,11 +168,15 @@ def main() -> None:
             "scope": capital_summary.get("turnover_scope"),
         },
         "financing": {
-            "bilateral_coverage": (financing_summary or {}).get("bilateral_coverage"),
-            "qualification_state": (financing_summary or {}).get("qualification_state"),
+            "bilateral_coverage": financing_summary.get("bilateral_coverage"),
+            "qualification_state": financing_summary.get("qualification_state"),
         },
-        "pit_symbol_scope": scope_summary or {},
-        "pit_sources": (pit_summary or {}).get("source_summaries", {}),
+        "pit_symbol_scope": scope_summary,
+        "issuer_pit_sources": issuer_summary.get("source_summaries", {}),
+        "fundamental": pit_summary.get("fundamental_coverage", {}),
+        "valuation": pit_summary.get("valuation_coverage", {}),
+        "policy": pit_summary.get("policy_materialization", {}),
+        "major_negative": pit_summary.get("major_negative_summary", {}),
     }
     provenance_matrix: dict[str, object] = {
         "capital_market": {
@@ -150,6 +185,7 @@ def main() -> None:
             "interpolation": False,
             "forward_fill": False,
             "backfill": False,
+            "checkpoint_mode": capital_summary.get("checkpoint_mode"),
         },
         "financing": {
             "sources": ["SSE_MARGIN_SUMMARY", "SZSE_MARGIN_SUMMARY"],
@@ -157,34 +193,21 @@ def main() -> None:
             "szse_raw_unit": "CNY_100M",
             "canonical_unit": "CNY",
             "research_input_only": True,
+            "checkpoint_mode": financing_summary.get("checkpoint_mode"),
         },
         "pit": {
-            "source_states": (pit_summary or {}).get("source_states", {}),
-            "audit": (pit_summary or {}).get("pit_audit", {}),
+            "source_states": pit_summary.get("source_states", {}),
+            "audit": pit_summary.get("pit_audit", {}),
+            "fundamental_state_contract": pit_summary.get("fundamental_state_contract", {}),
             "major_negative_event_exclusion_complete": bool(
-                (pit_summary or {}).get("major_negative_event_exclusion_complete")
+                pit_summary.get("major_negative_event_exclusion_complete")
             ),
             "hindsight_backfill": False,
             "future_prices_or_returns_used": False,
+            "parameter_search_run": False,
         },
     }
 
-    required_context_items = (
-        "588000_long_flow",
-        "sse_szse_a_shares_turnover",
-        "fundamental_pit",
-        "earnings_pit",
-        "valuation_pit",
-        "major_event_pit",
-        "major_negative_exclusion",
-        "clean_forward_external_evidence",
-    )
-    context_gate_met = all(readiness.get(item) == "QUALIFIED_INPUT" for item in required_context_items)
-    overall_status = (
-        "CAPITAL_PIT_HISTORICAL_INPUTS_QUALIFIED"
-        if context_gate_met
-        else "CAPITAL_PIT_HISTORICAL_INPUTS_PARTIAL / FAIL_CLOSED"
-    )
     report: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -192,11 +215,14 @@ def main() -> None:
         "source_commit": str(args.source_commit or "").strip() or None,
         "target_start": capital_summary.get("start_date"),
         "target_end": capital_summary.get("end_date"),
-        "overall_status": overall_status,
+        "overall_status": PUBLIC_COMPLETED_STATUS,
         "readiness_matrix": readiness,
         "coverage_matrix": coverage_matrix,
         "provenance_matrix": provenance_matrix,
-        "v4c_context_research_gate_met": context_gate_met,
+        "data_ready_for_private_verification": data_ready_for_private_verification,
+        "private_qualification_required": True,
+        "public_repo_grants_historical_qualification": False,
+        "v4c_context_research_gate_met": False,
         "research_run": False,
         "evidence_qualification_promotion_run": False,
         "production_run": False,
@@ -214,20 +240,21 @@ def main() -> None:
         "SSE_MARGIN_SUMMARY",
         "SZSE_MARGIN_SUMMARY",
     ]
-    source_states = (pit_summary or {}).get("source_states")
-    if isinstance(source_states, dict):
-        source_identities.extend(str(value) for value in source_states.keys())
+    raw_source_states = pit_summary.get("source_states")
+    if isinstance(raw_source_states, dict):
+        source_identities.extend(str(value) for value in raw_source_states.keys())
 
     query_identities: dict[str, object] = {
-        "pit_symbol_scope_identity": (scope_summary or {}).get("scope_identity"),
+        "pit_symbol_scope_identity": scope_summary.get("scope_identity"),
+        "financing_source_query_identity": financing_summary.get("source_query_identity"),
+        "issuer_pit_source_summaries": issuer_summary.get("source_summaries"),
+        "fundamental_contract_id": (
+            dict(pit_summary.get("fundamental_state_contract") or {}).get("contract_id")
+            if isinstance(pit_summary.get("fundamental_state_contract"), dict)
+            else None
+        ),
+        "pit_audit": pit_summary.get("pit_audit"),
     }
-    if financing_summary is not None:
-        query_identities["financing_source_query_identity"] = financing_summary.get(
-            "source_query_identity"
-        )
-    if pit_summary is not None:
-        query_identities["pit_source_summaries"] = pit_summary.get("source_summaries")
-        query_identities["pit_audit"] = pit_summary.get("pit_audit")
 
     manifest = build_materialization_manifest(
         schema_version=SCHEMA_VERSION,
