@@ -27,19 +27,27 @@ def test_manifest_is_deterministic_and_hashes_materialized_files(tmp_path: Path)
         readiness_matrix=readiness,
         source_identities=["SZSE", "SSE"],
         query_identities={"q": "abc"},
+        workflow_run_id="123",
+        source_commit="abc123",
+        coverage_matrix={"turnover": {"coverage": 1.0}},
+        provenance_matrix={"turnover": {"no_fill": True}},
     )
     first = build_materialization_manifest(**kwargs)
     second = build_materialization_manifest(**kwargs)
     assert first == second
     assert [row["path"] for row in first["files"]] == ["a.csv", "b.json"]
     assert first["files"][0]["sha256"] == file_sha256(a)
+    assert first["workflow_run_id"] == "123"
+    assert first["source_commit"] == "abc123"
+    assert first["coverage_matrix"]["turnover"]["coverage"] == 1.0
+    assert first["provenance_matrix"]["turnover"]["no_fill"] is True
     assert len(first["manifest_sha256"]) == 64
     assert first["production_or_model_output"] is False
     assert first["ready_manual_only"] is False
     assert first["schedule_allowed"] is False
 
 
-def test_readiness_requires_complete_financing_and_does_not_overqualify_cninfo() -> None:
+def test_readiness_requires_every_registered_pit_source_and_does_not_overqualify() -> None:
     capital = {
         "etf_readiness_state": "PARTIAL_COVERAGE",
         "turnover_readiness_state": "QUALIFIED_INPUT",
@@ -49,8 +57,23 @@ def test_readiness_requires_complete_financing_and_does_not_overqualify_cninfo()
         "bilateral_coverage": 0.99,
     }
     pit = {
-        "failed_symbol_queries": 0,
-        "materialized_records": 100,
+        "source_states": {
+            "CNINFO_ANNOUNCEMENT_ARCHIVE": "QUALIFIED_INPUT",
+            "SSE_ANNOUNCEMENT_ARCHIVE": "QUALIFIED_INPUT",
+            "SZSE_ANNOUNCEMENT_ARCHIVE": "QUALIFIED_INPUT",
+            "DERIVED_PIT_FUNDAMENTAL_TRENDS": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
+            "DERIVED_PIT_TRAILING_VALUATION": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
+            "OFFICIAL_POLICY_AND_REGULATORY_NOTICE_ARCHIVE": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
+        },
+        "major_negative_event_exclusion_complete": False,
+        "pit_audit": {
+            "required_fields_complete": True,
+            "no_future_evidence": True,
+            "duplicate_identity_free": True,
+            "provenance_complete": True,
+            "prefix_replay_filter_equality": True,
+            "revision_identity_complete": True,
+        },
     }
     matrix = build_readiness_matrix(
         capital_summary=capital,
@@ -60,10 +83,10 @@ def test_readiness_requires_complete_financing_and_does_not_overqualify_cninfo()
     assert matrix["588000_long_flow"] == "PARTIAL_COVERAGE"
     assert matrix["sse_szse_a_shares_turnover"] == "QUALIFIED_INPUT"
     assert matrix["financing"] == "PARTIAL_COVERAGE"
-    assert matrix["fundamental_pit"] == "PARTIAL_COVERAGE"
-    assert matrix["earnings_pit"] == "PARTIAL_COVERAGE"
+    assert matrix["fundamental_pit"] == "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED"
+    assert matrix["earnings_pit"] == "QUALIFIED_INPUT"
     assert matrix["valuation_pit"] == "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED"
-    assert matrix["major_event_pit"] == "PARTIAL_COVERAGE"
+    assert matrix["major_event_pit"] == "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED"
     assert matrix["major_negative_exclusion"] == "DATA_INSUFFICIENT"
     assert matrix["clean_forward_external_evidence"] == "DATA_INSUFFICIENT"
 
