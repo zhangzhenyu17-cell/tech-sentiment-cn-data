@@ -69,10 +69,69 @@ def _parse_document_identity(url: object) -> tuple[str, str]:
     return announcement, org_id
 
 
+def _real_trading_calendar(trading_dates: Iterable[object]) -> pd.DatetimeIndex:
+    calendar = (
+        pd.DatetimeIndex(pd.to_datetime(list(trading_dates), errors="raise"))
+        .normalize()
+        .sort_values()
+        .unique()
+    )
+    if not len(calendar):
+        raise ValueError("real trading calendar cannot be empty")
+    return calendar
+
+
+def _publication_has_precise_clock(value: object) -> bool:
+    return bool(re.search(r"(?:^|\s)\d{1,2}:\d{2}(?::\d{2})?(?:\s|$)", str(value).strip()))
+
+
+def _market_available_date(
+    publication_value: object,
+    *,
+    trading_dates: pd.DatetimeIndex,
+) -> tuple[pd.Timestamp, str]:
+    """Map a publication timestamp to the first close-based market date that may use it.
+
+    A precise timestamp at or before 15:00 on a real trading day may be used on
+    that date. Date-only disclosures, after-close disclosures and non-trading
+    day disclosures are conservatively delayed to the next real trading day.
+    No next trading day means fail closed rather than same-day backfill.
+    """
+
+    publication = pd.Timestamp(pd.to_datetime(publication_value, errors="raise"))
+    publication_date = publication.normalize()
+    precise = _publication_has_precise_clock(publication_value)
+    is_trade_day = publication_date in trading_dates
+    at_or_before_close = precise and (
+        publication.hour < 15
+        or (
+            publication.hour == 15
+            and publication.minute == 0
+            and publication.second == 0
+        )
+    )
+    if is_trade_day and at_or_before_close:
+        return publication_date, "PRE_OR_AT_CLOSE_TIMESTAMP_SAME_TRADE_DATE"
+
+    later = trading_dates[trading_dates > publication_date]
+    if not len(later):
+        raise ValueError(
+            "real trading calendar lacks next market date for date-only, after-close, or non-trading-day publication"
+        )
+    reason = (
+        "DATE_ONLY_NEXT_TRADE_DATE"
+        if not precise
+        else "AFTER_CLOSE_NEXT_TRADE_DATE"
+        if is_trade_day
+        else "NON_TRADING_DAY_NEXT_TRADE_DATE"
+    )
+    return pd.Timestamp(later[0]).normalize(), reason
+
+
 def classify_cninfo_title(title: object) -> str:
     """Classify document type from the disclosure title only.
 
-    This is a public document taxonomy, not a market-direction label.  No price,
+    This is a public document taxonomy, not a market-direction label. No price,
     return, model output, or hindsight information is used.
     """
 
@@ -121,6 +180,7 @@ def normalize_cninfo_announcements(
     symbol: str,
     query_start: object,
     query_end: object,
+    trading_dates: Iterable[object],
     captured_at: object | None = None,
 ) -> pd.DataFrame:
     required = {"代码", "简称", "公告标题", "公告时间", "公告链接"}
@@ -132,8 +192,12 @@ def normalize_cninfo_announcements(
     x["代码"] = x["代码"].astype(str).str.extract(r"(\d+)", expand=False).str.zfill(6)
     x = x[x["代码"].eq(str(symbol).zfill(6))].copy()
     if x.empty:
-        return pd.DataFrame(columns=list(REQUIRED_PIT_COLUMNS) + ["title", "source_url_identity"])
+        return pd.DataFrame(
+            columns=list(REQUIRED_PIT_COLUMNS)
+            + ["title", "source_url_identity", "captured_at_utc"]
+        )
 
+    calendar = _real_trading_calendar(trading_dates)
     captured = pd.Timestamp(captured_at or datetime.now(timezone.utc))
     if captured.tzinfo is None:
         captured = captured.tz_localize("UTC")
@@ -146,8 +210,11 @@ def normalize_cninfo_announcements(
 
     rows: list[dict[str, object]] = []
     for _, row in x.iterrows():
-        available_ts = pd.to_datetime(row["公告时间"], errors="raise")
-        available_date = pd.Timestamp(available_ts).normalize()
+        publication_ts = pd.Timestamp(pd.to_datetime(row["公告时间"], errors="raise"))
+        event_date = publication_ts.normalize()
+        available_date, availability_rule = _market_available_date(
+            row["公告时间"], trading_dates=calendar
+        )
         document_id, org_id = _parse_document_identity(row["公告链接"])
         title = re.sub(r"<[^>]+>", "", str(row["公告标题"])).strip()
         evidence_type = classify_cninfo_title(title)
@@ -162,6 +229,9 @@ def normalize_cninfo_announcements(
             "announcement_id": document_id,
             "org_id": org_id,
             "event_date_semantics": "PUBLICATION_LEVEL_EVENT_DATE",
+            "evidence_available_date_semantics": "FIRST_CLOSE_BASED_REAL_TRADING_DATE_KNOWABLE",
+            "availability_rule": availability_rule,
+            "publication_clock_precise": _publication_has_precise_clock(row["公告时间"]),
             "title_taxonomy_only": True,
         }
         ingestion_identity = _stable_hash(
@@ -169,7 +239,8 @@ def normalize_cninfo_announcements(
                 "entity_id": entity_id,
                 "document_id": document_id,
                 "title": title,
-                "available": available_date.isoformat(),
+                "event_date": event_date.isoformat(),
+                "evidence_available_date": available_date.isoformat(),
                 "source": CNINFO_SOURCE_ID,
             }
         )
@@ -178,7 +249,7 @@ def normalize_cninfo_announcements(
                 "evidence_id": f"cninfo:{document_id}",
                 "entity_id": entity_id,
                 "evidence_type": evidence_type,
-                "event_date": available_date,
+                "event_date": event_date,
                 "evidence_available_date": available_date,
                 "source_identity": CNINFO_SOURCE_ID,
                 "provider": CNINFO_PROVIDER,
@@ -236,6 +307,7 @@ def materialize_cninfo_archive(
     *,
     start_date: object,
     end_date: object,
+    trading_dates: Iterable[object],
     fetcher: Callable[..., pd.DataFrame] | None = None,
 ) -> PitMaterializationResult:
     if fetcher is None:
@@ -246,6 +318,7 @@ def materialize_cninfo_archive(
     end = pd.Timestamp(end_date).normalize()
     if end < start:
         raise ValueError("end_date must not precede start_date")
+    calendar = _real_trading_calendar(trading_dates)
     captured_at = datetime.now(timezone.utc)
     parts: list[pd.DataFrame] = []
     coverage_rows: list[dict[str, object]] = []
@@ -270,6 +343,7 @@ def materialize_cninfo_archive(
                 symbol=symbol,
                 query_start=start,
                 query_end=end,
+                trading_dates=calendar,
                 captured_at=captured_at,
             )
             if len(normalized):
@@ -308,7 +382,10 @@ def materialize_cninfo_archive(
     records = (
         validate_materialized_pit_records(pd.concat(parts, ignore_index=True, sort=False))
         if parts
-        else pd.DataFrame(columns=list(REQUIRED_PIT_COLUMNS) + ["title", "source_url_identity", "captured_at_utc"])
+        else pd.DataFrame(
+            columns=list(REQUIRED_PIT_COLUMNS)
+            + ["title", "source_url_identity", "captured_at_utc"]
+        )
     )
     coverage = pd.DataFrame(coverage_rows)
     summary = {
@@ -323,6 +400,7 @@ def materialize_cninfo_archive(
         "failed_symbol_queries": int(coverage["query_status"].eq("FAILED").sum()),
         "materialized_records": int(len(records)),
         "captured_at_utc": captured_at.isoformat(),
+        "market_date_alignment": "REAL_TRADING_CALENDAR_CLOSE_BASED",
         "materialization_identity": _stable_hash(
             {
                 "source": CNINFO_SOURCE_ID,
@@ -330,6 +408,11 @@ def materialize_cninfo_archive(
                 "end": str(end.date()),
                 "symbols": unique_symbols,
                 "record_ids": sorted(records["evidence_id"].astype(str).tolist()) if len(records) else [],
+                "available_dates": sorted(
+                    pd.to_datetime(records["evidence_available_date"]).dt.strftime("%Y-%m-%d").tolist()
+                )
+                if len(records)
+                else [],
             }
         ),
         "search_results_are_not_canonical_evidence": True,
