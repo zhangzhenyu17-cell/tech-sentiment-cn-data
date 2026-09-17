@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from tech_sentiment.canonical_materialization import canonicalize_metadata
 from tech_sentiment.earnings_materialization import materialize_cninfo_earnings_directions
 from tech_sentiment.filing_materialization import materialize_versioned_filing_facts
 from tech_sentiment.fundamental_pit_state import materialize_fundamental_state_evidence
@@ -332,7 +333,7 @@ def main() -> None:
     )
 
     earnings_state = str(earnings.summary.get("readiness_state") or "DATA_INSUFFICIENT")
-    summary = {
+    summary_with_runtime = {
         "schema_version": SCHEMA_VERSION,
         "status": "PUBLIC_PIT_MATERIALIZATION_COMPLETED",
         "start_date": str(target_start.date()),
@@ -360,6 +361,9 @@ def main() -> None:
         "holdout_run": False,
         "production_run": False,
     }
+    summary = canonicalize_metadata(summary_with_runtime)
+    if not isinstance(summary, dict):
+        raise ValueError("derived PIT canonical summary must be a mapping")
 
     filings.facts.to_csv(out / "versioned_filing_facts.csv", index=False)
     trend_evidence.to_csv(out / "derived_pit_fundamental_trends.csv", index=False)
