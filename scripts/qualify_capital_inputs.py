@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from tech_sentiment.canonical_materialization import canonicalize_metadata
 from tech_sentiment.capital_input_data import qualify_trailing_etf_coverage
 from tech_sentiment.index_price import fetch_index_history
 from tech_sentiment.resumable_capital import materialize_capital_monthly
@@ -92,7 +93,7 @@ def main() -> None:
         if len(dates) and len(turnover.combined) == len(dates) and turnover.errors.empty
         else "PARTIAL_COVERAGE" if len(turnover.combined) else "DATA_INSUFFICIENT"
     )
-    summary = {
+    summary_with_runtime = {
         "status": "PUBLIC_MATERIALIZATION_STAGE_COMPLETED",
         "start_date": str(dates.min().date()),
         "end_date": str(dates.max().date()),
@@ -118,10 +119,24 @@ def main() -> None:
         "production_or_model_output": False,
         "predictive_research_run": False,
     }
+    summary = canonicalize_metadata(summary_with_runtime)
+    assert isinstance(summary, dict)
     (out / "qualification_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "canonical_summary": summary,
+                "runtime_diagnostics": {
+                    "checkpoint_resumed_chunks": int(chunked.resumed_chunks),
+                    "checkpoint_executed_chunks": int(chunked.executed_chunks),
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
