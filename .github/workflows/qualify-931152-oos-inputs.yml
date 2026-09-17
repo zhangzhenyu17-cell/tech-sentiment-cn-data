@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: qualify-931152-oos-inputs
@@ -32,11 +33,45 @@ jobs:
           pytest -q
 
       - name: Restore same-run public input checkpoint
+        id: restore_same_run_checkpoint
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: 931152-oos-input-checkpoint
           path: oos_input_artifact
+
+      - name: Find latest prior-run public input checkpoint
+        id: prior_checkpoint
+        if: steps.restore_same_run_checkpoint.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="$(
+            gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "/repos/${GITHUB_REPOSITORY}/actions/artifacts?name=931152-oos-input-checkpoint&per_page=100" \
+              --jq ".artifacts[] | select(.expired == false and .workflow_run.id != ${GITHUB_RUN_ID} and .workflow_run.head_branch == \"main\") | .workflow_run.id" \
+              | head -n 1
+          )"
+          if [ -n "$run_id" ]; then
+            echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+            echo "Found prior checkpoint in workflow run $run_id"
+          else
+            echo "No prior non-expired checkpoint artifact found"
+          fi
+
+      - name: Restore prior-run public input checkpoint
+        if: steps.restore_same_run_checkpoint.outcome != 'success' && steps.prior_checkpoint.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: 931152-oos-input-checkpoint
+          path: oos_input_artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.prior_checkpoint.outputs.run_id }}
 
       - name: Build outcome-free 931152 OOS input package
         run: |
