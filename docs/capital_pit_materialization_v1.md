@@ -21,7 +21,7 @@
 
 ## 3. Financing
 
-新增 `financing_materialization.py` 和 manual CLI：
+`financing_materialization.py` 与 manual CLI 保持：
 
 - SSE official range query，raw unit 固定 `CNY`；
 - SZSE official per-trading-day query，raw unit 固定 `CNY_100M`；
@@ -33,9 +33,7 @@
 
 ## 4. PIT issuer disclosure materialization
 
-新增 CNINFO official-designated disclosure materializer。
-
-保存字段包括：
+CNINFO official-designated disclosure materializer 保存字段包括：
 
 - `evidence_id`
 - `entity_id`
@@ -50,9 +48,21 @@
 - `ingestion_identity`
 - `availability_state`
 
-当前公开 adapter 只对公告标题做文档类型 taxonomy，不做市场方向判断，不使用价格、未来收益或模型结果反推原因。
+公开 adapter 只对公告标题做文档类型 taxonomy，不做市场方向判断，不使用价格、未来收益或模型结果反推原因。
 
-CNINFO 公告层的 `event_date` 当前严格采用 publication-level event date；若以后解析报告期、政策生效日或临床事件真实发生日，应作为独立字段/版本增加，不得重写既有记录。
+CNINFO 公告层的 `event_date` 保持 publication-level event date；若以后解析报告期、政策生效日或临床事件真实发生日，应作为独立字段/版本增加，不得重写既有记录。
+
+### Close-based `evidence_available_date`
+
+PIT materialization 必须消费与 Capital qualification 同一轮产生的**真实交易日历**，不能用自然日推断。
+
+- 若上游 `公告时间` 含可证明的精确时刻，且发布时间位于真实交易日 **15:00 或之前**，该交易日可作为 `evidence_available_date`；
+- 若公告在收盘后发布，则推迟到下一真实交易日；
+- 若上游只提供日期、无法证明盘中具体时刻，则保守推迟到下一真实交易日；
+- 若公告发生在非交易日，则推迟到下一真实交易日；
+- 若提供的交易日历没有下一交易日，则 fail closed，不得把信息回填进公告日期。
+
+因此历史 replay 的可知性由 `evidence_available_date` 决定，而不是简单把公告日期等同于研究可用日期。
 
 ## 5. Source coverage 与 major-negative exclusion
 
@@ -62,12 +72,15 @@ CNINFO 公告层的 `event_date` 当前严格采用 publication-level event date
 
 当前未 materialize 的来源（例如独立 SSE/SZSE announcement archive、official policy/regulatory archive 的完整历史 rail）不得因 CNINFO 成功而被推断为已覆盖。
 
-## 6. Replay / revision semantics
+## 6. Append-only / replay / revision semantics
 
 - CNINFO `announcementId` 固定为 document identity；
 - 每次 capture 生成 ingestion/materialization identity；
 - later correction/replacement 必须保留为新 document/revision，不能覆盖 earlier record；
-- private replay 必须继续执行 `evidence_available_date <= market_date`；
+- 重复追加完全相同的 `evidence_id` 是幂等 replay；
+- 同一 `evidence_id` 的历史字段发生变化必须 fail closed；
+- as-of replay 只能读取 `evidence_available_date <= market_date` 的记录；
+- prefix replay equality 用于证明后来追加的证据不能改变较早 market-date 的可见前缀；
 - ordinary web search 只能帮助定位 canonical source，不是 canonical evidence。
 
 ## 7. Workflow
@@ -80,6 +93,9 @@ CNINFO 公告层的 `event_date` 当前严格采用 publication-level event date
 
 1. ETF-share / turnover qualification artifact；
 2. financing materialization artifact；
-3. 可选 CNINFO PIT evidence artifact（需要显式传入 `pit_symbols`）。
+3. 可选 CNINFO PIT evidence artifact（需要显式传入 `pit_symbols`）；
+4. immutable materialization manifest + readiness matrix。
+
+CNINFO PIT step 显式读取 `output/capital_input_qualification/trading_calendar.csv`，以保证 market-date alignment 与同一轮 Capital 输入完全一致。
 
 没有新增 schedule、workflow_run、push 或 pull_request 数据触发。
