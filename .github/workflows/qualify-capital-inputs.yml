@@ -4,12 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       start_date:
-        description: "Start date for public input qualification"
+        description: "Target start date for Capital/PIT materialization"
         required: true
-        default: "2022-01-01"
+        default: "2022-01-04"
         type: string
       end_date:
         description: "Optional end date; blank uses current Asia/Shanghai date"
+        required: false
+        default: ""
+        type: string
+      pit_entities:
+        description: "Optional comma-separated public issuer ids (e.g. 600276.SH,000001.SZ); blank does not invent a PIT universe"
         required: false
         default: ""
         type: string
@@ -37,18 +42,21 @@ jobs:
           python scripts/audit_public_tree.py
           pytest -q
 
-      - name: Run manual public input qualification
+      - name: Materialize public Capital/PIT inputs
         shell: bash
         run: |
-          args=(--start-date "${{ inputs.start_date }}" --out-dir output/capital_input_qualification)
+          args=(--start-date "${{ inputs.start_date }}" --out-dir output/capital_pit_materialization)
           if [[ -n "${{ inputs.end_date }}" ]]; then
             args+=(--end-date "${{ inputs.end_date }}")
           fi
-          python scripts/qualify_capital_inputs.py "${args[@]}"
+          if [[ -n "${{ inputs.pit_entities }}" ]]; then
+            args+=(--pit-entities "${{ inputs.pit_entities }}")
+          fi
+          python scripts/materialize_capital_pit_inputs.py "${args[@]}"
 
-      - name: Upload diagnostic artifact
+      - name: Upload immutable diagnostic artifact
         uses: actions/upload-artifact@v4
         with:
-          name: capital-input-qualification
-          path: output/capital_input_qualification
+          name: capital-pit-materialization
+          path: output/capital_pit_materialization
           if-no-files-found: error
