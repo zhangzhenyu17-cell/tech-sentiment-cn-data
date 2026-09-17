@@ -78,6 +78,19 @@ def _concat(parts: list[pd.DataFrame], *, sort: tuple[str, ...]) -> pd.DataFrame
     return out.sort_values(available_sort).reset_index(drop=True) if available_sort else out.reset_index(drop=True)
 
 
+def _normalize_etf_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame.copy()
+    if "date" in out.columns:
+        out["date"] = pd.to_datetime(out["date"], errors="raise").dt.normalize()
+    if "evidence_available_date" in out.columns:
+        out["evidence_available_date"] = pd.to_datetime(
+            out["evidence_available_date"], errors="raise"
+        ).dt.normalize()
+    if "fund_code" in out.columns:
+        out["fund_code"] = out["fund_code"].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(6)
+    return out
+
+
 def materialize_capital_monthly(
     *,
     trading_dates: Iterable[object],
@@ -128,7 +141,7 @@ def materialize_capital_monthly(
                 errors=loaded_etf.frames["errors"],
             )
             resumed += 1
-        etf_data_parts.append(etf_result.data)
+        etf_data_parts.append(_normalize_etf_frame(etf_result.data))
         etf_error_parts.append(etf_result.errors)
 
         turnover_identity = _identity(
@@ -169,7 +182,7 @@ def materialize_capital_monthly(
         turnover_error_parts.append(turnover_result.errors)
 
     etf = EtfShareFetchResult(
-        data=_concat(etf_data_parts, sort=("date", "fund_code")),
+        data=_normalize_etf_frame(_concat(etf_data_parts, sort=("date", "fund_code"))),
         errors=_concat(etf_error_parts, sort=("date",)),
     )
     turnover = ExchangeTurnoverFetchResult(
