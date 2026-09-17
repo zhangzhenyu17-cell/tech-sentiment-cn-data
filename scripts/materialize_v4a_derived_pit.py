@@ -132,11 +132,10 @@ def _valuation_readiness(
     target = rail[
         pd.to_datetime(rail["date"]).dt.normalize().between(target_start, target_end)
     ].copy()
-    target = target.sort_values(["entity_id", "date"])
-    target["entity_row"] = target.groupby("entity_id").cumcount()
-    eligible = target[target["entity_row"].ge(20)].copy()
+    eligible = target[target["valuation_reference_date_20d"].notna()].copy()
     usable = eligible[
         pd.to_numeric(eligible["trailing_pe"], errors="coerce").notna()
+        & pd.to_numeric(eligible["trailing_pe_20d_reference"], errors="coerce").notna()
         & pd.to_numeric(eligible["valuation_change_20d"], errors="coerce").notna()
         & eligible["denominator_document_id"].notna()
     ]
@@ -153,7 +152,8 @@ def _valuation_readiness(
         "eligible_rows": eligible_rows,
         "usable_rows": usable_rows,
         "coverage": coverage,
-        "eligibility_rule": "PER_ENTITY_TARGET_WINDOW_ROWS_AFTER_FIRST_20_OBSERVATIONS",
+        "eligibility_rule": "TARGET_ROWS_WITH_EXACT_REAL_TRADING_CALENDAR_T_MINUS_20_REFERENCE_DATE",
+        "missing_endpoint_fill": False,
     }
 
 
@@ -254,9 +254,12 @@ def main() -> None:
     earnings_evidence = _canonicalize_provenance(earnings.evidence)
     earnings_negative = _earnings_down_events(earnings_evidence)
 
+    # Filing warmup is required for TTM denominators; stock-price warmup is not.
+    # The valuation target rail begins on the frozen target_start and uses exact
+    # target-window market dates, avoiding two years of irrelevant price fetches.
     prices = materialize_pit_stock_prices(
         symbols,
-        start_date=query_warmup_start,
+        start_date=target_start,
         end_date=target_end,
         source_commit=args.source_commit,
         checkpoint_dir=checkpoint_root / "prices",
@@ -264,6 +267,7 @@ def main() -> None:
     valuation_rail = build_trailing_valuation_rail(
         filing_facts=filings.facts,
         stock_prices=prices.prices,
+        trading_dates=trading_dates,
     )
     valuation_state, valuation_coverage = _valuation_readiness(
         valuation_rail,
