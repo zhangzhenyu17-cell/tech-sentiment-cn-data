@@ -184,12 +184,15 @@ def main() -> None:
                         szse_all = pd.concat([szse_all, szse_rows], ignore_index=True, sort=False)
 
         if len(result.errors):
-            keep = []
+            keep: list[bool] = []
             for _, row in result.errors.iterrows():
                 exchange = str(row["exchange"])
                 date = str(row["date"])
                 if exchange == "SSE":
-                    keep.append(bool(initial_sse_missing)) if date == "RANGE" else keep.append(date in initial_sse_missing)
+                    if date == "RANGE":
+                        keep.append(bool(initial_sse_missing))
+                    else:
+                        keep.append(date in initial_sse_missing)
                 elif exchange == "SZSE":
                     keep.append(date in initial_szse_missing)
                 else:
@@ -200,6 +203,10 @@ def main() -> None:
 
     sse = _filter_dates(sse_all, wanted_dates)
     szse = _filter_dates(szse_all, wanted_dates)
+    if len(sse):
+        sse["date"] = pd.to_datetime(sse["date"], errors="raise").dt.normalize()
+    if len(szse):
+        szse["date"] = pd.to_datetime(szse["date"], errors="raise").dt.normalize()
     raw = pd.DataFrame({"date": dates})
     raw = raw.merge(sse, on="date", how="left", validate="one_to_one")
     raw = raw.merge(szse, on="date", how="left", validate="one_to_one")
