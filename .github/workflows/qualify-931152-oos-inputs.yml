@@ -54,6 +54,33 @@ jobs:
           sha256sum 931152_oos_inputs_v1.tar.gz | tee 931152_oos_inputs_v1.sha256
           sha256sum -c 931152_oos_inputs_v1.sha256
 
+      - name: Print public failure diagnostics
+        if: failure()
+        run: |
+          for file in \
+            oos_input_artifact/eastmoney_fetch_audit.jsonl \
+            oos_input_artifact/sina_fetch_audit.jsonl \
+            oos_input_artifact/stock_download_errors.csv \
+            oos_input_artifact/baostock_fetch_failures.jsonl; do
+            if [ -f "$file" ]; then
+              echo "===== $file ====="
+              tail -n 40 "$file"
+            fi
+          done
+
+      - name: Upload public failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 931152-oos-input-failure-diagnostics
+          path: |
+            oos_input_artifact/eastmoney_fetch_audit.jsonl
+            oos_input_artifact/sina_fetch_audit.jsonl
+            oos_input_artifact/stock_download_errors.csv
+            oos_input_artifact/baostock_fetch_failures.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload immutable qualification artifact
         uses: actions/upload-artifact@v4
         with:

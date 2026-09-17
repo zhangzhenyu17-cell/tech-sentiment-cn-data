@@ -139,7 +139,6 @@ def parse_membership_intervals(
                 response_sha256=response_sha256,
             )
         )
-    # A duplicate rendering of the same row must not create duplicate evidence.
     dedup = {
         (item.start_date, item.end_date, item.index_code): item
         for item in out
@@ -152,14 +151,7 @@ def summarize_interval_coverage(
     *,
     candidate_symbols: Iterable[str],
 ) -> dict[str, int]:
-    """Summarize interval evidence without counting empty fetches as evidence.
-
-    ``intervals_by_symbol`` deliberately contains successful Sina page fetches
-    even when a stock has no 931152 row.  Reporting ``len(mapping)`` would
-    therefore overstate evidence coverage.  This helper counts only non-empty
-    interval lists and is kept network-free so the reporting contract can be
-    regression-tested without repeating the one-shot research scrape.
-    """
+    """Summarize interval evidence without counting empty fetches as evidence."""
 
     candidates = set(candidate_symbols)
     with_intervals = {
@@ -179,6 +171,59 @@ def summarize_interval_coverage(
     }
 
 
+def _decode_related_page(raw: bytes, charset: str | None) -> str:
+    if not raw:
+        raise ValueError("Sina returned an empty related-info page")
+    for encoding in (charset, "gb18030", "utf-8"):
+        if not encoding:
+            continue
+        try:
+            return raw.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def _validate_related_page(text: str, *, symbol: str) -> None:
+    """Reject WAF/challenge/error bodies before they can look like no-membership evidence."""
+
+    compact = _clean_text(re.sub(r"<[^>]+>", " ", text))
+    markers = ("所属指数", "指数代码")
+    if not all(marker in compact for marker in markers):
+        raise ValueError(f"Sina related-info page failed semantic validation for {symbol}")
+    if symbol not in compact:
+        raise ValueError(f"Sina related-info page does not identify requested symbol {symbol}")
+
+
+def _fetch_related_page_browser(url: str, *, timeout: int) -> tuple[bytes, str | None]:
+    """Use a browser-fingerprint transport against the same public Sina URL.
+
+    This is transport fallback only. The response is subjected to the exact same
+    semantic validation and parsing as the urllib path.
+    """
+
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError as exc:  # pragma: no cover - installed by the data extra in workflow
+        raise RuntimeError("curl_cffi is required for Sina browser transport fallback") from exc
+
+    response = curl_requests.get(
+        url,
+        headers={
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Referer": "https://finance.sina.com.cn/",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+        },
+        impersonate="chrome",
+        timeout=timeout,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+    raw = bytes(response.content)
+    charset = getattr(response, "encoding", None)
+    return raw, charset
+
+
 def fetch_related_page(
     symbol: str,
     *,
@@ -186,18 +231,24 @@ def fetch_related_page(
     retries: int = 4,
     retry_backoff_seconds: float = 1.0,
     sleep_fn: Callable[[float], None] = time.sleep,
+    browser_fetcher: Callable[..., tuple[bytes, str | None]] | None = None,
 ) -> tuple[str, str, str]:
-    """Fetch one Sina related-info page with bounded transport retries.
+    """Fetch one Sina related-info page with bounded transport retries and fallback.
 
-    Membership semantics remain fail-closed: only transport failures, HTTP 429,
-    and HTTP 5xx responses are retried. Other HTTP 4xx responses fail
-    immediately, and an empty response is never accepted as evidence.
+    The evidence URL and parser are unchanged. urllib is attempted first. If that
+    transport is blocked or exhausted (including WAF-style HTTP failures), one
+    browser-fingerprint request is attempted against the same URL. Both paths must
+    return a semantically valid Sina related-info page; challenge/error bodies and
+    empty responses remain fail-closed.
     """
 
     if retries < 0:
         raise ValueError("retries must be >= 0")
     if retry_backoff_seconds < 0:
         raise ValueError("retry_backoff_seconds must be >= 0")
+    if timeout <= 0:
+        raise ValueError("timeout must be > 0")
+
     url = related_url(symbol)
     request = Request(
         url,
@@ -208,48 +259,47 @@ def fetch_related_page(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36"
             ),
+            "Connection": "close",
         },
         method="GET",
     )
 
-    raw: bytes | None = None
-    charset: str | None = None
     last_error: Exception | None = None
-    # A small deterministic symbol-specific offset prevents concurrent retries
-    # from synchronising against the same public endpoint.
     retry_offset = (int(symbol[-2:]) % 7) * 0.05
     for attempt in range(retries + 1):
         try:
             with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed public provider
                 raw = response.read()
                 charset = response.headers.get_content_charset()
-            break
+            text = _decode_related_page(raw, charset)
+            _validate_related_page(text, symbol=symbol)
+            return text, url, sha256(raw).hexdigest()
         except HTTPError as exc:
+            last_error = exc
+            # A 4xx can be a TLS/browser-fingerprint WAF decision on hosted runners.
+            # Do not loop client errors through urllib; proceed to the separately
+            # validated browser transport below.
             if 400 <= exc.code < 500 and exc.code != 429:
-                raise
-            last_error = exc
-        except (URLError, TimeoutError, OSError) as exc:
+                break
+        except (URLError, TimeoutError, OSError, ValueError) as exc:
             last_error = exc
 
-        if attempt >= retries:
-            raise RuntimeError(f"Sina related-info fetch failed for {symbol}") from last_error
-        sleep_fn(retry_backoff_seconds * (attempt + 1) + retry_offset)
+        if attempt < retries:
+            sleep_fn(retry_backoff_seconds * (attempt + 1) + retry_offset)
 
-    if not raw:
-        raise ValueError("Sina returned an empty related-info page")
-    candidates = [charset, "gb18030", "utf-8"]
-    text = ""
-    for encoding in candidates:
-        if not encoding:
-            continue
-        try:
-            text = raw.decode(encoding)
-            break
-        except (LookupError, UnicodeDecodeError):
-            continue
-    if not text:
-        text = raw.decode("utf-8", errors="replace")
-    return text, url, sha256(raw).hexdigest()
+    fallback = browser_fetcher or _fetch_related_page_browser
+    try:
+        raw, charset = fallback(url, timeout=timeout)
+        text = _decode_related_page(raw, charset)
+        _validate_related_page(text, symbol=symbol)
+        return text, url, sha256(raw).hexdigest()
+    except Exception as exc:
+        if last_error is None:
+            last_error = exc
+        raise RuntimeError(
+            f"Sina related-info fetch failed for {symbol}; urllib={type(last_error).__name__}; "
+            f"browser={type(exc).__name__}: {exc}"
+        ) from exc
 
 
 def fetch_membership_intervals(
