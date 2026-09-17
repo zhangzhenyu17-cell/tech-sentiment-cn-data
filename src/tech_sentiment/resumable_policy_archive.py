@@ -207,7 +207,6 @@ def materialize_csrc_policy_archive_resumable(
                 "coverage_end": end,
                 "query_status": "FAILED" if segment_failed else "COMPLETE_WINDOW",
                 "pages_read": pages_read,
-                "captured_at_utc": captured,
             }
         )
 
