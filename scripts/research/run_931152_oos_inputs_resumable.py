@@ -254,6 +254,23 @@ def _stock_meta_path(root: Path) -> Path:
     return root / "stock_prices_qfq.checkpoint.meta.json"
 
 
+def _empty_stock_prices() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "date",
+            "symbol",
+            "open",
+            "close",
+            "high",
+            "low",
+            "pct_chg",
+            "amount",
+            "board",
+            "provider",
+        ]
+    )
+
+
 def _checkpointed_stock_downloader(root: Path, network_downloader):
     def download(
         universe: pd.DataFrame,
@@ -273,7 +290,7 @@ def _checkpointed_stock_downloader(root: Path, network_downloader):
         error_path = root / "stock_download_errors.csv"
         meta_path = _stock_meta_path(root)
         requested = sorted(set(universe["symbol"].astype(str).str.zfill(6)))
-        cached = pd.DataFrame()
+        cached = _empty_stock_prices()
         meta = _read_meta(meta_path)
         if price_path.is_file() and meta is not None:
             expected = {
@@ -282,21 +299,26 @@ def _checkpointed_stock_downloader(root: Path, network_downloader):
                 "end_date": end_date,
                 "adjust": adjust,
                 "providers": list(providers),
+                "requested_symbols": requested,
             }
             if all(meta.get(key) == value for key, value in expected.items()) and meta.get("file_sha256") == _file_sha256(price_path):
-                cached = pd.read_csv(price_path, dtype={"symbol": str})
+                try:
+                    candidate = pd.read_csv(price_path, dtype={"symbol": str})
+                except (pd.errors.EmptyDataError, ValueError):
+                    candidate = _empty_stock_prices()
                 required_cols = {"date", "symbol", "open", "close", "high", "low", "provider"}
-                if not required_cols.issubset(cached.columns):
-                    cached = pd.DataFrame()
-                else:
-                    cached["symbol"] = cached["symbol"].astype(str).str.zfill(6)
-                    cached["date"] = pd.to_datetime(cached["date"], errors="raise")
-                    if cached["date"].min() < pd.Timestamp(start_date) or cached["date"].max() > pd.Timestamp(end_date):
-                        cached = pd.DataFrame()
+                if required_cols.issubset(candidate.columns):
+                    candidate["symbol"] = candidate["symbol"].astype(str).str.zfill(6)
+                    if not candidate.empty:
+                        candidate["date"] = pd.to_datetime(candidate["date"], errors="raise")
+                        if candidate["date"].min() >= pd.Timestamp(start_date) and candidate["date"].max() <= pd.Timestamp(end_date):
+                            cached = candidate
+                    else:
+                        cached = candidate
 
-        cached_symbols = set(cached["symbol"]) if not cached.empty else set()
+        cached_symbols = set(cached["symbol"].astype(str).str.zfill(6)) if not cached.empty else set()
         missing_symbols = sorted(set(requested) - cached_symbols)
-        fresh = data_akshare.DownloadResult(prices=pd.DataFrame(), errors=pd.DataFrame(columns=["symbol", "error"]))
+        fresh = data_akshare.DownloadResult(prices=_empty_stock_prices(), errors=pd.DataFrame(columns=["symbol", "error"]))
         if missing_symbols:
             subset = universe[universe["symbol"].astype(str).str.zfill(6).isin(missing_symbols)].copy()
             fresh = network_downloader(
@@ -314,7 +336,12 @@ def _checkpointed_stock_downloader(root: Path, network_downloader):
             )
 
         pieces = [frame for frame in (cached, fresh.prices) if frame is not None and not frame.empty]
-        combined = pd.concat(pieces, ignore_index=True) if pieces else pd.DataFrame()
+        if pieces:
+            combined = pd.concat(pieces, ignore_index=True)
+        elif fresh.prices is not None and set(_empty_stock_prices().columns).issubset(fresh.prices.columns):
+            combined = fresh.prices.copy()
+        else:
+            combined = _empty_stock_prices()
         if not combined.empty:
             combined["symbol"] = combined["symbol"].astype(str).str.zfill(6)
             combined["date"] = pd.to_datetime(combined["date"], errors="raise")
