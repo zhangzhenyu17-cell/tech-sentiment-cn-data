@@ -153,9 +153,12 @@ def fetch_stock_history(
     end_date: str,
     adjust: str = "",
     provider: str = "eastmoney",
+    timeout_seconds: float = 15.0,
     client: Any | None = None,
 ) -> pd.DataFrame:
     """Fetch one A-share's daily history from an AKShare-backed provider."""
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be > 0")
     ak = _client(client)
     code = normalize_symbol(symbol)
 
@@ -166,6 +169,7 @@ def fetch_stock_history(
             start_date=start_date.replace("-", ""),
             end_date=end_date.replace("-", ""),
             adjust=adjust,
+            timeout=timeout_seconds,
         )
     elif provider == "tencent":
         raw = ak.stock_zh_a_hist_tx(
@@ -173,7 +177,7 @@ def fetch_stock_history(
             start_date=start_date,
             end_date=end_date,
             adjust=adjust,
-            timeout=15,
+            timeout=timeout_seconds,
         )
     else:
         raise ValueError(f"unsupported history provider: {provider}")
@@ -191,6 +195,7 @@ def download_universe_history(
     retries: int = 1,
     retry_backoff_seconds: float = 0.75,
     sleep_seconds: float = 0.0,
+    timeout_seconds: float = 15.0,
     fail_fast: bool = False,
     client: Any | None = None,
 ) -> DownloadResult:
@@ -199,7 +204,8 @@ def download_universe_history(
     Providers are attempted in order for each symbol. Eastmoney is kept first
     because it supplies an explicit daily percentage change; Tencent is a useful
     independent fallback and its percentage change is derived from consecutive
-    closes after AKShare normalization.
+    closes after AKShare normalization. Each provider request is time-bounded so
+    one remote socket cannot stall the complete point-in-time universe download.
     """
     normalized = normalize_universe(universe)
     ak = _client(client)
@@ -210,6 +216,8 @@ def download_universe_history(
         raise ValueError("retries must be >= 0")
     if not providers:
         raise ValueError("at least one provider is required")
+    if timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be > 0")
 
     for symbol in sorted(set(normalized["symbol"])):
         frame = pd.DataFrame()
@@ -224,6 +232,7 @@ def download_universe_history(
                         end_date=end_date,
                         adjust=adjust,
                         provider=provider,
+                        timeout_seconds=timeout_seconds,
                         client=ak,
                     )
                     if not frame.empty:
@@ -269,4 +278,3 @@ def download_universe_history(
     )
     error_df = pd.DataFrame(errors, columns=["symbol", "error"])
     return DownloadResult(prices=prices, errors=error_df)
-
