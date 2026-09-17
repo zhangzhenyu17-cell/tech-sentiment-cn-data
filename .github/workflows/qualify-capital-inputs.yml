@@ -6,10 +6,15 @@ on:
       start_date:
         description: "Start date for public input qualification"
         required: true
-        default: "2022-01-01"
+        default: "2022-01-04"
         type: string
       end_date:
         description: "Optional end date; blank uses current Asia/Shanghai date"
+        required: false
+        default: ""
+        type: string
+      pit_symbols:
+        description: "Optional comma-separated A-share codes for CNINFO PIT materialization"
         required: false
         default: ""
         type: string
@@ -37,18 +42,49 @@ jobs:
           python scripts/audit_public_tree.py
           pytest -q
 
-      - name: Run manual public input qualification
+      - name: Resolve end date
+        id: dates
         shell: bash
         run: |
-          args=(--start-date "${{ inputs.start_date }}" --out-dir output/capital_input_qualification)
           if [[ -n "${{ inputs.end_date }}" ]]; then
-            args+=(--end-date "${{ inputs.end_date }}")
+            END_DATE="${{ inputs.end_date }}"
+          else
+            END_DATE="$(TZ=Asia/Shanghai date +%F)"
           fi
-          python scripts/qualify_capital_inputs.py "${args[@]}"
+          echo "end_date=${END_DATE}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload diagnostic artifact
+      - name: Materialize ETF-share and SSE+SZSE turnover inputs
+        shell: bash
+        run: |
+          python scripts/qualify_capital_inputs.py \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ steps.dates.outputs.end_date }}" \
+            --out-dir output/capital_input_qualification
+
+      - name: Materialize bilateral financing history
+        shell: bash
+        run: |
+          python scripts/materialize_financing_history.py \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ steps.dates.outputs.end_date }}" \
+            --out-dir output/financing_materialization
+
+      - name: Materialize CNINFO PIT evidence when symbols are supplied
+        if: ${{ inputs.pit_symbols != '' }}
+        shell: bash
+        run: |
+          python scripts/materialize_pit_evidence.py \
+            --symbols "${{ inputs.pit_symbols }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ steps.dates.outputs.end_date }}" \
+            --out-dir output/pit_evidence_materialization
+
+      - name: Upload materialization artifact
         uses: actions/upload-artifact@v4
         with:
-          name: capital-input-qualification
-          path: output/capital_input_qualification
+          name: capital-pit-input-materialization
+          path: |
+            output/capital_input_qualification
+            output/financing_materialization
+            output/pit_evidence_materialization
           if-no-files-found: error
