@@ -13,7 +13,7 @@ concurrency:
 jobs:
   qualify:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -28,18 +28,31 @@ jobs:
       - name: Audit public tree and tests
         run: |
           python scripts/audit_public_tree.py
+          python -m compileall -q src scripts
           pytest -q
 
       - name: Build outcome-free 931152 OOS input package
         run: |
-          rm -rf oos_input_artifact
+          rm -rf oos_input_artifact 931152_oos_inputs_v1.tar.gz 931152_oos_inputs_v1.sha256
           python scripts/research/build_931152_oos_inputs.py \
             --design-universe data/reference/sector_931152_design_universe.csv \
             --output-dir oos_input_artifact \
-            --workers 6 \
+            --workers 3 \
             --timeout 20
-          tar -czf 931152_oos_inputs_v1.tar.gz -C oos_input_artifact .
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("oos_input_artifact/report.json").read_text(encoding="utf-8"))
+          if report.get("status") != "HOLDOUT_INPUT_QUALIFIED":
+              raise SystemExit(f"unexpected qualification status: {report.get('status')}")
+          if report.get("holdout_model_evaluation_opened") is not False:
+              raise SystemExit("qualification artifact unexpectedly opened holdout evaluation")
+          if report.get("model_events_computed") is not False or report.get("forward_outcomes_computed") is not False:
+              raise SystemExit("qualification artifact unexpectedly contains model outcomes")
+          PY
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -cf - -C oos_input_artifact . | gzip -n > 931152_oos_inputs_v1.tar.gz
           sha256sum 931152_oos_inputs_v1.tar.gz | tee 931152_oos_inputs_v1.sha256
+          sha256sum -c 931152_oos_inputs_v1.sha256
 
       - name: Upload immutable qualification artifact
         uses: actions/upload-artifact@v4

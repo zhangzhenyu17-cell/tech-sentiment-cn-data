@@ -6,6 +6,8 @@ from dataclasses import asdict
 from hashlib import sha256
 import json
 from pathlib import Path
+import time
+from typing import Callable
 
 import pandas as pd
 
@@ -35,6 +37,10 @@ CROSSCHECK_DATES = (
     "2025-12-31",
     "2026-06-30",
 )
+HOLDINGS_SEMANTIC_RETRIES = 2
+SINA_SECOND_PASS_SLEEP_SECONDS = 0.75
+BAOSTOCK_RETRIES = 3
+BAOSTOCK_RETRY_BACKOFF_SECONDS = 1.0
 
 
 def _sha256_file(path: Path) -> str:
@@ -67,6 +73,66 @@ def _baostock_rows(result) -> list[list[str]]:
     if result.error_code != "0":
         raise RuntimeError(result.error_msg)
     return rows
+
+
+def _baostock_login_with_retry(
+    bs,
+    *,
+    retries: int = BAOSTOCK_RETRIES,
+    backoff_seconds: float = BAOSTOCK_RETRY_BACKOFF_SECONDS,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> None:
+    last_error: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            result = bs.login()
+            if result.error_code == "0":
+                return
+            last_error = RuntimeError(f"BaoStock login failed: {result.error_msg}")
+        except Exception as exc:
+            last_error = exc
+        if attempt >= retries:
+            break
+        try:
+            bs.logout()
+        except Exception:
+            pass
+        sleep_fn(backoff_seconds * (attempt + 1))
+    raise RuntimeError("BaoStock login exhausted retries") from last_error
+
+
+def _baostock_query_rows_with_retry(
+    bs,
+    query_fn: Callable[[], object],
+    *,
+    stage: str,
+    require_rows: bool = True,
+    retries: int = BAOSTOCK_RETRIES,
+    backoff_seconds: float = BAOSTOCK_RETRY_BACKOFF_SECONDS,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> tuple[list[list[str]], list[str]]:
+    """Retry BaoStock transport/session failures without weakening data semantics."""
+
+    last_error: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            result = query_fn()
+            fields = list(result.fields)
+            rows = _baostock_rows(result)
+            if rows or not require_rows:
+                return rows, fields
+            last_error = ValueError(f"BaoStock {stage} returned no rows")
+        except Exception as exc:
+            last_error = exc
+        if attempt >= retries:
+            break
+        try:
+            bs.logout()
+        except Exception:
+            pass
+        sleep_fn(backoff_seconds * (attempt + 1))
+        _baostock_login_with_retry(bs, retries=1, backoff_seconds=backoff_seconds, sleep_fn=sleep_fn)
+    raise RuntimeError(f"BaoStock {stage} exhausted retries") from last_error
 
 
 def _active_design_anchor(design_universe: pd.DataFrame) -> set[str]:
@@ -130,50 +196,53 @@ def _fetch_baostock_limit_inputs(universe: pd.DataFrame, out: Path) -> tuple[pd.
         raise RuntimeError("install sector-data extra") from exc
 
     codes = [_baostock_code(symbol) for symbol in sorted(set(universe["symbol"].astype(str)))]
-    login = bs.login()
-    if login.error_code != "0":
-        raise RuntimeError(f"BaoStock login failed: {login.error_msg}")
+    _baostock_login_with_retry(bs)
 
     history_parts: list[pd.DataFrame] = []
     basic_parts: list[pd.DataFrame] = []
     failures: list[dict[str, str]] = []
     trade_calendar = pd.DataFrame()
     try:
-        calendar_result = bs.query_trade_dates(
-            start_date=HOLDOUT_START.strftime("%Y-%m-%d"),
-            end_date=HOLDOUT_END.strftime("%Y-%m-%d"),
+        calendar_rows, calendar_fields = _baostock_query_rows_with_retry(
+            bs,
+            lambda: bs.query_trade_dates(
+                start_date=HOLDOUT_START.strftime("%Y-%m-%d"),
+                end_date=HOLDOUT_END.strftime("%Y-%m-%d"),
+            ),
+            stage="trade_calendar",
         )
-        calendar_rows = _baostock_rows(calendar_result)
-        if calendar_rows:
-            trade_calendar = pd.DataFrame(calendar_rows, columns=calendar_result.fields)
+        trade_calendar = pd.DataFrame(calendar_rows, columns=calendar_fields)
         for code in codes:
             try:
-                result = bs.query_history_k_data_plus(
-                    code,
-                    BAOSTOCK_FIELDS,
-                    start_date=HOLDOUT_START.strftime("%Y-%m-%d"),
-                    end_date=HOLDOUT_END.strftime("%Y-%m-%d"),
-                    frequency="d",
-                    adjustflag="3",
+                rows, fields = _baostock_query_rows_with_retry(
+                    bs,
+                    lambda code=code: bs.query_history_k_data_plus(
+                        code,
+                        BAOSTOCK_FIELDS,
+                        start_date=HOLDOUT_START.strftime("%Y-%m-%d"),
+                        end_date=HOLDOUT_END.strftime("%Y-%m-%d"),
+                        frequency="d",
+                        adjustflag="3",
+                    ),
+                    stage=f"history:{code}",
                 )
-                rows = _baostock_rows(result)
-                if rows:
-                    history_parts.append(pd.DataFrame(rows, columns=result.fields))
-                else:
-                    failures.append({"code": code, "stage": "history", "error": "empty history"})
+                history_parts.append(pd.DataFrame(rows, columns=fields))
             except Exception as exc:
                 failures.append({"code": code, "stage": "history", "error": f"{type(exc).__name__}: {exc}"})
             try:
-                basic = bs.query_stock_basic(code=code)
-                rows = _baostock_rows(basic)
-                if rows:
-                    basic_parts.append(pd.DataFrame(rows, columns=basic.fields))
-                else:
-                    failures.append({"code": code, "stage": "stock_basic", "error": "empty stock_basic"})
+                rows, fields = _baostock_query_rows_with_retry(
+                    bs,
+                    lambda code=code: bs.query_stock_basic(code=code),
+                    stage=f"stock_basic:{code}",
+                )
+                basic_parts.append(pd.DataFrame(rows, columns=fields))
             except Exception as exc:
                 failures.append({"code": code, "stage": "stock_basic", "error": f"{type(exc).__name__}: {exc}"})
     finally:
-        bs.logout()
+        try:
+            bs.logout()
+        except Exception:
+            pass
 
     history = pd.concat(history_parts, ignore_index=True) if history_parts else pd.DataFrame()
     stock_basic = pd.concat(basic_parts, ignore_index=True) if basic_parts else pd.DataFrame()
@@ -228,11 +297,24 @@ def _fetch_baostock_limit_inputs(universe: pd.DataFrame, out: Path) -> tuple[pd.
     return active, strict.daily_coverage, report
 
 
+def _fetch_holdings_year_once(year: int, out: Path, timeout: int, audit: list[dict[str, object]]) -> list[object]:
+    try:
+        year_batches, years, raw_text = fetch_and_parse_holdings_year(
+            TRACKING_ETF_931152, year, topline=100, timeout=timeout
+        )
+        (out / f"eastmoney_159992_{year}.txt").write_text(raw_text, encoding="utf-8")
+        audit.append({"year": year, "advertised_years": list(years), "status": "ok"})
+        return list(year_batches)
+    except Exception as exc:
+        audit.append({"year": year, "status": "failed_closed", "error": f"{type(exc).__name__}: {exc}"})
+        return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Outcome-free 931152 frozen 2024+ holdout input builder.")
     parser.add_argument("--design-universe", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=20)
     args = parser.parse_args()
     if not 1 <= args.workers <= 12:
@@ -245,23 +327,27 @@ def main() -> int:
     if len(anchor) != 50:
         raise ValueError(f"2023-12-31 frozen design anchor must contain 50 members, got {len(anchor)}")
 
-    batches = []
-    raw_holdings: list[dict[str, object]] = []
-    holdings_failures: list[dict[str, object]] = []
+    batches: list[object] = []
+    holdings_audit: list[dict[str, object]] = []
     for year in range(2023, 2027):
-        try:
-            year_batches, years, raw_text = fetch_and_parse_holdings_year(
-                TRACKING_ETF_931152, year, topline=100, timeout=args.timeout
-            )
-            batches.extend(year_batches)
-            (out / f"eastmoney_159992_{year}.txt").write_text(raw_text, encoding="utf-8")
-            raw_holdings.append({"year": year, "advertised_years": list(years), "status": "ok"})
-        except Exception as exc:
-            holdings_failures.append({"year": year, "error": f"{type(exc).__name__}: {exc}"})
-    _dump_jsonl(out / "eastmoney_fetch_audit.jsonl", raw_holdings + holdings_failures)
+        batches.extend(_fetch_holdings_year_once(year, out, args.timeout, holdings_audit))
+
     full_batches = {batch.report_date: batch for batch in batches if batch.full_report_candidate_set}
     required_reports = set(CROSSCHECK_DATES)
     missing_reports = sorted(required_reports - set(full_batches))
+    for semantic_attempt in range(HOLDINGS_SEMANTIC_RETRIES):
+        if not missing_reports:
+            break
+        retry_years = sorted({int(report_date[:4]) for report_date in missing_reports})
+        for year in retry_years:
+            time.sleep(1.0 * (semantic_attempt + 1))
+            retry_batches = _fetch_holdings_year_once(year, out, args.timeout, holdings_audit)
+            if retry_batches:
+                batches.extend(retry_batches)
+                holdings_audit.append({"year": year, "status": "semantic_retry_completed", "attempt": semantic_attempt + 1})
+        full_batches = {batch.report_date: batch for batch in batches if batch.full_report_candidate_set}
+        missing_reports = sorted(required_reports - set(full_batches))
+    _dump_jsonl(out / "eastmoney_fetch_audit.jsonl", holdings_audit)
     if missing_reports:
         raise ValueError(f"missing full-report ETF candidate sets: {missing_reports}")
 
@@ -290,8 +376,32 @@ def main() -> int:
                 })
             except Exception as exc:
                 fetch_audit.append({"symbol": symbol, "status": "failed_closed", "error": f"{type(exc).__name__}: {exc}"})
+
+    first_pass_failures = sorted(str(row["symbol"]) for row in fetch_audit if row["status"] != "ok")
+    if first_pass_failures:
+        audit_by_symbol = {str(row["symbol"]): row for row in fetch_audit}
+        for symbol in first_pass_failures:
+            time.sleep(SINA_SECOND_PASS_SLEEP_SECONDS)
+            try:
+                intervals, html = fetch_membership_intervals(symbol, timeout=args.timeout, index_code=INDEX_CODE)
+                (out / f"sina_{symbol}.html").write_text(html, encoding="utf-8")
+                intervals_by_symbol[symbol] = intervals
+                audit_by_symbol[symbol] = {
+                    "symbol": symbol,
+                    "status": "ok_sequential_retry",
+                    "interval_count": len(intervals),
+                    "response_sha256": intervals[0].response_sha256 if intervals else None,
+                }
+            except Exception as exc:
+                audit_by_symbol[symbol] = {
+                    "symbol": symbol,
+                    "status": "failed_closed",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+        fetch_audit = list(audit_by_symbol.values())
+
     _dump_jsonl(out / "sina_fetch_audit.jsonl", sorted(fetch_audit, key=lambda row: str(row["symbol"])))
-    failures = [row for row in fetch_audit if row["status"] != "ok"]
+    failures = [row for row in fetch_audit if not str(row["status"]).startswith("ok")]
     if failures:
         raise ValueError(f"Sina membership fetch failures: {len(failures)}")
 
@@ -332,9 +442,10 @@ def main() -> int:
         end_date=HOLDOUT_END.strftime("%Y-%m-%d"),
         adjust=STOCK_ADJUSTMENT,
         providers=("eastmoney", "tencent"),
-        retries=1,
-        retry_backoff_seconds=0.75,
-        sleep_seconds=0.0,
+        retries=2,
+        retry_backoff_seconds=1.0,
+        sleep_seconds=0.05,
+        timeout_seconds=float(args.timeout),
         fail_fast=False,
     )
     prices = download.prices.copy()
@@ -349,9 +460,9 @@ def main() -> int:
         INDEX_CODE,
         start_date=HOLDOUT_START.strftime("%Y-%m-%d"),
         end_date=HOLDOUT_END.strftime("%Y-%m-%d"),
-        retries=2,
-        retry_backoff_seconds=0.75,
-        timeout_seconds=20.0,
+        retries=4,
+        retry_backoff_seconds=1.0,
+        timeout_seconds=float(args.timeout),
     )
     index_prices.to_csv(out / "index_931152_prices.csv", index=False, date_format="%Y-%m-%d")
     if index_prices.empty:
