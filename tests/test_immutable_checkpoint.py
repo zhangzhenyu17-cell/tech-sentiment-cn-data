@@ -56,3 +56,30 @@ def test_fresh_and_resumed_chunk_outputs_are_identical(tmp_path: Path):
     expected["date"] = expected["date"].dt.strftime("%Y-%m-%d")
     assert resumed.equals(expected)
     assert loaded.receipt["receipt_sha256"] == receipt["receipt_sha256"]
+
+
+def test_checkpoint_preserves_numeric_looking_text_identity(tmp_path: Path):
+    store = ImmutableCheckpointStore(tmp_path)
+    identity = _identity()
+    fresh = pd.DataFrame(
+        {
+            "fund_code": ["000001", "588000"],
+            "source_identity": ["A", "B"],
+            "value": [1.0, 2.0],
+        }
+    )
+    store.save(identity, frames={"canonical": fresh})
+    loaded = store.load(identity)
+    assert loaded is not None
+    assert loaded.frames["canonical"]["fund_code"].tolist() == ["000001", "588000"]
+    assert loaded.frames["canonical"]["source_identity"].tolist() == ["A", "B"]
+
+
+def test_checkpoint_round_trips_zero_column_empty_frame(tmp_path: Path):
+    store = ImmutableCheckpointStore(tmp_path)
+    identity = _identity()
+    store.save(identity, frames={"empty": pd.DataFrame()})
+    loaded = store.load(identity)
+    assert loaded is not None
+    assert loaded.frames["empty"].empty
+    assert list(loaded.frames["empty"].columns) == []
