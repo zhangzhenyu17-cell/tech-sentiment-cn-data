@@ -7,7 +7,7 @@ import pandas as pd
 
 
 SECTOR_INDEX_EASTMONEY_SECIDS = {
-    "931152": "1.931152",
+    "931152": "2.931152",
 }
 EASTMONEY_KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 
