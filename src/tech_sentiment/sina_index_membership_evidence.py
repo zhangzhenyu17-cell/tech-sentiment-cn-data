@@ -5,7 +5,9 @@ from datetime import date
 from hashlib import sha256
 from html.parser import HTMLParser
 import re
-from typing import Iterable, Mapping
+import time
+from typing import Callable, Iterable, Mapping
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
@@ -177,7 +179,25 @@ def summarize_interval_coverage(
     }
 
 
-def fetch_related_page(symbol: str, *, timeout: int = 20) -> tuple[str, str, str]:
+def fetch_related_page(
+    symbol: str,
+    *,
+    timeout: int = 20,
+    retries: int = 4,
+    retry_backoff_seconds: float = 1.0,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> tuple[str, str, str]:
+    """Fetch one Sina related-info page with bounded transport retries.
+
+    Membership semantics remain fail-closed: only transport failures, HTTP 429,
+    and HTTP 5xx responses are retried. Other HTTP 4xx responses fail
+    immediately, and an empty response is never accepted as evidence.
+    """
+
+    if retries < 0:
+        raise ValueError("retries must be >= 0")
+    if retry_backoff_seconds < 0:
+        raise ValueError("retry_backoff_seconds must be >= 0")
     url = related_url(symbol)
     request = Request(
         url,
@@ -191,9 +211,30 @@ def fetch_related_page(symbol: str, *, timeout: int = 20) -> tuple[str, str, str
         },
         method="GET",
     )
-    with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed public provider
-        raw = response.read()
-        charset = response.headers.get_content_charset()
+
+    raw: bytes | None = None
+    charset: str | None = None
+    last_error: Exception | None = None
+    # A small deterministic symbol-specific offset prevents concurrent retries
+    # from synchronising against the same public endpoint.
+    retry_offset = (int(symbol[-2:]) % 7) * 0.05
+    for attempt in range(retries + 1):
+        try:
+            with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed public provider
+                raw = response.read()
+                charset = response.headers.get_content_charset()
+            break
+        except HTTPError as exc:
+            if 400 <= exc.code < 500 and exc.code != 429:
+                raise
+            last_error = exc
+        except (URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+
+        if attempt >= retries:
+            raise RuntimeError(f"Sina related-info fetch failed for {symbol}") from last_error
+        sleep_fn(retry_backoff_seconds * (attempt + 1) + retry_offset)
+
     if not raw:
         raise ValueError("Sina returned an empty related-info page")
     candidates = [charset, "gb18030", "utf-8"]

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from urllib.error import HTTPError, URLError
+
+import pytest
+
+import tech_sentiment.sina_index_membership_evidence as evidence
 from tech_sentiment.sina_index_membership_evidence import (
     IndexMembershipInterval,
     parse_membership_intervals,
@@ -122,3 +127,68 @@ def test_interval_coverage_does_not_count_empty_successes_as_evidence() -> None:
         "symbols_without_intervals": 2,
         "interval_rows": 3,
     }
+
+
+def test_fetch_related_page_retries_transport_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+    body = b"<html><table><tr><td>ok</td></tr></table></html>"
+
+    class _Headers:
+        @staticmethod
+        def get_content_charset() -> str:
+            return "utf-8"
+
+    class _Response:
+        headers = _Headers()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def read(self) -> bytes:
+            return body
+
+    def _urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise URLError("transient disconnect")
+        return _Response()
+
+    monkeypatch.setattr(evidence, "urlopen", _urlopen)
+    text, url, digest = evidence.fetch_related_page(
+        "600276",
+        retries=2,
+        retry_backoff_seconds=0.5,
+        sleep_fn=sleeps.append,
+    )
+
+    assert attempts == 3
+    assert sleeps == pytest.approx([0.8, 1.3])
+    assert text.startswith("<html>")
+    assert url.endswith("stockid/600276.phtml")
+    assert len(digest) == 64
+
+
+def test_fetch_related_page_does_not_retry_non_rate_limit_4xx(monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def _urlopen(request, timeout):
+        nonlocal attempts
+        attempts += 1
+        raise HTTPError(request.full_url, 404, "not found", hdrs=None, fp=None)
+
+    monkeypatch.setattr(evidence, "urlopen", _urlopen)
+    with pytest.raises(HTTPError):
+        evidence.fetch_related_page(
+            "600276",
+            retries=4,
+            sleep_fn=sleeps.append,
+        )
+
+    assert attempts == 1
+    assert sleeps == []
