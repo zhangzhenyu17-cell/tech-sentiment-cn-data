@@ -77,6 +77,7 @@ jobs:
             --symbols "${{ inputs.pit_symbols }}" \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
+            --calendar-csv output/capital_input_qualification/trading_calendar.csv \
             --out-dir output/pit_evidence_materialization
 
       - name: Finalize immutable materialization identity
