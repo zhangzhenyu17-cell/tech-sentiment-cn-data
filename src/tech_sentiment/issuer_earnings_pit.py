@@ -8,8 +8,6 @@ import pandas as pd
 from .pit_public_materialization import _stable_hash, validate_materialized_pit_records
 
 
-EARNINGS_SOURCE_ID = "DERIVED_PIT_ISSUER_EARNINGS_DIRECTION"
-EARNINGS_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_ISSUER_DISCLOSURES"
 EARNINGS_CLASSIFIER_VERSION = "issuer-explicit-guidance-v1"
 
 _UP_TOKENS = (
@@ -31,7 +29,7 @@ _DOWN_TOKENS = (
 def classify_explicit_issuer_earnings_direction(value: object) -> str:
     """Classify only standardized issuer-disclosed guidance language.
 
-    Unknown wording remains UNKNOWN.  No numeric threshold, market price, return,
+    Unknown wording remains UNKNOWN. No numeric threshold, market price, return,
     analyst consensus, or hindsight data is consulted.
     """
 
@@ -49,15 +47,18 @@ def classify_explicit_issuer_earnings_direction(value: object) -> str:
     return "UNKNOWN"
 
 
-def derive_earnings_direction_evidence(issuer_records: pd.DataFrame) -> pd.DataFrame:
-    """Create PIT direction evidence from versioned issuer forecast disclosures.
+def enrich_issuer_earnings_direction(issuer_records: pd.DataFrame) -> pd.DataFrame:
+    """Attach explicit issuer earnings direction without creating a new source.
 
-    The caller should pass the already-normalized CNINFO/SSE/SZSE issuer ledger.
-    Records without explicit standardized direction remain absent from this
-    derived evidence; source-window coverage is assessed separately.
+    The output preserves the registered CNINFO/SSE/SZSE source identity and the
+    document/revision identity.  Only the evidence payload/provenance are
+    augmented when the disclosure itself contains a standardized direction.
+    This is field extraction from the same canonical document, not a new
+    evidence source or eligibility rule.
     """
 
     required = {
+        "evidence_id",
         "entity_id",
         "evidence_type",
         "event_date",
@@ -67,82 +68,72 @@ def derive_earnings_direction_evidence(issuer_records: pd.DataFrame) -> pd.DataF
         "document_id",
         "revision_id",
         "provenance",
+        "ingestion_identity",
+        "availability_state",
         "title",
     }
     missing = required - set(issuer_records.columns)
     if missing:
         raise ValueError(f"issuer evidence missing columns: {sorted(missing)}")
     if issuer_records.empty:
-        return pd.DataFrame()
+        return issuer_records.copy()
 
-    rows: list[dict[str, object]] = []
-    candidates = issuer_records[
-        issuer_records["evidence_type"].astype(str).isin(
-            {"ISSUER_EARNINGS_FORECAST", "FINANCIAL_RESTATEMENT"}
-        )
-    ]
-    for _, record in candidates.iterrows():
-        text = str(record.get("title") or "")
-        direction = classify_explicit_issuer_earnings_direction(text)
+    out = issuer_records.copy()
+    if "evidence_payload" not in out.columns:
+        out["evidence_payload"] = ""
+
+    for index, record in out.iterrows():
+        if str(record["evidence_type"]) != "ISSUER_EARNINGS_FORECAST":
+            continue
+        title = str(record.get("title") or "")
+        direction = classify_explicit_issuer_earnings_direction(title)
         if direction == "UNKNOWN":
             continue
-        payload = {
-            "earnings_expectation_direction": direction,
-            "classification_basis": "EXPLICIT_ISSUER_GUIDANCE_TOKEN",
-            "classifier_version": EARNINGS_CLASSIFIER_VERSION,
-            "title": text,
-            "source_document_id": str(record["document_id"]),
-            "source_revision_id": str(record["revision_id"]),
-        }
-        provenance = {
-            "derived_source_identity": EARNINGS_SOURCE_ID,
-            "source_identity": str(record["source_identity"]),
-            "source_provider": str(record["provider"]),
-            "source_document_id": str(record["document_id"]),
-            "source_revision_id": str(record["revision_id"]),
-            "source_provenance": str(record["provenance"]),
+
+        prior_payload: dict[str, object] = {}
+        raw_payload = str(record.get("evidence_payload") or "").strip()
+        if raw_payload:
+            parsed = json.loads(raw_payload)
+            if not isinstance(parsed, dict):
+                raise ValueError("issuer evidence_payload must be a JSON object")
+            prior_payload = dict(parsed)
+        prior_payload["earnings_expectation_direction"] = direction
+        prior_payload["earnings_direction_basis"] = "EXPLICIT_ISSUER_GUIDANCE_TOKEN"
+        prior_payload["earnings_classifier_version"] = EARNINGS_CLASSIFIER_VERSION
+
+        raw_provenance = json.loads(str(record["provenance"]))
+        if not isinstance(raw_provenance, dict):
+            raise ValueError("issuer provenance must be a JSON object")
+        provenance = dict(raw_provenance)
+        provenance["earnings_direction_extraction"] = {
+            "basis": "EXPLICIT_ISSUER_GUIDANCE_TOKEN",
             "classifier_version": EARNINGS_CLASSIFIER_VERSION,
             "price_or_return_used": False,
             "numeric_threshold_used": False,
         }
-        observation = {
-            "entity_id": str(record["entity_id"]),
-            "document_id": str(record["document_id"]),
-            "revision_id": str(record["revision_id"]),
-            "available": str(pd.Timestamp(record["evidence_available_date"]).date()),
-            "direction": direction,
-        }
-        rows.append(
+        out.at[index, "evidence_payload"] = json.dumps(
+            prior_payload, ensure_ascii=False, sort_keys=True
+        )
+        out.at[index, "provenance"] = json.dumps(
+            provenance, ensure_ascii=False, sort_keys=True
+        )
+        out.at[index, "ingestion_identity"] = _stable_hash(
             {
-                "evidence_id": f"derived-earnings:{_stable_hash(observation)}",
+                "source_identity": str(record["source_identity"]),
                 "entity_id": str(record["entity_id"]),
-                "evidence_type": "ISSUER_EARNINGS_DIRECTION",
-                "event_date": pd.Timestamp(record["event_date"]).normalize(),
-                "evidence_available_date": pd.Timestamp(
-                    record["evidence_available_date"]
-                ).normalize(),
-                "source_identity": EARNINGS_SOURCE_ID,
-                "provider": EARNINGS_PROVIDER,
                 "document_id": str(record["document_id"]),
                 "revision_id": str(record["revision_id"]),
-                "provenance": json.dumps(provenance, ensure_ascii=False, sort_keys=True),
-                "ingestion_identity": _stable_hash(
-                    {"observation": observation, "payload": payload}
-                ),
-                "availability_state": "HISTORICAL_RECONSTRUCTABLE",
-                "evidence_payload": json.dumps(payload, ensure_ascii=False, sort_keys=True),
-                "source_url_identity": str(record.get("source_url_identity") or ""),
+                "evidence_type": str(record["evidence_type"]),
+                "available": str(pd.Timestamp(record["evidence_available_date"]).date()),
+                "payload": prior_payload,
             }
         )
-    if not rows:
-        return pd.DataFrame()
-    return validate_materialized_pit_records(pd.DataFrame(rows))
+
+    return validate_materialized_pit_records(out)
 
 
 __all__ = [
-    "EARNINGS_SOURCE_ID",
-    "EARNINGS_PROVIDER",
     "EARNINGS_CLASSIFIER_VERSION",
     "classify_explicit_issuer_earnings_direction",
-    "derive_earnings_direction_evidence",
+    "enrich_issuer_earnings_direction",
 ]
