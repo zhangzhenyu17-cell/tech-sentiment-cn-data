@@ -153,11 +153,19 @@ def parse_csrc_list_page(
 
 
 def _document_id(url: str) -> str:
-    path = urlparse(url).path.rstrip("/")
+    """Return a stable URL-unique official document identity.
+
+    CSRC paths often end in a generic parent such as ``new/content.shtml``.
+    Keeping only that parent collides across distinct list segments, so every
+    identity is bound to the complete canonical URL while retaining a readable
+    path token for audit logs.
+    """
+
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
     parts = [part for part in path.split("/") if part]
-    if len(parts) >= 2 and parts[-1] == "content.shtml":
-        return parts[-2]
-    return sha256(url.encode("utf-8")).hexdigest()[:24]
+    leaf = parts[-2] if len(parts) >= 2 and parts[-1] == "content.shtml" else "document"
+    return f"{leaf}:{sha256(url.encode('utf-8')).hexdigest()[:16]}"
 
 
 def _evidence_type(entry: PolicyListEntry) -> str:
