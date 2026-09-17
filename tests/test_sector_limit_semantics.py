@@ -98,17 +98,17 @@ def test_invalid_baostock_boolean_fails_closed() -> None:
         enrich_baostock_structural_limit_rows(frame)
 
 
-def test_931152_design_membership_gate_remains_closed_until_2019_is_complete() -> None:
+def test_931152_design_membership_gate_is_complete() -> None:
     manifest = pd.read_csv(ROOT / "data/reference/sector_931152_membership_evidence.csv")
     audit = audit_931152_design_membership(manifest)
 
-    assert audit.eligible is False
+    assert audit.eligible is True
     assert audit.expected_periods == 11
-    assert audit.complete_periods == 8
-    assert audit.pending_periods == ("2019-04", "2019-06", "2019-12")
+    assert audit.complete_periods == 11
+    assert audit.pending_periods == ()
 
 
-def test_931152_calendar_and_partial_evidence_status_are_explicit() -> None:
+def test_931152_calendar_and_full_evidence_status_are_explicit() -> None:
     manifest = pd.read_csv(ROOT / "data/reference/sector_931152_membership_evidence.csv")
     expected_dates = {
         "2019-04": "2019-04-22",
@@ -124,14 +124,6 @@ def test_931152_calendar_and_partial_evidence_status_are_explicit() -> None:
         "2023-12": "2023-12-11",
     }
     assert dict(zip(manifest["expected_period"], manifest["effective_date"])) == expected_dates
-    status_by_period = dict(zip(manifest["expected_period"], manifest["evidence_status"]))
-    assert {period for period, status in status_by_period.items() if status == "pending"} == {
-        "2019-04", "2019-06", "2019-12"
-    }
-    assert {period for period, status in status_by_period.items() if status == "complete"} == {
-        "2020-06", "2020-12", "2021-06", "2021-12",
-        "2022-06", "2022-12", "2023-06", "2023-12",
-    }
-    complete = manifest[manifest["evidence_status"].eq("complete")]
-    assert complete["source_url"].notna().all()
-    assert set(complete["change_status"]) == {"changed"}
+    assert set(manifest["evidence_status"]) == {"complete"}
+    assert manifest["source_url"].notna().all()
+    assert set(manifest["change_status"]) == {"changed"}
