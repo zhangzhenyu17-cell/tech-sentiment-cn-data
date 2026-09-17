@@ -26,7 +26,7 @@ from .pit_public_materialization import (
 )
 
 
-FILING_MATERIALIZER_VERSION = "cninfo-versioned-filing-materializer-v1"
+FILING_MATERIALIZER_VERSION = "cninfo-versioned-filing-materializer-v2-publication-order"
 
 
 @dataclass(frozen=True)
@@ -129,13 +129,7 @@ def materialize_versioned_filing_facts(
     checkpoint_dir: str | Path,
     warmup_years: int = 2,
 ) -> FilingMaterializationResult:
-    """Reconstruct filing facts from exact versioned CNINFO attachments.
-
-    ``warmup_years`` is an engineering lookback required for prior-comparable
-    and TTM denominators. It does not expand the frozen stock universe or change
-    any research threshold. All target-window readiness is still reported from
-    ``target_start_date`` onward.
-    """
+    """Reconstruct filing facts from exact versioned CNINFO attachments."""
 
     if warmup_years < 1:
         raise ValueError("warmup_years must be >= 1")
@@ -215,13 +209,12 @@ def materialize_versioned_filing_facts(
                     publication, trading_dates=calendar
                 )
             except ValueError:
-                # A date-only/after-close document on the final calendar date is
-                # not yet usable; omit it until a later real trading day exists.
                 continue
             if available_date > end:
                 continue
             financial_documents += 1
-            attachment = str(announcement.get("公告附件链接") or "").strip()
+            attachment_value = announcement.get("公告附件链接")
+            attachment = "" if pd.isna(attachment_value) else str(attachment_value).strip()
             if not attachment:
                 errors.append(
                     {
@@ -232,6 +225,7 @@ def materialize_versioned_filing_facts(
                 )
                 symbol_failed = True
                 continue
+            document_id = "UNKNOWN"
             try:
                 document_id, _ = _parse_document_identity(announcement["公告链接"])
                 doc_identity = _document_identity(
@@ -251,6 +245,7 @@ def materialize_versioned_filing_facts(
                         entity_id=entity,
                         title=str(announcement["公告标题"]),
                         evidence_available_date=available_date,
+                        publication_timestamp=publication,
                         source_identity=CNINFO_SOURCE_ID,
                         provider="CNINFO",
                         document_id=document_id,
@@ -267,19 +262,22 @@ def materialize_versioned_filing_facts(
                         metadata={
                             "entity_id": entity,
                             "document_id": document_id,
+                            "publication_timestamp": str(publication),
                             "document_url": downloaded.url,
                             "document_sha256": downloaded.sha256,
                         },
                     )
                     executed_documents += 1
                 if len(facts):
+                    if "publication_timestamp" not in facts.columns:
+                        raise ValueError("filing facts checkpoint lacks publication_timestamp")
                     fact_parts.append(facts)
                     parsed_documents += 1
             except Exception as exc:
                 errors.append(
                     {
                         "entity_id": entity,
-                        "document_id": str(locals().get("document_id", "UNKNOWN")),
+                        "document_id": document_id,
                         "error": f"{type(exc).__name__}: {exc}",
                     }
                 )
@@ -301,19 +299,25 @@ def materialize_versioned_filing_facts(
             }
         )
 
-    facts = (
-        pd.concat(fact_parts, ignore_index=True, sort=False)
-        if fact_parts
-        else pd.DataFrame()
-    )
+    facts = pd.concat(fact_parts, ignore_index=True, sort=False) if fact_parts else pd.DataFrame()
     if len(facts):
         facts["period_end"] = pd.to_datetime(facts["period_end"], errors="raise").dt.normalize()
         facts["evidence_available_date"] = pd.to_datetime(
             facts["evidence_available_date"], errors="raise"
         ).dt.normalize()
+        facts["publication_timestamp_order"] = pd.to_datetime(
+            facts["publication_timestamp"], errors="raise", utc=True
+        )
         facts = facts.sort_values(
-            ["entity_id", "period_end", "evidence_available_date", "document_id", "fact_type"]
-        ).drop_duplicates(
+            [
+                "entity_id",
+                "period_end",
+                "evidence_available_date",
+                "publication_timestamp_order",
+                "document_id",
+                "fact_type",
+            ]
+        ).drop(columns=["publication_timestamp_order"]).drop_duplicates(
             ["entity_id", "document_id", "revision_id", "fact_type"], keep="last"
         ).reset_index(drop=True)
     trends = derive_fundamental_trend_evidence(facts) if len(facts) else pd.DataFrame()
@@ -340,7 +344,8 @@ def materialize_versioned_filing_facts(
             if complete_entities == len(unique_symbols) and len(trends)
             else "PARTIAL_COVERAGE" if len(trends) else "DATA_INSUFFICIENT"
         ),
-        "fundamental_state_mapping_state": "NOT_DEFINED_BY_EXISTING_FROZEN_CONTRACT",
+        "fundamental_state_mapping_state": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1_DEFINED_SEPARATELY",
+        "revision_ordering": "EVIDENCE_AVAILABLE_DATE_THEN_OFFICIAL_PUBLICATION_TIMESTAMP_FAIL_ON_AMBIGUOUS_TIE",
         "fundamental_state_thresholds_invented": False,
         "future_prices_or_returns_used": False,
         "hindsight_backfill": False,
