@@ -174,7 +174,7 @@ def extract_standard_filing_facts(text: str) -> dict[str, float]:
     by the materializer instead of being imputed from a current-state provider.
     """
 
-    compact = re.sub(r"\s+", "", str(text))
+    compact = re.sub(r"\s+", "", str(text)).replace("：", ":")
     if "单位:万元" in compact or "单位:百万元" in compact:
         raise ValueError("filing table uses a non-yuan unit; parser refuses inferred scaling")
     if not any(marker in compact for marker in ("单位:元", "单位:人民币元")):
@@ -257,9 +257,9 @@ def _latest_fact_as_of(
 def derive_fundamental_trend_evidence(facts: pd.DataFrame) -> pd.DataFrame:
     """Derive only threshold-free, as-of trends from versioned filing facts.
 
-    No FUNDAMENTAL_PASS/WATCH/FAIL mapping is created here. The project does not
-    currently contain a frozen mapping from these numerical facts to that state,
-    so inventing one would cross the evidence-definition boundary.
+    This function materializes numerical trends only. The separate frozen
+    FUNDAMENTAL_PIT_STATE_CONTRACT_V1 consumes qualified facts without changing
+    the trend formulas here.
     """
 
     required = {
