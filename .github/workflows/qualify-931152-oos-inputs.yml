@@ -31,13 +31,21 @@ jobs:
           python -m compileall -q src scripts
           pytest -q
 
+      - name: Restore same-run public input checkpoint
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: 931152-oos-input-checkpoint
+          path: oos_input_artifact
+
       - name: Build outcome-free 931152 OOS input package
         run: |
-          rm -rf oos_input_artifact 931152_oos_inputs_v1.tar.gz 931152_oos_inputs_v1.sha256
-          python scripts/research/build_931152_oos_inputs.py \
+          mkdir -p oos_input_artifact
+          rm -f 931152_oos_inputs_v1.tar.gz 931152_oos_inputs_v1.sha256
+          python scripts/research/run_931152_oos_inputs_resumable.py \
             --design-universe data/reference/sector_931152_design_universe.csv \
             --output-dir oos_input_artifact \
-            --workers 3 \
+            --workers 1 \
             --timeout 20
           python - <<'PY'
           import json
@@ -68,6 +76,19 @@ jobs:
             fi
           done
 
+      - name: Save resumable public input checkpoint
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 931152-oos-input-checkpoint
+          path: |
+            oos_input_artifact/sina_*.html
+            oos_input_artifact/sina_*.meta.json
+            oos_input_artifact/eastmoney_159992_*.txt
+          if-no-files-found: ignore
+          retention-days: 14
+          overwrite: true
+
       - name: Upload public failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -80,6 +101,7 @@ jobs:
             oos_input_artifact/baostock_fetch_failures.jsonl
           if-no-files-found: ignore
           retention-days: 14
+          overwrite: true
 
       - name: Upload immutable qualification artifact
         uses: actions/upload-artifact@v4
