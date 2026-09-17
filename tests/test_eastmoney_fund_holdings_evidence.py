@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from urllib.error import URLError
 
 from tech_sentiment.eastmoney_fund_holdings_evidence import (
+    fetch_holdings_year,
     holdings_url,
     parse_eastmoney_envelope,
     parse_holdings_html,
@@ -89,3 +91,47 @@ def test_less_than_eleven_symbols_never_becomes_full_report_candidate_set() -> N
         response_sha256="abc",
     )[0]
     assert batch.full_report_candidate_set is False
+
+
+def test_fetch_holdings_year_retries_transient_transport_failures() -> None:
+    class FakeHeaders:
+        @staticmethod
+        def get_content_charset() -> str:
+            return "utf-8"
+
+    class FakeResponse:
+        headers = FakeHeaders()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        @staticmethod
+        def read() -> bytes:
+            return b'var apidata={content:"<div></div>",arryear:[2023]};'
+
+    calls = 0
+
+    def flaky_opener(request, *, timeout):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise URLError("temporary disconnect")
+        return FakeResponse()
+
+    sleeps: list[float] = []
+    text, url, digest = fetch_holdings_year(
+        "159992",
+        2023,
+        retries=4,
+        retry_backoff_seconds=0.25,
+        sleep_fn=sleeps.append,
+        opener=flaky_opener,
+    )
+    assert calls == 3
+    assert sleeps == [0.25, 0.5]
+    assert "arryear:[2023]" in text
+    assert "year=2023" in url
+    assert digest == sha256(text.encode("utf-8")).hexdigest()
