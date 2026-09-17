@@ -14,7 +14,7 @@ on:
         default: ""
         type: string
       pit_symbols:
-        description: "Optional comma-separated A-share codes for CNINFO PIT materialization"
+        description: "Optional comma-separated override; blank uses the frozen STAR50+ChiNext50 historical member union"
         required: false
         default: ""
         type: string
@@ -25,7 +25,7 @@ permissions:
 jobs:
   qualify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
 
@@ -69,31 +69,74 @@ jobs:
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --out-dir output/financing_materialization
 
-      - name: Materialize CNINFO PIT evidence when symbols are supplied
-        if: ${{ inputs.pit_symbols != '' }}
+      - name: Build frozen Capital/PIT symbol scope
         shell: bash
         run: |
+          python scripts/build_capital_pit_symbol_scope.py \
+            --out-dir output/pit_symbol_scope
+
+      - name: Restore resumable PIT checkpoints
+        uses: actions/cache@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a1-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}
+          restore-keys: |
+            capital-pit-v4a1-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-
+
+      - name: Materialize independent CNINFO, SSE and SZSE PIT archives
+        shell: bash
+        run: |
+          EXTRA_ARGS=()
+          if [[ -n "${{ inputs.pit_symbols }}" ]]; then
+            EXTRA_ARGS+=(--symbols "${{ inputs.pit_symbols }}")
+          else
+            EXTRA_ARGS+=(--symbols-csv output/pit_symbol_scope/capital_pit_symbols.csv)
+          fi
           python scripts/materialize_pit_evidence.py \
-            --symbols "${{ inputs.pit_symbols }}" \
+            "${EXTRA_ARGS[@]}" \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --calendar-csv output/capital_input_qualification/trading_calendar.csv \
+            --checkpoint-dir .cache/capital_pit_v4a \
             --out-dir output/pit_evidence_materialization
 
-      - name: Finalize immutable materialization identity
+      - name: Finalize immutable qualification bundle
         shell: bash
         run: |
           python scripts/finalize_capital_pit_materialization.py \
             --output-root output \
-            --out-dir output/materialization_identity
+            --out-dir output/materialization_identity \
+            --workflow-run-id "${{ github.run_id }}" \
+            --source-commit "${{ github.sha }}"
 
-      - name: Upload materialization artifact
+      - name: Upload immutable materialization artifact
+        id: upload_materialization
         uses: actions/upload-artifact@v4
         with:
           name: capital-pit-input-materialization
           path: |
             output/capital_input_qualification
             output/financing_materialization
+            output/pit_symbol_scope
             output/pit_evidence_materialization
             output/materialization_identity
+          if-no-files-found: error
+
+      - name: Record post-upload artifact identity
+        shell: bash
+        run: |
+          python scripts/write_capital_pit_artifact_receipt.py \
+            --preupload-identity output/materialization_identity/bundle_identity_preupload.json \
+            --artifact-id "${{ steps.upload_materialization.outputs.artifact-id }}" \
+            --artifact-digest "${{ steps.upload_materialization.outputs.artifact-digest }}" \
+            --artifact-url "${{ steps.upload_materialization.outputs.artifact-url }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --source-commit "${{ github.sha }}" \
+            --out output/materialization_identity/artifact_receipt.json
+
+      - name: Upload artifact identity receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: capital-pit-input-materialization-receipt
+          path: output/materialization_identity/artifact_receipt.json
           if-no-files-found: error
