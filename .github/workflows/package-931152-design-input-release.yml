@@ -32,19 +32,20 @@ jobs:
       - name: Fail closed on evidence qualification
         run: |
           python - <<'PY'
+          import csv
           import json
           from pathlib import Path
-          import pandas as pd
 
           root = Path('/tmp/931152-design-inputs')
           limit = json.loads((root / 'limit/report.json').read_text())
           prices = json.loads((root / 'prices/report.json').read_text())
-          membership = pd.read_csv(root / 'static/sector_931152_membership_evidence.csv', dtype={'index_code': str})
-          target = membership[membership['index_code'].astype(str).str.zfill(6).eq('931152')]
+          with (root / 'static/sector_931152_membership_evidence.csv').open(newline='', encoding='utf-8') as handle:
+              rows = list(csv.DictReader(handle))
+          target = [row for row in rows if str(row.get('index_code', '')).strip().zfill(6) == '931152']
 
           assert len(target) == 11, target
-          assert target['evidence_status'].astype(str).str.lower().eq('complete').all(), target
-          assert target['source_url'].fillna('').astype(str).str.strip().ne('').all(), target
+          assert all(str(row.get('evidence_status', '')).strip().lower() == 'complete' for row in target), target
+          assert all(str(row.get('source_url', '')).strip() for row in target), target
           assert limit['status'] == 'LIMIT_RULE_HISTORICAL_DESIGN_ELIGIBLE', limit
           assert float(limit['minimum_daily_limit_coverage']) >= 0.95, limit
           assert limit['holdout_opened'] is False, limit
