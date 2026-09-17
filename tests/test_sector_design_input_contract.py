@@ -28,7 +28,7 @@ def _index() -> pd.DataFrame:
             "date": ["2019-04-22", "2023-12-29"],
             "index_code": ["931152", "931152"],
             "close": [1000, 1200],
-            "provider": ["akshare:index_zh_a_hist"] * 2,
+            "provider": ["csindex:index_perf"] * 2,
         }
     )
 
@@ -67,3 +67,11 @@ def test_wrong_index_code_fails_closed() -> None:
     audit = audit_design_price_inputs(_prices(), index, ["600001", "300001"])
     assert audit.eligible_for_design_input is False
     assert any("unexpected index codes" in item for item in audit.errors)
+
+
+def test_truncated_index_rail_fails_closed_even_if_later_dates_exist() -> None:
+    index = _index().copy()
+    index.loc[0, "date"] = "2019-10-10"
+    audit = audit_design_price_inputs(_prices(), index, ["600001", "300001"])
+    assert audit.eligible_for_design_input is False
+    assert "index rail does not start on frozen 2019-04-22 design start" in audit.errors
