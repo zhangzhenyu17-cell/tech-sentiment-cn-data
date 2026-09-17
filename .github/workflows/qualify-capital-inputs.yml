@@ -79,6 +79,13 @@ jobs:
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --out-dir output/pit_evidence_materialization
 
+      - name: Finalize immutable materialization identity
+        shell: bash
+        run: |
+          python scripts/finalize_capital_pit_materialization.py \
+            --output-root output \
+            --out-dir output/materialization_identity
+
       - name: Upload materialization artifact
         uses: actions/upload-artifact@v4
         with:
@@ -87,4 +94,5 @@ jobs:
             output/capital_input_qualification
             output/financing_materialization
             output/pit_evidence_materialization
+            output/materialization_identity
           if-no-files-found: error
