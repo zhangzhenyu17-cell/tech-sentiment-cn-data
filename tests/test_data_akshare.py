@@ -10,6 +10,8 @@ from tech_sentiment.data_akshare import (
 class FakeAKShare:
     def __init__(self):
         self.last_tencent_symbol = None
+        self.eastmoney_timeouts: list[float] = []
+        self.tencent_timeouts: list[float] = []
 
     def index_stock_cons_csindex(self, symbol: str):
         if symbol == "000688":
@@ -36,7 +38,9 @@ class FakeAKShare:
         start_date: str,
         end_date: str,
         adjust: str,
+        timeout: float,
     ):
+        self.eastmoney_timeouts.append(timeout)
         if symbol in {"600000", "688999"}:
             raise RuntimeError("eastmoney failure")
         return pd.DataFrame(
@@ -62,6 +66,7 @@ class FakeAKShare:
         timeout: float,
     ):
         self.last_tencent_symbol = symbol
+        self.tencent_timeouts.append(timeout)
         if symbol.endswith("688999"):
             raise RuntimeError("tencent failure")
         return pd.DataFrame(
@@ -89,14 +94,17 @@ def test_fetch_current_csindex_universe_deduplicates_symbols():
     assert set(universe["universe_mode"]) == {"current_snapshot"}
 
 
-def test_fetch_stock_history_normalizes_eastmoney_columns():
+def test_fetch_stock_history_normalizes_eastmoney_columns_and_timeout():
+    client = FakeAKShare()
     prices = fetch_stock_history(
         "688001",
         start_date="2026-01-01",
         end_date="2026-01-31",
-        client=FakeAKShare(),
+        timeout_seconds=7.5,
+        client=client,
     )
 
+    assert client.eastmoney_timeouts == [7.5]
     assert list(prices["symbol"].unique()) == ["688001"]
     assert prices["date"].dtype.kind == "M"
     assert prices.loc[0, "pct_chg"] == 1.0
@@ -105,14 +113,17 @@ def test_fetch_stock_history_normalizes_eastmoney_columns():
 
 
 def test_tencent_fallback_derives_percentage_change():
+    client = FakeAKShare()
     prices = fetch_stock_history(
         "600000",
         start_date="2026-01-01",
         end_date="2026-01-31",
         provider="tencent",
-        client=FakeAKShare(),
+        timeout_seconds=8.0,
+        client=client,
     )
 
+    assert client.tencent_timeouts == [8.0]
     assert pd.isna(prices.loc[0, "pct_chg"])
     assert round(prices.loc[1, "pct_chg"], 6) == 2.0
     assert set(prices["provider"]) == {"tencent"}
@@ -134,15 +145,19 @@ def test_tencent_uses_explicit_shanghai_prefix_for_689_series():
 
 def test_download_universe_history_falls_back_and_records_total_failures():
     universe = pd.DataFrame({"symbol": ["688001", "600000", "688999"]})
+    client = FakeAKShare()
     result = download_universe_history(
         universe,
         start_date="2026-01-01",
         end_date="2026-01-31",
         retries=0,
         sleep_seconds=0,
-        client=FakeAKShare(),
+        timeout_seconds=9.0,
+        client=client,
     )
 
+    assert client.eastmoney_timeouts == [9.0, 9.0, 9.0]
+    assert client.tencent_timeouts == [9.0, 9.0]
     assert set(result.prices["symbol"]) == {"688001", "600000"}
     providers = result.prices.groupby("symbol")["provider"].first().to_dict()
     assert providers == {"600000": "tencent", "688001": "eastmoney"}
@@ -150,3 +165,17 @@ def test_download_universe_history_falls_back_and_records_total_failures():
     error = result.errors.loc[0, "error"]
     assert "eastmoney" in error and "tencent" in error
 
+
+def test_stock_history_timeout_must_be_positive():
+    try:
+        fetch_stock_history(
+            "688001",
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            timeout_seconds=0,
+            client=FakeAKShare(),
+        )
+    except ValueError as exc:
+        assert "timeout_seconds" in str(exc)
+    else:
+        raise AssertionError("non-positive timeout should fail closed")
