@@ -1,0 +1,176 @@
+name: one-shot 931152 design input r2 release packager
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/package-931152-design-input-release-r2.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  package:
+    if: github.head_ref == 'data/931152-design-input-release-r2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen evidence artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/931152-r2/limit /tmp/931152-r2/old-price /tmp/931152-r2/r2 /tmp/931152-r2/package/static /tmp/931152-r2/package/limit /tmp/931152-r2/package/prices
+          gh run download 35181106720 --name 931152-strict-limit-coverage --dir /tmp/931152-r2/limit
+          gh run download 35185896827 --name 931152-design-inputs-qualified --dir /tmp/931152-r2/old-price
+          gh run download 35187435688 --name 931152-design-inputs-r2 --dir /tmp/931152-r2/r2
+
+      - name: Assemble byte-stable r2 price inputs and fail closed
+        run: |
+          python - <<'PY'
+          import csv
+          import hashlib
+          import json
+          from pathlib import Path
+          import shutil
+
+          root = Path('/tmp/931152-r2')
+          package = root / 'package'
+
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          old_report = json.loads((root / 'old-price/report.json').read_text())
+          r2_report = json.loads((root / 'r2/report.json').read_text())
+          limit_report = json.loads((root / 'limit/report.json').read_text())
+
+          assert r2_report['status'] == 'DESIGN_PRICE_INPUT_ELIGIBLE', r2_report
+          assert r2_report['qualification_revision'] == 2, r2_report
+          assert r2_report['index_primary_provider'] == 'csindex:index_perf', r2_report
+          assert r2_report['index_rows'] == 1142, r2_report
+          assert r2_report['index_start'] == '2019-04-22', r2_report
+          assert r2_report['strict_trading_dates'] == 1142, r2_report
+          assert r2_report['missing_official_dates'] == [], r2_report
+          assert r2_report['unexpected_official_dates'] == [], r2_report
+          assert r2_report['crosscheck_rows'] == 1029, r2_report
+          assert r2_report['crosscheck_expected_rows'] == 1029, r2_report
+          assert r2_report['crosscheck_mismatch_rows'] == 0, r2_report
+          assert float(r2_report['crosscheck_max_abs_close_diff']) <= 0.011, r2_report
+          assert r2_report['holdout_opened'] is False, r2_report
+          assert r2_report['forward_outcomes_computed'] is False, r2_report
+
+          assert limit_report['status'] == 'LIMIT_RULE_HISTORICAL_DESIGN_ELIGIBLE', limit_report
+          assert float(limit_report['minimum_daily_limit_coverage']) >= 0.95, limit_report
+          assert limit_report['holdout_opened'] is False, limit_report
+          assert limit_report['model_outcomes_read'] is False, limit_report
+
+          stock = root / 'old-price/stock_prices_qfq.csv'
+          errors = root / 'old-price/stock_download_errors.csv'
+          official = root / 'r2/index_931152_prices.csv'
+          overlap = root / 'r2/index_931152_eastmoney_overlap.csv'
+
+          assert digest(stock) == '16070b6e82a93371cb976159f569db0d1bf98dbed473bcd17af41c2178cb3751'
+          assert digest(errors) == '063ff5282a6862d60cd3dfb610b581eb752f824ec757b6902cb4ca04e3c8c8a4'
+          assert digest(official) == '8dbc746103a08a69f1d74cc0a690ad202d9c42ce2f87fccfd1f77a8dcfdda7d9'
+          assert digest(overlap) == 'c033ad0919c940d85ace6136e491464c7b44b4525a4d61419c130ae22b1707c6'
+
+          shutil.copyfile(stock, package / 'prices/stock_prices_qfq.csv')
+          shutil.copyfile(errors, package / 'prices/stock_download_errors.csv')
+          shutil.copyfile(official, package / 'prices/index_931152_prices.csv')
+          shutil.copyfile(overlap, package / 'prices/index_931152_eastmoney_overlap.csv')
+
+          # Correct only the file-hash map to reflect the byte-stable original stock
+          # artifacts. All measured r2 qualification facts remain unchanged.
+          corrected = dict(r2_report)
+          corrected['qualification_revision'] = 2
+          corrected['r2_source_run_id'] = 35187435688
+          corrected['r2_artifact_digest'] = 'sha256:acdabca57828c0235bfe235577c0bf424c03ea1162a001b76c95dc304e2a6208'
+          corrected['stock_source_run_id'] = 35184766601
+          corrected['stock_artifact_digest'] = 'sha256:73d8af31a1d4e1161c6ed8efe2b8ac916dcb8352bac25a8dca5a362a3c458b31'
+          corrected['files'] = {
+              'stock_prices_qfq.csv': digest(package / 'prices/stock_prices_qfq.csv'),
+              'stock_download_errors.csv': digest(package / 'prices/stock_download_errors.csv'),
+              'index_931152_prices.csv': digest(package / 'prices/index_931152_prices.csv'),
+              'index_931152_eastmoney_overlap.csv': digest(package / 'prices/index_931152_eastmoney_overlap.csv'),
+          }
+          (package / 'prices/report.json').write_text(
+              json.dumps(corrected, ensure_ascii=False, indent=2, sort_keys=True) + '\n'
+          )
+
+          shutil.copytree(root / 'limit', package / 'limit', dirs_exist_ok=True)
+          for name in (
+              'sector_931152_membership_evidence.csv',
+              'sector_931152_design_universe.csv',
+              'sector_931152_limit_coverage_qualification.json',
+          ):
+              shutil.copyfile(Path('data/reference') / name, package / 'static' / name)
+
+          with (package / 'static/sector_931152_membership_evidence.csv').open(newline='', encoding='utf-8') as handle:
+              rows = [row for row in csv.DictReader(handle) if str(row['index_code']).zfill(6) == '931152']
+          assert len(rows) == 11, rows
+          assert all(row['evidence_status'].strip().lower() == 'complete' for row in rows), rows
+          assert all(row['source_url'].strip() for row in rows), rows
+          PY
+
+      - name: Build deterministic frozen package
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/931152-r2/package')
+          files = {}
+          for path in sorted(p for p in root.rglob('*') if p.is_file()):
+              files[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+          manifest = {
+              'package': '931152-v0-design-inputs-r2-20260917',
+              'qualification_scope': 'historical_design_research_input_only',
+              'qualification_revision': 2,
+              'public_main_commit': 'fe7920f410b95d62160bba99633f0289d3dee0c1',
+              'membership_nodes_complete': 11,
+              'limit_source_run_id': 35181106720,
+              'r2_source_run_id': 35187435688,
+              'r2_artifact_digest': 'sha256:acdabca57828c0235bfe235577c0bf424c03ea1162a001b76c95dc304e2a6208',
+              'stock_source_run_id': 35184766601,
+              'stock_artifact_digest': 'sha256:73d8af31a1d4e1161c6ed8efe2b8ac916dcb8352bac25a8dca5a362a3c458b31',
+              'index_primary_provider': 'csindex:index_perf',
+              'index_rows': 1142,
+              'index_start': '2019-04-22',
+              'index_end': '2023-12-29',
+              'strict_trading_dates': 1142,
+              'eastmoney_crosscheck_rows': 1029,
+              'eastmoney_crosscheck_mismatches': 0,
+              'design_start': '2019-04-22',
+              'design_end': '2023-12-31',
+              'holdout_opened': False,
+              'model_outcomes_included': False,
+              'files': files,
+          }
+          (root / 'package_manifest.json').write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          PY
+          tar -C /tmp/931152-r2 --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -cf - package | gzip -n > 931152-v0-design-inputs-r2-20260917.tar.gz
+          sha256sum 931152-v0-design-inputs-r2-20260917.tar.gz > 931152-v0-design-inputs-r2-20260917.sha256
+          cp /tmp/931152-r2/package/package_manifest.json ./931152-v0-design-inputs-r2-20260917-manifest.json
+
+      - name: Publish research-only r2 public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=931152-v0-design-inputs-r2-20260917
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target fe7920f410b95d62160bba99633f0289d3dee0c1 \
+              --title "931152 V0 frozen design inputs r2 — 2026-09-17" \
+              --notes "Research-only r2 inputs for the preregistered 931152 2019-2023 design sample. The primary index rail is the complete official CSI index-perf history from 2019-04-22, cross-checked against EastMoney on 1,029 overlapping dates. Contains no model outcomes and no 2024+ holdout data. Supersedes the earlier non-r2 input release for design research."
+          fi
+          gh release upload "$TAG" \
+            931152-v0-design-inputs-r2-20260917.tar.gz \
+            931152-v0-design-inputs-r2-20260917.sha256 \
+            931152-v0-design-inputs-r2-20260917-manifest.json \
+            --clobber
