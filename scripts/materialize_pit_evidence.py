@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 from typing import Callable
 
 import pandas as pd
@@ -11,6 +12,8 @@ from tech_sentiment.cninfo_direct import fetch_cninfo_announcements_direct
 from tech_sentiment.official_pit_archives import (
     SSE_SOURCE_ID,
     SZSE_SOURCE_ID,
+    fetch_sse_announcements,
+    fetch_szse_announcements,
     materialize_sse_archive,
     materialize_szse_archive,
 )
@@ -55,6 +58,56 @@ def _entity_suffix(symbol: str) -> str:
     if symbol.startswith(("4", "8")):
         return ".BJ"
     return ""
+
+
+def _publication_has_precise_clock(value: object) -> bool:
+    return bool(re.search(r"(?:^|\s)\d{1,2}:\d{2}(?::\d{2})?(?:\s|$)", str(value).strip()))
+
+
+def filter_records_available_by_asof(
+    frame: pd.DataFrame,
+    *,
+    publication_column: str,
+    trading_dates: pd.Series,
+) -> tuple[pd.DataFrame, int]:
+    """Drop only disclosures that cannot yet be used by the bundle's last market close.
+
+    This is not a fill or an inferred availability date. A date-only or after-close
+    disclosure on the final real trading date needs a later trading date before it
+    becomes usable, so it stays outside the current as-of ledger and can appear on
+    a later rerun when that real date exists.
+    """
+
+    if publication_column not in frame.columns:
+        raise ValueError(f"publication column missing: {publication_column}")
+    if frame.empty:
+        return frame.copy(), 0
+    calendar = pd.DatetimeIndex(pd.to_datetime(trading_dates, errors="raise")).normalize().sort_values().unique()
+    if not len(calendar):
+        raise ValueError("real trading calendar is empty")
+    final_market_date = pd.Timestamp(calendar[-1]).normalize()
+    keep: list[bool] = []
+    for value in frame[publication_column]:
+        publication = pd.Timestamp(pd.to_datetime(value, errors="raise"))
+        publication_date = publication.normalize()
+        if publication_date < final_market_date:
+            keep.append(True)
+            continue
+        if publication_date > final_market_date:
+            keep.append(False)
+            continue
+        precise = _publication_has_precise_clock(value)
+        at_or_before_close = precise and (
+            publication.hour < 15
+            or (
+                publication.hour == 15
+                and publication.minute == 0
+                and publication.second == 0
+            )
+        )
+        keep.append(at_or_before_close)
+    mask = pd.Series(keep, index=frame.index, dtype=bool)
+    return frame.loc[mask].copy().reset_index(drop=True), int((~mask).sum())
 
 
 def _checkpoint_paths(root: Path, source: str, symbol: str) -> tuple[Path, Path, Path, Path]:
@@ -114,7 +167,6 @@ def _run_source(
     symbols: list[str],
     start_date: str,
     end_date: str,
-    trading_dates: pd.Series,
     checkpoint_root: Path,
     materialize_one: Callable[[str], PitMaterializationResult],
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, object]]:
@@ -123,6 +175,7 @@ def _run_source(
     error_parts: list[pd.DataFrame] = []
     resumed = 0
     executed = 0
+    tail_omitted = 0
     for symbol in symbols:
         result = _read_checkpoint(
             checkpoint_root,
@@ -137,6 +190,7 @@ def _run_source(
             _write_checkpoint(checkpoint_root, result, symbol=symbol)
         else:
             resumed += 1
+        tail_omitted += int(result.summary.get("tail_records_beyond_asof_not_materialized") or 0)
         if len(result.records):
             record_parts.append(result.records)
         coverage_parts.append(result.coverage)
@@ -171,11 +225,28 @@ def _run_source(
         "complete_symbol_queries": complete,
         "failed_symbol_queries": failed,
         "materialized_records": int(len(records)),
+        "tail_records_beyond_asof_not_materialized": tail_omitted,
         "resumed_symbol_queries": resumed,
         "executed_symbol_queries": executed,
         "readiness_state": state,
     }
     return records, coverage, errors, summary
+
+
+def _with_tail_filter(
+    result: PitMaterializationResult,
+    *,
+    omitted: int,
+) -> PitMaterializationResult:
+    summary = dict(result.summary)
+    summary["tail_records_beyond_asof_not_materialized"] = int(omitted)
+    summary["tail_handling"] = "OMIT_UNTIL_NEXT_REAL_TRADING_DATE_EXISTS_NO_FILL_NO_BACKFILL"
+    return PitMaterializationResult(
+        records=result.records,
+        coverage=result.coverage,
+        errors=result.errors,
+        summary=summary,
+    )
 
 
 def _audit_summary(records: pd.DataFrame) -> dict[str, object]:
@@ -281,42 +352,107 @@ def main() -> None:
     sh_symbols = [symbol for symbol in symbols if _entity_suffix(symbol) == ".SH"]
     sz_symbols = [symbol for symbol in symbols if _entity_suffix(symbol) == ".SZ"]
 
+    def cninfo_fetcher(**kwargs: object) -> pd.DataFrame:
+        raw = fetch_cninfo_announcements_direct(**kwargs)
+        filtered, omitted = filter_records_available_by_asof(
+            raw, publication_column="公告时间", trading_dates=trading_dates
+        )
+        filtered.attrs["tail_records_beyond_asof_not_materialized"] = omitted
+        return filtered
+
+    def sse_fetcher(**kwargs: object) -> pd.DataFrame:
+        raw = fetch_sse_announcements(**kwargs)
+        filtered, omitted = filter_records_available_by_asof(
+            raw, publication_column="publication_time", trading_dates=trading_dates
+        )
+        filtered.attrs["tail_records_beyond_asof_not_materialized"] = omitted
+        return filtered
+
+    def szse_fetcher(**kwargs: object) -> pd.DataFrame:
+        raw = fetch_szse_announcements(**kwargs)
+        filtered, omitted = filter_records_available_by_asof(
+            raw, publication_column="publication_time", trading_dates=trading_dates
+        )
+        filtered.attrs["tail_records_beyond_asof_not_materialized"] = omitted
+        return filtered
+
+    def cninfo_one(symbol: str) -> PitMaterializationResult:
+        omitted = 0
+
+        def fetcher(**kwargs: object) -> pd.DataFrame:
+            nonlocal omitted
+            frame = cninfo_fetcher(**kwargs)
+            omitted = int(frame.attrs.get("tail_records_beyond_asof_not_materialized") or 0)
+            return frame
+
+        result = materialize_cninfo_archive(
+            [symbol],
+            start_date=start_date,
+            end_date=end_date,
+            trading_dates=trading_dates,
+            fetcher=fetcher,
+        )
+        return _with_tail_filter(result, omitted=omitted)
+
+    def sse_one(symbol: str) -> PitMaterializationResult:
+        omitted = 0
+
+        def fetcher(**kwargs: object) -> pd.DataFrame:
+            nonlocal omitted
+            frame = sse_fetcher(**kwargs)
+            omitted = int(frame.attrs.get("tail_records_beyond_asof_not_materialized") or 0)
+            return frame
+
+        result = materialize_sse_archive(
+            [symbol],
+            start_date=start_date,
+            end_date=end_date,
+            trading_dates=trading_dates,
+            fetcher=fetcher,
+        )
+        return _with_tail_filter(result, omitted=omitted)
+
+    def szse_one(symbol: str) -> PitMaterializationResult:
+        omitted = 0
+
+        def fetcher(**kwargs: object) -> pd.DataFrame:
+            nonlocal omitted
+            frame = szse_fetcher(**kwargs)
+            omitted = int(frame.attrs.get("tail_records_beyond_asof_not_materialized") or 0)
+            return frame
+
+        result = materialize_szse_archive(
+            [symbol],
+            start_date=start_date,
+            end_date=end_date,
+            trading_dates=trading_dates,
+            fetcher=fetcher,
+        )
+        return _with_tail_filter(result, omitted=omitted)
+
     cninfo = _run_source(
         source=CNINFO_SOURCE_ID,
         symbols=symbols,
         start_date=start_date,
         end_date=end_date,
-        trading_dates=trading_dates,
         checkpoint_root=checkpoint_root,
-        materialize_one=lambda symbol: materialize_cninfo_archive(
-            [symbol],
-            start_date=start_date,
-            end_date=end_date,
-            trading_dates=trading_dates,
-            fetcher=fetch_cninfo_announcements_direct,
-        ),
+        materialize_one=cninfo_one,
     )
     sse = _run_source(
         source=SSE_SOURCE_ID,
         symbols=sh_symbols,
         start_date=start_date,
         end_date=end_date,
-        trading_dates=trading_dates,
         checkpoint_root=checkpoint_root,
-        materialize_one=lambda symbol: materialize_sse_archive(
-            [symbol], start_date=start_date, end_date=end_date, trading_dates=trading_dates
-        ),
+        materialize_one=sse_one,
     )
     szse = _run_source(
         source=SZSE_SOURCE_ID,
         symbols=sz_symbols,
         start_date=start_date,
         end_date=end_date,
-        trading_dates=trading_dates,
         checkpoint_root=checkpoint_root,
-        materialize_one=lambda symbol: materialize_szse_archive(
-            [symbol], start_date=start_date, end_date=end_date, trading_dates=trading_dates
-        ),
+        materialize_one=szse_one,
     )
 
     source_results = {
