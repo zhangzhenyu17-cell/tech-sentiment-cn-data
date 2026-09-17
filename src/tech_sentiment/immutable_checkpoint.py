@@ -11,7 +11,7 @@ from typing import Mapping, Sequence
 import pandas as pd
 
 
-CHECKPOINT_SCHEMA_VERSION = "v4a-checkpoint-v1"
+CHECKPOINT_SCHEMA_VERSION = "v4a-checkpoint-v2"
 
 
 def _canonical_json(value: object) -> str:
@@ -34,6 +34,27 @@ def _hash_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _text_columns(frame: pd.DataFrame) -> list[str]:
+    """Record columns whose lexical representation is part of canonical identity.
+
+    CSV inference turns identifiers such as ``588000`` into integers on resume.
+    That changes canonical values even when the checkpoint bytes are intact.
+    Persisting text-column intent in the immutable receipt makes fresh and
+    resumed materialization semantically identical without special-casing each
+    producer.
+    """
+
+    columns: list[str] = []
+    for column in frame.columns:
+        series = frame[column]
+        non_null = series.dropna()
+        if isinstance(series.dtype, pd.StringDtype) or (
+            len(non_null) > 0 and bool(non_null.map(lambda value: isinstance(value, str)).all())
+        ):
+            columns.append(str(column))
+    return columns
 
 
 @dataclass(frozen=True)
@@ -109,6 +130,7 @@ class ImmutableCheckpointStore:
                     "bytes": len(content),
                     "rows": int(len(frame)),
                     "columns": list(map(str, frame.columns)),
+                    "text_columns": _text_columns(frame),
                 }
             )
         receipt: dict[str, object] = {
@@ -166,15 +188,26 @@ class ImmutableCheckpointStore:
             if _hash_file(path) != item.get("sha256"):
                 raise ValueError(f"checkpoint file hash mismatch: {path.name}")
             expected_columns = list(item.get("columns") or [])
-            try:
-                frame = pd.read_csv(path)
-            except pd.errors.EmptyDataError:
-                if int(item.get("rows") or 0) != 0 or expected_columns:
-                    raise ValueError(f"checkpoint empty CSV schema mismatch: {path.name}")
+            text_columns = list(item.get("text_columns") or [])
+            unknown_text_columns = sorted(set(text_columns) - set(expected_columns))
+            if unknown_text_columns:
+                raise ValueError(
+                    f"checkpoint text-column schema mismatch: {path.name}: {unknown_text_columns}"
+                )
+            expected_rows = int(item.get("rows") or 0)
+            if expected_rows == 0 and not expected_columns:
                 frame = pd.DataFrame(columns=expected_columns)
+            else:
+                try:
+                    frame = pd.read_csv(
+                        path,
+                        dtype={column: str for column in text_columns},
+                    )
+                except pd.errors.EmptyDataError as exc:
+                    raise ValueError(f"checkpoint empty CSV schema mismatch: {path.name}") from exc
             if list(map(str, frame.columns)) != expected_columns:
                 raise ValueError(f"checkpoint columns mismatch: {path.name}")
-            if int(len(frame)) != int(item.get("rows") or 0):
+            if int(len(frame)) != expected_rows:
                 raise ValueError(f"checkpoint row count mismatch: {path.name}")
             frames[name] = frame
         return CheckpointLoadResult(frames=frames, receipt=receipt)
