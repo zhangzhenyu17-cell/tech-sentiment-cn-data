@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from tech_sentiment.canonical_materialization import canonicalize_metadata
 from tech_sentiment.index_price import fetch_index_history
 from tech_sentiment.resumable_financing import materialize_financing_monthly
 
@@ -41,9 +42,11 @@ def main() -> None:
         checkpoint_dir=args.checkpoint_dir,
     )
     result = resumed.result
-    summary = dict(result.summary)
-    summary["source_commit"] = args.source_commit
-    summary["checkpoint_mode"] = "EXACT_IDENTITY_MONTHLY_CHUNKS"
+    summary_with_runtime = dict(result.summary)
+    summary_with_runtime["source_commit"] = args.source_commit
+    summary_with_runtime["checkpoint_mode"] = "EXACT_IDENTITY_MONTHLY_CHUNKS"
+    summary = canonicalize_metadata(summary_with_runtime)
+    assert isinstance(summary, dict)
 
     calendar.to_csv(out / "trading_calendar.csv", index=False)
     result.raw.to_csv(out / "financing_raw_aligned.csv", index=False)
@@ -53,7 +56,20 @@ def main() -> None:
         json.dumps(summary, ensure_ascii=False, indent=2, default=str) + "\n",
         encoding="utf-8",
     )
-    print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
+    print(
+        json.dumps(
+            {
+                "canonical_summary": summary,
+                "runtime_diagnostics": {
+                    "resumed_chunks": int(resumed.resumed_chunks),
+                    "executed_chunks": int(resumed.executed_chunks),
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+            default=str,
+        )
+    )
 
 
 if __name__ == "__main__":
