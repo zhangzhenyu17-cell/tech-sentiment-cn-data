@@ -24,7 +24,7 @@ jobs:
         run: |
           mkdir -p /tmp/931152-design-inputs/limit /tmp/931152-design-inputs/prices /tmp/931152-design-inputs/static
           gh run download 35181106720 --name 931152-strict-limit-coverage --dir /tmp/931152-design-inputs/limit
-          gh run download 35183746967 --name 931152-design-inputs --dir /tmp/931152-design-inputs/prices
+          gh run download 35184766601 --name 931152-design-inputs --dir /tmp/931152-design-inputs/prices
           cp data/reference/sector_931152_membership_evidence.csv /tmp/931152-design-inputs/static/
           cp data/reference/sector_931152_design_universe.csv /tmp/931152-design-inputs/static/
           cp data/reference/sector_931152_limit_coverage_qualification.json /tmp/931152-design-inputs/static/
@@ -58,13 +58,10 @@ jobs:
           PY
 
       - name: Verify price-file hashes and build immutable package
-        env:
-          PUBLIC_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha }}
         run: |
           python - <<'PY'
           import hashlib
           import json
-          import os
           from pathlib import Path
 
           root = Path('/tmp/931152-design-inputs')
@@ -81,8 +78,8 @@ jobs:
               'package': '931152-v0-design-inputs-20260917',
               'qualification_scope': 'historical_design_research_input_only',
               'limit_source_run_id': 35181106720,
-              'price_source_run_id': 35183746967,
-              'public_source_commit': os.environ['PUBLIC_SOURCE_COMMIT'],
+              'price_source_run_id': 35184766601,
+              'price_source_commit': '46d2f0c5b746b2b6422154dadde15508fc6e4a4c',
               'design_start': '2019-04-22',
               'design_end': '2023-12-31',
               'holdout_opened': False,
