@@ -8,7 +8,6 @@ from pathlib import Path
 import pandas as pd
 
 from tech_sentiment.data_akshare import download_universe_history
-from tech_sentiment.index_price import fetch_index_history
 from tech_sentiment.sector_design_input_contract import (
     DESIGN_END,
     DESIGN_START,
@@ -17,6 +16,7 @@ from tech_sentiment.sector_design_input_contract import (
     STOCK_WARMUP_START,
     audit_design_price_inputs,
 )
+from tech_sentiment.sector_index_price import fetch_sector_index_history_direct
 
 
 def _sha256_file(path: Path) -> str:
@@ -57,7 +57,15 @@ def main() -> int:
     prices = download.prices.copy()
     errors = download.errors.copy()
 
-    index_prices = fetch_index_history(
+    # Persist the expensive stock download before the independent index request.
+    # If an index provider fails, the run still leaves auditable partial evidence.
+    prices_path = out / "stock_prices_qfq.csv"
+    errors_path = out / "stock_download_errors.csv"
+    index_path = out / "index_931152_prices.csv"
+    prices.to_csv(prices_path, index=False, date_format="%Y-%m-%d")
+    errors.to_csv(errors_path, index=False)
+
+    index_prices = fetch_sector_index_history_direct(
         INNOVATION_DRUG_INDEX,
         start_date=DESIGN_START.strftime("%Y-%m-%d"),
         end_date=DESIGN_END.strftime("%Y-%m-%d"),
@@ -65,12 +73,6 @@ def main() -> int:
         retry_backoff_seconds=0.75,
         timeout_seconds=15.0,
     )
-
-    prices_path = out / "stock_prices_qfq.csv"
-    errors_path = out / "stock_download_errors.csv"
-    index_path = out / "index_931152_prices.csv"
-    prices.to_csv(prices_path, index=False, date_format="%Y-%m-%d")
-    errors.to_csv(errors_path, index=False)
     index_prices.to_csv(index_path, index=False, date_format="%Y-%m-%d")
 
     audit = audit_design_price_inputs(prices, index_prices, requested_symbols)
@@ -113,6 +115,11 @@ def main() -> int:
             }
             if "provider" in index_prices.columns
             else {}
+        ),
+        "index_provider_identifiers": (
+            sorted(set(index_prices["provider_identifier"].astype(str)))
+            if "provider_identifier" in index_prices.columns
+            else []
         ),
         "audit_errors": list(audit.errors),
         "files": {
