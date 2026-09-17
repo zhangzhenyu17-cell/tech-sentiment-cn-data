@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import gzip
 import json
 from pathlib import Path
@@ -237,10 +236,11 @@ def main() -> None:
         },
     }
 
+    # Canonical materialization content deliberately excludes workflow/run clocks.
+    # GitHub run and artifact identities are attached later in the identity receipts,
+    # so fresh and resumed runs at the same source commit can have identical hashes.
     report: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "workflow_run_id": str(args.workflow_run_id or "").strip() or None,
         "source_commit": str(args.source_commit or "").strip() or None,
         "target_start": capital_summary.get("start_date"),
         "target_end": capital_summary.get("end_date"),
@@ -256,6 +256,7 @@ def main() -> None:
         "evidence_qualification_promotion_run": False,
         "production_run": False,
         "workflow_dispatch_only_required": True,
+        "workflow_envelope_separated_from_canonical_bundle": True,
     }
     report_path = out / "qualification_report.json"
     _write_json(report_path, report)
@@ -296,7 +297,7 @@ def main() -> None:
         readiness_matrix=readiness,
         source_identities=source_identities,
         query_identities=query_identities,
-        workflow_run_id=args.workflow_run_id,
+        workflow_run_id=None,
         source_commit=args.source_commit,
         coverage_matrix=coverage_matrix,
         provenance_matrix=provenance_matrix,
@@ -335,8 +336,8 @@ def main() -> None:
         "artifact_id": None,
         "artifact_digest": None,
         "artifact_identity_note": (
-            "GitHub artifact id/digest are assigned only after upload; the post-upload receipt records them "
-            "without creating a circular self-hash."
+            "GitHub workflow/artifact identity is an envelope outside the canonical tar; "
+            "post-upload receipt records artifact id/digest without creating a circular self-hash."
         ),
     }
     _write_json(out / "bundle_identity_preupload.json", identity)
