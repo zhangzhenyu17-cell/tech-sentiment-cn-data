@@ -12,6 +12,40 @@ SECTOR_INDEX_EASTMONEY_SECIDS = {
 EASTMONEY_KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 
 
+def _new_eastmoney_session() -> Any:
+    try:
+        import requests
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("requests is required for direct sector index history") from exc
+
+    current = requests.Session()
+    current.headers.update(
+        {
+            "Accept": "application/json,text/plain,*/*",
+            "Referer": "https://quote.eastmoney.com/",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36"
+            ),
+            "Connection": "close",
+        }
+    )
+    transport_retry = Retry(
+        total=2,
+        connect=2,
+        read=2,
+        status=2,
+        backoff_factor=0.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
+        raise_on_status=False,
+    )
+    current.mount("https://", HTTPAdapter(max_retries=transport_retry))
+    return current
+
+
 def fetch_sector_index_history_direct(
     index_code: str,
     *,
@@ -29,6 +63,11 @@ def fetch_sector_index_history_direct(
     That discovery endpoint is unnecessary for a frozen, known index and can fail
     independently of the actual kline endpoint.  This adapter pins the audited
     market identifier for 931152 and records it in the returned provenance.
+
+    When no caller-managed session is supplied, every outer attempt uses a fresh
+    HTTP session with bounded transport retries.  This avoids reusing a poisoned
+    keep-alive connection while preserving the same provider, identifier and
+    fail-closed data semantics.
     """
     code = str(index_code).strip().zfill(6)
     secid = SECTOR_INDEX_EASTMONEY_SECIDS.get(code)
@@ -36,15 +75,10 @@ def fetch_sector_index_history_direct(
         raise ValueError(f"no fixed EastMoney secid configured for sector index {code}")
     if retries < 0:
         raise ValueError("retries must be >= 0")
+    if retry_backoff_seconds < 0:
+        raise ValueError("retry_backoff_seconds must be >= 0")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be > 0")
-
-    if session is None:
-        try:
-            import requests
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("requests is required for direct sector index history") from exc
-        session = requests.Session()
 
     params = {
         "secid": secid,
@@ -60,8 +94,14 @@ def fetch_sector_index_history_direct(
     last_error: Exception | None = None
     payload: dict[str, Any] | None = None
     for attempt in range(retries + 1):
+        current_session = session if session is not None else _new_eastmoney_session()
+        owns_session = session is None
         try:
-            response = session.get(EASTMONEY_KLINE_URL, params=params, timeout=timeout_seconds)
+            response = current_session.get(
+                EASTMONEY_KLINE_URL,
+                params=params,
+                timeout=timeout_seconds,
+            )
             response.raise_for_status()
             candidate = response.json()
             data = candidate.get("data") if isinstance(candidate, dict) else None
@@ -79,7 +119,11 @@ def fetch_sector_index_history_direct(
             last_error = exc
             if attempt >= retries:
                 break
-            sleep_fn(retry_backoff_seconds * (attempt + 1))
+            if retry_backoff_seconds:
+                sleep_fn(retry_backoff_seconds * (attempt + 1))
+        finally:
+            if owns_session:
+                current_session.close()
 
     if payload is None:
         raise RuntimeError(
