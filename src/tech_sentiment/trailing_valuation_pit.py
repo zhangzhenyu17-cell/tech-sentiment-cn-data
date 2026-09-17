@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Mapping
+from typing import Iterable, Mapping
 
 import numpy as np
 import pandas as pd
@@ -11,7 +11,7 @@ from .pit_public_materialization import _stable_hash, validate_materialized_pit_
 
 VALUATION_SOURCE_ID = "DERIVED_PIT_TRAILING_VALUATION"
 VALUATION_PROVIDER = "DERIVED_PIT_PRICE_AND_VERSIONED_OFFICIAL_FILINGS"
-VALUATION_FORMULA_VERSION = "trailing-pe-from-cumulative-eps-v1"
+VALUATION_FORMULA_VERSION = "trailing-pe-from-cumulative-eps-v2-calendar-20d"
 
 
 def _entity_from_symbol(symbol: object) -> str:
@@ -98,12 +98,33 @@ def _ttm_eps_as_of(
     }
 
 
+def _calendar_20d_reference(trading_dates: Iterable[object]) -> dict[pd.Timestamp, pd.Timestamp]:
+    calendar = (
+        pd.DatetimeIndex(pd.to_datetime(list(trading_dates), errors="raise"))
+        .normalize()
+        .sort_values()
+        .unique()
+    )
+    if not len(calendar):
+        raise ValueError("valuation trading calendar cannot be empty")
+    return {
+        pd.Timestamp(calendar[index]).normalize(): pd.Timestamp(calendar[index - 20]).normalize()
+        for index in range(20, len(calendar))
+    }
+
+
 def build_trailing_valuation_rail(
     *,
     filing_facts: pd.DataFrame,
     stock_prices: pd.DataFrame,
+    trading_dates: Iterable[object],
 ) -> pd.DataFrame:
-    """Build a PIT trailing-PE rail from unadjusted close and as-of EPS facts."""
+    """Build PIT trailing PE and exact-market-calendar 20d valuation change.
+
+    The 20d endpoint is the real market trading date exactly 20 calendar slots
+    earlier. A missing stock price on either endpoint remains missing; no row
+    shift, interpolation, forward-fill, or backfill is allowed.
+    """
 
     fact_required = {
         "entity_id",
@@ -124,6 +145,9 @@ def build_trailing_valuation_rail(
     if price_missing:
         raise ValueError(f"stock prices missing columns: {sorted(price_missing)}")
 
+    reference_by_date = _calendar_20d_reference(trading_dates)
+    calendar_dates = set(reference_by_date) | set(reference_by_date.values())
+
     eps = filing_facts[filing_facts["fact_type"].astype(str).eq("BASIC_EPS")].copy()
     eps["period_end"] = pd.to_datetime(eps["period_end"], errors="raise").dt.normalize()
     eps["evidence_available_date"] = pd.to_datetime(
@@ -139,6 +163,8 @@ def build_trailing_valuation_rail(
     prices["entity_id"] = prices["symbol"].map(_entity_from_symbol)
     if prices.duplicated(["entity_id", "date"]).any():
         raise ValueError("stock price history contains duplicate entity/date rows")
+    if len(prices) and not set(prices["date"]).issubset(calendar_dates):
+        raise ValueError("stock price history contains dates outside the real trading calendar")
 
     rows: list[dict[str, object]] = []
     for entity, part in prices.sort_values(["entity_id", "date"]).groupby("entity_id"):
@@ -197,13 +223,26 @@ def build_trailing_valuation_rail(
     if rail.empty:
         return rail
     rail = rail.sort_values(["entity_id", "date"]).reset_index(drop=True)
-    rail["valuation_change_20d"] = rail.groupby("entity_id")["trailing_pe"].transform(
-        lambda values: values / values.shift(20) - 1.0
+    rail["valuation_reference_date_20d"] = rail["date"].map(reference_by_date)
+    reference = rail[["entity_id", "date", "trailing_pe"]].rename(
+        columns={
+            "date": "valuation_reference_date_20d",
+            "trailing_pe": "trailing_pe_20d_reference",
+        }
+    )
+    rail = rail.merge(
+        reference,
+        on=["entity_id", "valuation_reference_date_20d"],
+        how="left",
+        validate="many_to_one",
+    )
+    rail["valuation_change_20d"] = (
+        rail["trailing_pe"] / rail["trailing_pe_20d_reference"] - 1.0
     )
     rail["source_identity"] = VALUATION_SOURCE_ID
     rail["provider"] = VALUATION_PROVIDER
     rail["formula_version"] = VALUATION_FORMULA_VERSION
-    return rail
+    return rail.sort_values(["entity_id", "date"]).reset_index(drop=True)
 
 
 def valuation_rail_to_pit_evidence(rail: pd.DataFrame) -> pd.DataFrame:
@@ -214,6 +253,8 @@ def valuation_rail_to_pit_evidence(rail: pd.DataFrame) -> pd.DataFrame:
         "price_provider",
         "ttm_eps",
         "trailing_pe",
+        "valuation_reference_date_20d",
+        "trailing_pe_20d_reference",
         "valuation_change_20d",
         "denominator_document_id",
         "denominator_revision_id",
@@ -230,11 +271,15 @@ def valuation_rail_to_pit_evidence(rail: pd.DataFrame) -> pd.DataFrame:
     usable = rail[
         pd.to_numeric(rail["trailing_pe"], errors="coerce").notna()
         & pd.to_numeric(rail["valuation_change_20d"], errors="coerce").notna()
+        & rail["valuation_reference_date_20d"].notna()
     ]
     for _, item in usable.iterrows():
         date = pd.Timestamp(item["date"]).normalize()
+        reference_date = pd.Timestamp(item["valuation_reference_date_20d"]).normalize()
         payload = {
             "trailing_pe": float(item["trailing_pe"]),
+            "trailing_pe_20d_reference": float(item["trailing_pe_20d_reference"]),
+            "valuation_reference_date_20d": str(reference_date.date()),
             "valuation_change_20d": float(item["valuation_change_20d"]),
             "ttm_eps": float(item["ttm_eps"]),
             "close": float(item["close"]),
@@ -244,6 +289,8 @@ def valuation_rail_to_pit_evidence(rail: pd.DataFrame) -> pd.DataFrame:
             "source_identity": VALUATION_SOURCE_ID,
             "price_provider": str(item["price_provider"]),
             "price_semantics": "UNADJUSTED_DAILY_CLOSE",
+            "valuation_20d_semantics": "EXACT_REAL_TRADING_CALENDAR_T_MINUS_20_NO_FILL",
+            "valuation_reference_date_20d": str(reference_date.date()),
             "denominator_document_id": str(item["denominator_document_id"]),
             "denominator_revision_id": str(item["denominator_revision_id"]),
             "denominator_document_sha256": str(item["denominator_document_sha256"]),
@@ -251,10 +298,12 @@ def valuation_rail_to_pit_evidence(rail: pd.DataFrame) -> pd.DataFrame:
             "formula_version": str(item["formula_version"]),
             "future_filing_denominator_used": False,
             "hindsight_backfill": False,
+            "price_fill_used": False,
         }
         identity = {
             "entity": str(item["entity_id"]),
             "date": str(date.date()),
+            "reference_date_20d": str(reference_date.date()),
             "denominator_document_id": str(item["denominator_document_id"]),
             "formula_version": str(item["formula_version"]),
         }
