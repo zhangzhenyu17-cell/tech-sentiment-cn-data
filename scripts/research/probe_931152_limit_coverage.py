@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from collections import Counter
 from importlib.metadata import version
 import json
 from pathlib import Path
@@ -64,7 +63,29 @@ def main() -> int:
     history_parts: list[pd.DataFrame] = []
     basic_parts: list[pd.DataFrame] = []
     failures: list[dict[str, str]] = []
+    trade_calendar = pd.DataFrame()
     try:
+        try:
+            calendar_result = bs.query_trade_dates(
+                start_date=DESIGN_START,
+                end_date=DESIGN_END,
+            )
+            calendar_rows = _rows(calendar_result)
+            if calendar_rows:
+                trade_calendar = pd.DataFrame(calendar_rows, columns=calendar_result.fields)
+            else:
+                failures.append(
+                    {"code": "MARKET", "stage": "trade_calendar", "error": "empty trade calendar"}
+                )
+        except Exception as exc:
+            failures.append(
+                {
+                    "code": "MARKET",
+                    "stage": "trade_calendar",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+
         for code in codes:
             try:
                 result = bs.query_history_k_data_plus(
@@ -81,7 +102,9 @@ def main() -> int:
                 else:
                     failures.append({"code": code, "stage": "history", "error": "empty history"})
             except Exception as exc:
-                failures.append({"code": code, "stage": "history", "error": f"{type(exc).__name__}: {exc}"})
+                failures.append(
+                    {"code": code, "stage": "history", "error": f"{type(exc).__name__}: {exc}"}
+                )
 
             try:
                 basic = bs.query_stock_basic(code=code)
@@ -89,9 +112,17 @@ def main() -> int:
                 if basic_data:
                     basic_parts.append(pd.DataFrame(basic_data, columns=basic.fields))
                 else:
-                    failures.append({"code": code, "stage": "stock_basic", "error": "empty stock_basic"})
+                    failures.append(
+                        {"code": code, "stage": "stock_basic", "error": "empty stock_basic"}
+                    )
             except Exception as exc:
-                failures.append({"code": code, "stage": "stock_basic", "error": f"{type(exc).__name__}: {exc}"})
+                failures.append(
+                    {
+                        "code": code,
+                        "stage": "stock_basic",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
     finally:
         bs.logout()
 
@@ -99,23 +130,59 @@ def main() -> int:
     stock_basic = pd.concat(basic_parts, ignore_index=True) if basic_parts else pd.DataFrame()
     history.to_csv(out / "baostock_history_status.csv", index=False)
     stock_basic.to_csv(out / "baostock_stock_basic.csv", index=False)
+    trade_calendar.to_csv(out / "baostock_trade_calendar.csv", index=False)
     (out / "fetch_failures.json").write_text(
         json.dumps(failures, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 
-    if history.empty or stock_basic.empty:
+    required_calendar_columns = {"calendar_date", "is_trading_day"}
+    calendar_usable = (
+        not trade_calendar.empty
+        and required_calendar_columns.issubset(set(trade_calendar.columns))
+    )
+    if history.empty or stock_basic.empty or not calendar_usable:
         report = {
             "status": "LIMIT_RULE_EVIDENCE_INSUFFICIENT",
-            "reason": "BaoStock history or stock_basic is empty",
+            "reason": "BaoStock history, stock_basic, or independent trade calendar is unavailable",
             "provider": "BaoStock",
             "provider_version": version("baostock"),
             "codes_requested": len(codes),
             "fetch_failures": len(failures),
+            "trade_calendar_rows": int(len(trade_calendar)),
             "holdout_opened": False,
             "model_outcomes_read": False,
         }
-        (out / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        (out / "report.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return 0
+
+    market_trading = trade_calendar[
+        trade_calendar["is_trading_day"].map(_bool01)
+    ].copy()
+    trading_dates = sorted(
+        pd.to_datetime(market_trading["calendar_date"], errors="raise")
+        .dt.normalize()
+        .unique()
+    )
+    if not trading_dates:
+        report = {
+            "status": "LIMIT_RULE_EVIDENCE_INSUFFICIENT",
+            "reason": "independent BaoStock trade calendar contains no trading days",
+            "provider": "BaoStock",
+            "provider_version": version("baostock"),
+            "codes_requested": len(codes),
+            "fetch_failures": len(failures),
+            "trade_calendar_rows": int(len(trade_calendar)),
+            "holdout_opened": False,
+            "model_outcomes_read": False,
+        }
+        (out / "report.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         return 0
 
     result = build_and_audit_sector_limit_rows(
@@ -125,8 +192,9 @@ def main() -> int:
         min_daily_coverage=MIN_DAILY_COVERAGE,
     )
     enriched = result.rows.copy()
-    enriched["symbol"] = enriched["code"].astype(str).str.replace(r"^(?:sh|sz)\.", "", regex=True)
-    trading_dates = sorted(pd.to_datetime(history["date"], errors="raise").dt.normalize().unique())
+    enriched["symbol"] = enriched["code"].astype(str).str.replace(
+        r"^(?:sh|sz)\.", "", regex=True
+    )
     strict = audit_strict_member_day_limit_coverage(
         enriched,
         universe,
@@ -137,7 +205,9 @@ def main() -> int:
     active = apply_universe_membership(enriched, universe)
     active.to_csv(out / "active_limit_rows.csv", index=False)
     strict.daily_coverage.to_csv(out / "strict_daily_coverage.csv", index=False)
-    result.coverage_audit.daily_coverage.to_csv(out / "row_conditional_daily_coverage.csv", index=False)
+    result.coverage_audit.daily_coverage.to_csv(
+        out / "row_conditional_daily_coverage.csv", index=False
+    )
 
     unknown = int(active["special_day_status"].astype(str).eq("unknown").sum())
     no_limit = int(active["special_day_status"].astype(str).eq("no_limit").sum())
@@ -163,12 +233,15 @@ def main() -> int:
         "provider_version": version("baostock"),
         "query_fields": FIELDS.split(","),
         "adjustflag": "3",
+        "trade_calendar_source": "BaoStock query_trade_dates",
         "design_start": DESIGN_START,
         "design_end": DESIGN_END,
         "codes_requested": len(codes),
         "fetch_failures": len(failures),
         "raw_history_rows": int(len(history)),
         "stock_basic_rows": int(len(stock_basic)),
+        "trade_calendar_rows": int(len(trade_calendar)),
+        "market_trading_days": len(trading_dates),
         "active_rows_returned": int(len(active)),
         "expected_member_days": strict.expected_member_days,
         "observed_member_days": strict.observed_member_days,
