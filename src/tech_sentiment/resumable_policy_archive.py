@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -114,7 +113,6 @@ def materialize_csrc_policy_archive_resumable(
         raise ValueError("max_pages_per_segment must be positive")
     calendar = _real_trading_calendar(trading_dates)
     store = ImmutableCheckpointStore(checkpoint_dir)
-    captured = datetime.now(timezone.utc).isoformat()
 
     all_entries: dict[str, PolicyListEntry] = {}
     coverage_rows: list[dict[str, object]] = []
@@ -263,7 +261,6 @@ def materialize_csrc_policy_archive_resumable(
                         "availability_state": "HISTORICAL_RECONSTRUCTABLE",
                         "title": entry.title,
                         "source_url_identity": entry.url,
-                        "captured_at_utc": captured,
                     }
                 ]
             )
