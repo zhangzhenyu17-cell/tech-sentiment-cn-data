@@ -86,6 +86,14 @@ def materialize_financing_monthly(
     executed = 0
     all_dates: list[pd.Timestamp] = []
 
+    deterministic_checkpoint_metadata = {
+        "sse_source_identity": SSE_MARGIN_SOURCE_ID,
+        "szse_source_identity": SZSE_MARGIN_SOURCE_ID,
+        "sse_raw_unit": "CNY",
+        "szse_raw_unit": "CNY_100M",
+        "canonical_unit": "CNY",
+    }
+
     for dates in _month_groups(trading_dates):
         all_dates.extend(pd.Timestamp(value).normalize() for value in dates)
         identity = _identity(source_commit, dates)
@@ -99,7 +107,7 @@ def materialize_financing_monthly(
                     "canonical": chunk.canonical,
                     "errors": chunk.errors,
                 },
-                metadata={"summary": chunk.summary},
+                metadata=deterministic_checkpoint_metadata,
             )
             executed += 1
         else:
@@ -107,7 +115,7 @@ def materialize_financing_monthly(
                 raw=loaded.frames["raw"],
                 canonical=loaded.frames["canonical"],
                 errors=loaded.frames["errors"],
-                summary=dict(loaded.receipt.get("metadata", {}).get("summary") or {}),
+                summary=dict(loaded.receipt.get("metadata") or {}),
             )
             resumed += 1
         raw_parts.append(chunk.raw)
