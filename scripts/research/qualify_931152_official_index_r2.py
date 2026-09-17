@@ -4,6 +4,7 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+import shutil
 
 import pandas as pd
 
@@ -96,6 +97,16 @@ def main() -> int:
         errors.append(f"stock download errors are non-empty: {len(stock_errors)}")
     if stock_report.get("status") != "DESIGN_PRICE_INPUT_ELIGIBLE":
         errors.append("source stock-price qualification is not eligible")
+
+    source_stock_hash = _sha256_file(args.stock_prices)
+    source_error_hash = _sha256_file(args.stock_errors)
+    expected_stock_hash = stock_report.get("files", {}).get("stock_prices_qfq.csv")
+    expected_error_hash = stock_report.get("files", {}).get("stock_download_errors.csv")
+    if source_stock_hash != expected_stock_hash:
+        errors.append("source stock price file hash does not match frozen qualification report")
+    if source_error_hash != expected_error_hash:
+        errors.append("source stock error file hash does not match frozen qualification report")
+
     if missing_official_dates:
         errors.append(f"official CSI rail missing strict trading dates: {len(missing_official_dates)}")
     if unexpected_official_dates:
@@ -113,8 +124,11 @@ def main() -> int:
     stock_errors_path = out / "stock_download_errors.csv"
     official.to_csv(official_path, index=False, date_format="%Y-%m-%d")
     overlap.to_csv(overlap_path, index=False, date_format="%Y-%m-%d")
-    stock_prices.to_csv(stock_prices_path, index=False, date_format="%Y-%m-%d")
-    stock_errors.to_csv(stock_errors_path, index=False)
+    # Preserve the previously-qualified stock files byte-for-byte. Re-serialising a
+    # CSV can change formatting without changing values, which would weaken the
+    # provenance chain and produce a new hash for no substantive reason.
+    shutil.copyfile(args.stock_prices, stock_prices_path)
+    shutil.copyfile(args.stock_errors, stock_errors_path)
 
     max_overlap_diff = float(overlap["abs_close_diff"].max()) if not overlap.empty else None
     report = {
