@@ -165,8 +165,13 @@ class ImmutableCheckpointStore:
                 raise ValueError(f"checkpoint file missing: {path.name}")
             if _hash_file(path) != item.get("sha256"):
                 raise ValueError(f"checkpoint file hash mismatch: {path.name}")
-            frame = pd.read_csv(path)
             expected_columns = list(item.get("columns") or [])
+            try:
+                frame = pd.read_csv(path)
+            except pd.errors.EmptyDataError:
+                if int(item.get("rows") or 0) != 0 or expected_columns:
+                    raise ValueError(f"checkpoint empty CSV schema mismatch: {path.name}")
+                frame = pd.DataFrame(columns=expected_columns)
             if list(map(str, frame.columns)) != expected_columns:
                 raise ValueError(f"checkpoint columns mismatch: {path.name}")
             if int(len(frame)) != int(item.get("rows") or 0):
