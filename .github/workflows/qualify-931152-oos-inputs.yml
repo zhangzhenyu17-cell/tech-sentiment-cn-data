@@ -85,6 +85,15 @@ jobs:
             oos_input_artifact/sina_*.html
             oos_input_artifact/sina_*.meta.json
             oos_input_artifact/eastmoney_159992_*.txt
+            oos_input_artifact/eastmoney_159992_*.meta.json
+            oos_input_artifact/stock_prices_qfq.csv
+            oos_input_artifact/stock_prices_qfq.checkpoint.meta.json
+            oos_input_artifact/stock_download_errors.csv
+            oos_input_artifact/index_931152_prices.csv
+            oos_input_artifact/index_931152_prices.checkpoint.meta.json
+            oos_input_artifact/active_limit_rows.csv
+            oos_input_artifact/strict_daily_coverage.csv
+            oos_input_artifact/baostock_success.checkpoint.meta.json
           if-no-files-found: ignore
           retention-days: 14
           overwrite: true
