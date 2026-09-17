@@ -1,0 +1,119 @@
+name: one-shot 931152 design input release packager
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/package-931152-design-input-release.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  package:
+    if: github.head_ref == 'data/931152-design-input-release-v4'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frozen public evidence artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/931152-design-inputs/limit /tmp/931152-design-inputs/prices /tmp/931152-design-inputs/static
+          gh run download 35181106720 --name 931152-strict-limit-coverage --dir /tmp/931152-design-inputs/limit
+          gh run download 35185896827 --name 931152-design-inputs-qualified --dir /tmp/931152-design-inputs/prices
+          cp data/reference/sector_931152_membership_evidence.csv /tmp/931152-design-inputs/static/
+          cp data/reference/sector_931152_design_universe.csv /tmp/931152-design-inputs/static/
+          cp data/reference/sector_931152_limit_coverage_qualification.json /tmp/931152-design-inputs/static/
+
+      - name: Fail closed on evidence qualification
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          root = Path('/tmp/931152-design-inputs')
+          limit = json.loads((root / 'limit/report.json').read_text())
+          prices = json.loads((root / 'prices/report.json').read_text())
+          membership = pd.read_csv(root / 'static/sector_931152_membership_evidence.csv', dtype={'index_code': str})
+          target = membership[membership['index_code'].astype(str).str.zfill(6).eq('931152')]
+
+          assert len(target) == 11, target
+          assert target['evidence_status'].astype(str).str.lower().eq('complete').all(), target
+          assert target['source_url'].fillna('').astype(str).str.strip().ne('').all(), target
+          assert limit['status'] == 'LIMIT_RULE_HISTORICAL_DESIGN_ELIGIBLE', limit
+          assert float(limit['minimum_daily_limit_coverage']) >= 0.95, limit
+          assert limit['holdout_opened'] is False, limit
+          assert limit['model_outcomes_read'] is False, limit
+          assert prices['status'] == 'DESIGN_PRICE_INPUT_ELIGIBLE', prices
+          assert prices['stock_adjustment'] == 'qfq', prices
+          assert prices['index_code'] == '931152', prices
+          assert prices['design_end'] == '2023-12-31', prices
+          assert prices['holdout_opened'] is False, prices
+          assert prices['forward_outcomes_computed'] is False, prices
+          assert prices['stock_source_run_id'] == 35184766601, prices
+          assert prices['stock_artifact_digest'] == 'sha256:73d8af31a1d4e1161c6ed8efe2b8ac916dcb8352bac25a8dca5a362a3c458b31', prices
+          PY
+
+      - name: Verify qualified-input file hashes and build immutable package
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/931152-design-inputs')
+          prices = json.loads((root / 'prices/report.json').read_text())
+          for name, expected in prices.get('files', {}).items():
+              path = root / 'prices' / name
+              actual = hashlib.sha256(path.read_bytes()).hexdigest()
+              assert actual == expected, (name, expected, actual)
+
+          files = {}
+          for path in sorted(p for p in root.rglob('*') if p.is_file()):
+              files[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+          manifest = {
+              'package': '931152-v0-design-inputs-20260917',
+              'qualification_scope': 'historical_design_research_input_only',
+              'limit_source_run_id': 35181106720,
+              'qualified_input_run_id': 35185896827,
+              'qualified_input_source_commit': 'f663c81c589b7ecf796f62ab0314501504476a1e',
+              'stock_source_run_id': 35184766601,
+              'stock_artifact_digest': 'sha256:73d8af31a1d4e1161c6ed8efe2b8ac916dcb8352bac25a8dca5a362a3c458b31',
+              'design_start': '2019-04-22',
+              'design_end': '2023-12-31',
+              'holdout_opened': False,
+              'model_outcomes_included': False,
+              'files': files,
+          }
+          (root / 'package_manifest.json').write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          PY
+          tar -C /tmp --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -cf - 931152-design-inputs | gzip -n > 931152-v0-design-inputs-20260917.tar.gz
+          sha256sum 931152-v0-design-inputs-20260917.tar.gz > 931152-v0-design-inputs-20260917.sha256
+          cp /tmp/931152-design-inputs/package_manifest.json ./931152-v0-design-inputs-20260917-manifest.json
+
+      - name: Publish research-only public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          TAG=931152-v0-design-inputs-20260917
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --target "$HEAD_SHA" \
+              --title "931152 V0 frozen design inputs — 2026-09-17" \
+              --notes "Research-only public inputs for the preregistered 931152 2019-2023 design sample. Contains no model outcomes, no 2024+ holdout data, and grants no production or trading permission."
+          fi
+          gh release upload "$TAG" \
+            931152-v0-design-inputs-20260917.tar.gz \
+            931152-v0-design-inputs-20260917.sha256 \
+            931152-v0-design-inputs-20260917-manifest.json \
+            --clobber
