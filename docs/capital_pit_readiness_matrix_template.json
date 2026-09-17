@@ -1,0 +1,16 @@
+{
+  "schema_version": "capital-pit-readiness-v1",
+  "readiness": {
+    "588000_long_flow": "DATA_INSUFFICIENT",
+    "SSE_SZSE_A_SHARES_turnover": "DATA_INSUFFICIENT",
+    "financing": "DATA_INSUFFICIENT",
+    "fundamental_PIT": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
+    "earnings_PIT": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
+    "valuation_PIT": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
+    "major_event_PIT": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
+    "major_negative_exclusion": "DATA_INSUFFICIENT",
+    "clean_forward_external_evidence": "DATA_INSUFFICIENT"
+  },
+  "production_or_model_output": false,
+  "note": "Template only. Never treat registry/schema readiness as materialized data qualification."
+}
