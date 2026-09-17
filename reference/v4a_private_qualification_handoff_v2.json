@@ -1,0 +1,24 @@
+{
+  "handoff_id": "V4A_PRIVATE_QUALIFICATION_HANDOFF_V2",
+  "public_schema_version": "capital-pit-materialization-v4a2",
+  "public_workflow": "qualify-capital-inputs",
+  "public_success_semantics": "PUBLIC_MATERIALIZATION_COMPLETED",
+  "public_grants_historical_qualification": false,
+  "private_verifier_repository": "zhangzhenyu17-cell/tech-sentiment-cn",
+  "private_verifier_module": "tech_sentiment.v4a_artifact_intake.verify_v4a_artifact",
+  "private_verifier_required_behavior": [
+    "verify workflow run id, source commit, artifact id and artifact digest",
+    "verify bundle/report/manifest/per-managed-file SHA256 and exact managed-file allowlist",
+    "verify all nine V4-A readiness items including financing",
+    "verify PIT no-future, provenance, prefix/as-of replay, revision safety and major-negative completeness",
+    "reject any public claim to grant historical qualification",
+    "grant HISTORICAL_DATA_QUALIFIED only inside the private repository after every required verification passes",
+    "open V4-C Context gate only after private HISTORICAL_DATA_QUALIFIED"
+  ],
+  "private_verifier_merge_sha": null,
+  "activation_state": "PENDING_PRIVATE_MERGE",
+  "formal_public_long_run_allowed_before_activation": false,
+  "forward_outcome_read_required": false,
+  "parameter_search_required": false,
+  "production_or_trading_change_required": false
+}
