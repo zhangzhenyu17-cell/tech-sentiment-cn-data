@@ -59,9 +59,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a
-          key: capital-pit-v4a3-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-restore
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-restore
           restore-keys: |
-            capital-pit-v4a3-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-
+            capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-
+            capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-
 
       - name: Prepare checkpoint directories
         shell: bash
@@ -89,7 +90,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a
-          key: capital-pit-v4a3-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-capital
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-capital
 
       - name: Materialize bilateral financing history
         id: financing_materialize
@@ -108,7 +109,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a
-          key: capital-pit-v4a3-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-financing
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-financing
 
       - name: Build frozen Capital/PIT symbol scope
         id: scope_build
@@ -135,7 +136,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a
-          key: capital-pit-v4a3-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-issuer
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-issuer
 
       - name: Materialize fundamental, earnings, valuation, policy and major-negative PIT rails
         id: derived_pit_materialize
@@ -158,7 +159,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a
-          key: capital-pit-v4a3-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-derived
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-derived
 
       - name: Stage frozen Fundamental PIT evidence contract
         shell: bash
