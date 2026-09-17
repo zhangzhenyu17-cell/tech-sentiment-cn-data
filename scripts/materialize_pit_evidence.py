@@ -9,6 +9,10 @@ from typing import Callable
 
 import pandas as pd
 
+from tech_sentiment.canonical_materialization import (
+    canonicalize_frame,
+    canonicalize_metadata,
+)
 from tech_sentiment.cninfo_direct import fetch_cninfo_announcements_direct
 from tech_sentiment.immutable_checkpoint import CheckpointIdentity, ImmutableCheckpointStore
 from tech_sentiment.official_pit_archives import (
@@ -132,13 +136,19 @@ def _checkpoint_identity(
 
 
 def _with_tail_filter(result: PitMaterializationResult, *, omitted: int) -> PitMaterializationResult:
-    summary = dict(result.summary)
+    summary = canonicalize_metadata(result.summary)
+    if not isinstance(summary, dict):
+        raise ValueError("issuer PIT source summary must be a mapping")
     summary["tail_records_beyond_asof_not_materialized"] = int(omitted)
     summary["tail_handling"] = "OMIT_UNTIL_NEXT_REAL_TRADING_DATE_EXISTS_NO_FILL_NO_BACKFILL"
+    records = canonicalize_frame(result.records)
+    coverage = canonicalize_frame(result.coverage)
+    if len(records):
+        records = validate_materialized_pit_records(records)
     return PitMaterializationResult(
-        records=result.records,
-        coverage=result.coverage,
-        errors=result.errors,
+        records=records,
+        coverage=coverage,
+        errors=result.errors.copy(),
         summary=summary,
     )
 
@@ -172,8 +182,8 @@ def _run_source(
         loaded = store.load(identity)
         if loaded is not None:
             result = PitMaterializationResult(
-                records=loaded.frames["records"],
-                coverage=loaded.frames["coverage"],
+                records=canonicalize_frame(loaded.frames["records"]),
+                coverage=canonicalize_frame(loaded.frames["coverage"]),
                 errors=loaded.frames["errors"],
                 summary=dict(loaded.receipt.get("metadata", {}).get("summary") or {}),
             )
@@ -187,14 +197,23 @@ def _run_source(
             resumed += 1
         else:
             result = materialize_one(symbol)
+            stable_summary = canonicalize_metadata(result.summary)
+            if not isinstance(stable_summary, dict):
+                raise ValueError("issuer PIT checkpoint summary must be a mapping")
             store.save(
                 identity,
                 frames={
-                    "records": result.records,
-                    "coverage": result.coverage,
+                    "records": canonicalize_frame(result.records),
+                    "coverage": canonicalize_frame(result.coverage),
                     "errors": result.errors,
                 },
-                metadata={"summary": result.summary},
+                metadata={"summary": stable_summary},
+            )
+            result = PitMaterializationResult(
+                records=canonicalize_frame(result.records),
+                coverage=canonicalize_frame(result.coverage),
+                errors=result.errors,
+                summary=stable_summary,
             )
             executed += 1
         tail_omitted += int(result.summary.get("tail_records_beyond_asof_not_materialized") or 0)
@@ -224,7 +243,7 @@ def _run_source(
         state = "PARTIAL_COVERAGE"
     else:
         state = "DATA_INSUFFICIENT"
-    summary: dict[str, object] = {
+    summary_with_runtime: dict[str, object] = {
         "source_identity": source,
         "start_date": start_date,
         "end_date": end_date,
@@ -240,6 +259,9 @@ def _run_source(
         "checkpoint_schema": ISSUER_PIT_CHECKPOINT_VERSION,
         "readiness_state": state,
     }
+    summary = canonicalize_metadata(summary_with_runtime)
+    if not isinstance(summary, dict):
+        raise ValueError("issuer PIT summary must be a mapping")
     return records, coverage, errors, summary
 
 
