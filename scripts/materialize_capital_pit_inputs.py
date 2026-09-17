@@ -23,7 +23,13 @@ from tech_sentiment.capital_input_data import (
 from tech_sentiment.financing_materialization import materialize_financing_history
 from tech_sentiment.index_price import fetch_index_history
 from tech_sentiment.materialization_manifest import MaterializedAsset, file_sha256, write_manifest
-from tech_sentiment.pit_public_data import CNINFO_ARCHIVE_URL, CNINFO_PROVIDER, CNINFO_SOURCE_ID, fetch_cninfo_announcement_history
+from tech_sentiment.pit_public_data import (
+    CNINFO_ARCHIVE_URL,
+    CNINFO_PROVIDER,
+    CNINFO_SOURCE_ID,
+    fetch_cninfo_announcement_history,
+    normalize_cninfo_announcements,
+)
 from tech_sentiment.pit_replay import assert_prefix_replay_equality, validate_pit_ledger
 
 
@@ -153,7 +159,13 @@ def main() -> None:
     pit_path = out / "cninfo_pit_announcements.csv"
     pit_errors_path = out / "cninfo_pit_errors.csv"
     pit_state = "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED"
-    pit_records = pd.DataFrame()
+    pit_records = normalize_cninfo_announcements(
+        pd.DataFrame(),
+        entity_id="",
+        trading_dates=calendar,
+        ingestion_timestamp=generated_at,
+        repository_sha=repository_sha,
+    )
     pit_errors = pd.DataFrame(columns=["entity_id", "error"])
     if pit_entities:
         # Reserve the last observed real trading date as the next-date anchor for
