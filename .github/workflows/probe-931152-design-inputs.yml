@@ -1,0 +1,45 @@
+name: one-shot 931152 design input probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/probe-931152-design-inputs.yml"
+      - "src/tech_sentiment/sector_design_input_contract.py"
+      - "scripts/research/probe_931152_design_inputs.py"
+      - "data/reference/sector_931152_design_universe.csv"
+      - "src/tech_sentiment/data_akshare.py"
+      - "src/tech_sentiment/index_price.py"
+      - "tests/test_sector_design_input_contract.py"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'data/931152-design-inputs'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install public data dependencies
+        run: python -m pip install -e ".[data]"
+      - name: Run 931152 public design input probe
+        run: |
+          python scripts/research/probe_931152_design_inputs.py \
+            --universe data/reference/sector_931152_design_universe.csv \
+            --output-dir /tmp/931152-design-inputs
+      - name: Show report
+        if: always()
+        run: cat /tmp/931152-design-inputs/report.json || true
+      - name: Upload outcome-free design inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 931152-design-inputs
+          path: /tmp/931152-design-inputs
+          if-no-files-found: error
+          retention-days: 14
