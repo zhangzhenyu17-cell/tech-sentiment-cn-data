@@ -5,7 +5,9 @@ from hashlib import sha256
 from html.parser import HTMLParser
 import json
 import re
-from typing import Iterable
+import time
+from typing import Callable, Iterable
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -254,8 +256,24 @@ def fetch_holdings_year(
     *,
     topline: int = 100,
     timeout: int = 30,
+    retries: int = 4,
+    retry_backoff_seconds: float = 1.0,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    opener: Callable[..., object] = urlopen,
 ) -> tuple[str, str, str]:
-    """Fetch one year and return decoded body, URL, and SHA256 of raw bytes."""
+    """Fetch one year and return decoded body, URL, and SHA256 of raw bytes.
+
+    Only transport/server failures are retried.  Client-side HTTP errors and
+    semantic parsing remain fail-closed so this helper cannot weaken evidence
+    qualification rules.
+    """
+
+    if retries < 0:
+        raise ValueError("retries must be >= 0")
+    if retry_backoff_seconds < 0:
+        raise ValueError("retry_backoff_seconds must be >= 0")
+    if timeout <= 0:
+        raise ValueError("timeout must be > 0")
 
     url = holdings_url(fund_code, year, topline=topline)
     request = Request(
@@ -267,19 +285,36 @@ def fetch_holdings_year(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36"
             ),
+            "Connection": "close",
         },
         method="GET",
     )
-    with urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed public provider
-        raw = response.read()
-        charset = response.headers.get_content_charset() or "utf-8"
-    if not raw:
-        raise ValueError("EastMoney returned an empty holdings response")
-    try:
-        text = raw.decode(charset)
-    except (LookupError, UnicodeDecodeError):
-        text = raw.decode("utf-8", errors="replace")
-    return text, url, sha256(raw).hexdigest()
+
+    last_error: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            with opener(request, timeout=timeout) as response:  # type: ignore[attr-defined]  # noqa: S310
+                raw = response.read()  # type: ignore[attr-defined]
+                charset = response.headers.get_content_charset() or "utf-8"  # type: ignore[attr-defined]
+            if not raw:
+                raise URLError("EastMoney returned an empty holdings response")
+            try:
+                text = raw.decode(charset)
+            except (LookupError, UnicodeDecodeError):
+                text = raw.decode("utf-8", errors="replace")
+            return text, url, sha256(raw).hexdigest()
+        except HTTPError as exc:
+            last_error = exc
+            if 400 <= exc.code < 500 or attempt >= retries:
+                raise
+        except (URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt >= retries:
+                raise
+        if retry_backoff_seconds:
+            sleep_fn(retry_backoff_seconds * (attempt + 1))
+
+    raise RuntimeError("EastMoney holdings fetch exhausted retries") from last_error
 
 
 def fetch_and_parse_holdings_year(
