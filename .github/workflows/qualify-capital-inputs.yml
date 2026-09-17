@@ -42,6 +42,12 @@ jobs:
           python scripts/audit_public_tree.py
           pytest -q
 
+      - name: Qualification reachability preflight
+        run: |
+          python scripts/check_v4a_reachability.py \
+            --out output/v4a_reachability.json \
+            --require-reachable
+
       - name: Resolve end date
         id: dates
         shell: bash
