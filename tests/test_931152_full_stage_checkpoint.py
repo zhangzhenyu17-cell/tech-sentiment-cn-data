@@ -107,6 +107,74 @@ def test_stock_checkpoint_only_refetches_missing_symbols(tmp_path) -> None:
     assert calls[-1] == ["600002"]
 
 
+def test_empty_stock_checkpoint_remains_retryable_without_keyerror(tmp_path) -> None:
+    universe = pd.DataFrame({"symbol": ["600001"]})
+    calls = 0
+
+    def network(subset, **kwargs):
+        nonlocal calls
+        calls += 1
+        return MODULE.data_akshare.DownloadResult(
+            prices=MODULE._empty_stock_prices(),
+            errors=pd.DataFrame([{"symbol": "600001", "error": "temporary"}]),
+        )
+
+    downloader = MODULE._checkpointed_stock_downloader(tmp_path, network)
+    first = downloader(
+        universe,
+        start_date="2024-01-01",
+        end_date="2024-01-05",
+        adjust="qfq",
+        providers=("eastmoney", "tencent"),
+    )
+    assert list(first.prices.columns) == list(MODULE._empty_stock_prices().columns)
+    assert first.prices.empty
+
+    second = downloader(
+        universe,
+        start_date="2024-01-01",
+        end_date="2024-01-05",
+        adjust="qfq",
+        providers=("eastmoney", "tencent"),
+    )
+    assert second.prices.empty
+    assert calls == 2
+
+
+def test_stock_checkpoint_is_not_reused_for_different_requested_universe(tmp_path) -> None:
+    first_universe = pd.DataFrame({"symbol": ["600001"]})
+    second_universe = pd.DataFrame({"symbol": ["600002"]})
+    calls: list[list[str]] = []
+
+    def network(subset, **kwargs):
+        requested = sorted(set(subset["symbol"].astype(str).str.zfill(6)))
+        calls.append(requested)
+        return MODULE.data_akshare.DownloadResult(
+            prices=_price_rows(requested[0]),
+            errors=pd.DataFrame(columns=["symbol", "error"]),
+        )
+
+    downloader = MODULE._checkpointed_stock_downloader(tmp_path, network)
+    first = downloader(
+        first_universe,
+        start_date="2024-01-01",
+        end_date="2024-01-05",
+        adjust="qfq",
+        providers=("eastmoney", "tencent"),
+    )
+    assert set(first.prices["symbol"]) == {"600001"}
+
+    second = downloader(
+        second_universe,
+        start_date="2024-01-01",
+        end_date="2024-01-05",
+        adjust="qfq",
+        providers=("eastmoney", "tencent"),
+    )
+    assert set(second.prices["symbol"]) == {"600002"}
+    assert calls == [["600001"], ["600002"]]
+
+
 def test_official_index_checkpoint_reuses_verified_csv(tmp_path) -> None:
     calls = 0
 
