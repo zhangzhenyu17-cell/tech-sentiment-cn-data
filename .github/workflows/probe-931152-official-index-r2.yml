@@ -1,0 +1,71 @@
+name: one-shot 931152 official index rail r2
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/probe-931152-official-index-r2.yml"
+      - "src/tech_sentiment/csindex_index_price.py"
+      - "src/tech_sentiment/sector_design_input_contract.py"
+      - "scripts/research/qualify_931152_official_index_r2.py"
+      - "tests/test_csindex_index_price.py"
+      - "tests/test_sector_design_input_contract.py"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  probe:
+    if: github.head_ref == 'data/931152-official-index-rail-r2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.16"
+          cache: pip
+
+      - name: Install public data dependencies
+        run: python -m pip install -e ".[data]"
+
+      - name: Download already-qualified stock and strict-calendar evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/931152-r2/source-prices /tmp/931152-r2/source-limit
+          gh run download 35185896827 \
+            --name 931152-design-inputs-qualified \
+            --dir /tmp/931152-r2/source-prices
+          gh run download 35181106720 \
+            --name 931152-strict-limit-coverage \
+            --dir /tmp/931152-r2/source-limit
+          test "$(sha256sum /tmp/931152-r2/source-prices/stock_prices_qfq.csv | awk '{print $1}')" = \
+            "16070b6e82a93371cb976159f569db0d1bf98dbed473bcd17af41c2178cb3751"
+          test "$(sha256sum /tmp/931152-r2/source-prices/stock_download_errors.csv | awk '{print $1}')" = \
+            "063ff5282a6862d60cd3dfb610b581eb752f824ec757b6902cb4ca04e3c8c8a4"
+
+      - name: Qualify official CSI rail against strict calendar and EastMoney overlap
+        run: |
+          python scripts/research/qualify_931152_official_index_r2.py \
+            --universe data/reference/sector_931152_design_universe.csv \
+            --stock-prices /tmp/931152-r2/source-prices/stock_prices_qfq.csv \
+            --stock-errors /tmp/931152-r2/source-prices/stock_download_errors.csv \
+            --stock-report /tmp/931152-r2/source-prices/report.json \
+            --strict-daily-coverage /tmp/931152-r2/source-limit/strict_daily_coverage.csv \
+            --eastmoney-index /tmp/931152-r2/source-prices/index_931152_prices.csv \
+            --output-dir /tmp/931152-r2/qualified
+
+      - name: Show r2 qualification report
+        if: always()
+        run: cat /tmp/931152-r2/qualified/report.json || true
+
+      - name: Upload outcome-free r2 inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 931152-design-inputs-r2
+          path: /tmp/931152-r2/qualified
+          if-no-files-found: error
+          retention-days: 14
