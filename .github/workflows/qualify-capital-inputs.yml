@@ -53,23 +53,55 @@ jobs:
           fi
           echo "end_date=${END_DATE}" >> "$GITHUB_OUTPUT"
 
+      - name: Restore resumable Capital/PIT checkpoints
+        id: checkpoint_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a2-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-restore
+          restore-keys: |
+            capital-pit-v4a2-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-
+            capital-pit-v4a2-${{ inputs.start_date }}-
+
+      - name: Prepare checkpoint directories
+        shell: bash
+        run: mkdir -p .cache/capital_pit_v4a/capital .cache/capital_pit_v4a/financing .cache/capital_pit_v4a/pit
+
       - name: Materialize ETF-share and SSE+SZSE turnover inputs
+        id: capital_materialize
         shell: bash
         run: |
           python scripts/qualify_capital_inputs.py \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --calendar-index-code "000688" \
+            --checkpoint-dir .cache/capital_pit_v4a/capital \
             --out-dir output/capital_input_qualification
 
+      - name: Save Capital checkpoint
+        if: ${{ always() && steps.capital_materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a2-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-capital
+
       - name: Materialize bilateral financing history
+        id: financing_materialize
         shell: bash
         run: |
           python scripts/materialize_financing_history.py \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --calendar-index-code "000688" \
+            --checkpoint-dir .cache/capital_pit_v4a/financing \
             --out-dir output/financing_materialization
+
+      - name: Save financing checkpoint
+        if: ${{ always() && steps.capital_materialize.outcome == 'success' && steps.financing_materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a2-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-financing
 
       - name: Build frozen Capital/PIT symbol scope
         shell: bash
@@ -77,15 +109,8 @@ jobs:
           python scripts/build_capital_pit_symbol_scope.py \
             --out-dir output/pit_symbol_scope
 
-      - name: Restore resumable PIT checkpoints
-        uses: actions/cache@v4
-        with:
-          path: .cache/capital_pit_v4a
-          key: capital-pit-v4a1-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}
-          restore-keys: |
-            capital-pit-v4a1-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-
-
       - name: Materialize independent CNINFO, SSE and SZSE PIT archives
+        id: pit_materialize
         shell: bash
         run: |
           EXTRA_ARGS=()
@@ -99,8 +124,15 @@ jobs:
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --calendar-csv output/capital_input_qualification/trading_calendar.csv \
-            --checkpoint-dir .cache/capital_pit_v4a \
+            --checkpoint-dir .cache/capital_pit_v4a/pit \
             --out-dir output/pit_evidence_materialization
+
+      - name: Save PIT checkpoint
+        if: ${{ always() && steps.financing_materialize.outcome == 'success' && steps.pit_materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a2-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-pit
 
       - name: Finalize immutable qualification bundle
         shell: bash
