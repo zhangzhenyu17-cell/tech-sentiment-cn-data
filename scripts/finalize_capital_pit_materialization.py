@@ -52,6 +52,7 @@ MANAGED_RELATIVE_PATHS = (
     "pit_evidence_materialization/derived_pit_fundamental_trends.csv",
     "pit_evidence_materialization/fundamental_state_evidence.csv",
     "pit_evidence_materialization/fundamental_state_coverage.csv",
+    "pit_evidence_materialization/fundamental_pit_state_contract_v1.json",
     "pit_evidence_materialization/earnings_direction.csv",
     "pit_evidence_materialization/earnings_direction_evidence.csv",
     "pit_evidence_materialization/earnings_direction_coverage.csv",
@@ -67,6 +68,7 @@ MANAGED_RELATIVE_PATHS = (
     "pit_evidence_materialization/major_negative_review.csv",
     "pit_evidence_materialization/pit_evidence_extended.csv",
     "pit_evidence_materialization/derived_pit_materialization_manifest.json",
+    "pit_evidence_materialization/checkpoint_receipt_summary.json",
 )
 
 
@@ -132,15 +134,27 @@ def main() -> None:
     pit_summary = _read_json(pit_dir / "derived_pit_materialization_manifest.json")
     issuer_summary = _read_json(pit_dir / "pit_materialization_manifest.json")
     scope_summary = _read_json(scope_dir / "capital_pit_symbol_scope.json")
+    contract = _read_json(pit_dir / "fundamental_pit_state_contract_v1.json")
+    checkpoint_summary = _read_json(pit_dir / "checkpoint_receipt_summary.json")
+
+    if contract.get("contract_id") != "FUNDAMENTAL_PIT_STATE_CONTRACT_V1":
+        raise ValueError("unexpected fundamental PIT contract identity")
+    if contract.get("parameter_search") is not False:
+        raise ValueError("fundamental PIT contract must prove parameter_search=false")
+    if checkpoint_summary.get("source_commit") != str(args.source_commit):
+        raise ValueError("checkpoint receipt summary source commit mismatch")
+    if checkpoint_summary.get("all_completion_states_complete") is not True:
+        raise ValueError("checkpoint receipt summary contains incomplete chunks")
 
     readiness = build_v4a_data_readiness(
         capital_summary=capital_summary,
         financing_summary=financing_summary,
         pit_summary=pit_summary,
     )
-    required_context_items = (
+    all_v4a_items = (
         "588000_long_flow",
         "sse_szse_a_shares_turnover",
+        "financing",
         "fundamental_pit",
         "earnings_pit",
         "valuation_pit",
@@ -149,7 +163,7 @@ def main() -> None:
         "clean_forward_external_evidence",
     )
     data_ready_for_private_verification = all(
-        readiness.get(item) == "QUALIFIED_INPUT" for item in required_context_items
+        readiness.get(item) == "QUALIFIED_INPUT" for item in all_v4a_items
     )
 
     coverage_matrix: dict[str, object] = {
@@ -177,6 +191,11 @@ def main() -> None:
         "valuation": pit_summary.get("valuation_coverage", {}),
         "policy": pit_summary.get("policy_materialization", {}),
         "major_negative": pit_summary.get("major_negative_summary", {}),
+        "checkpoint_receipts": {
+            "receipt_count": checkpoint_summary.get("receipt_count"),
+            "all_completion_states_complete": checkpoint_summary.get("all_completion_states_complete"),
+            "all_source_commits_match": checkpoint_summary.get("all_source_commits_match"),
+        },
     }
     provenance_matrix: dict[str, object] = {
         "capital_market": {
@@ -198,13 +217,23 @@ def main() -> None:
         "pit": {
             "source_states": pit_summary.get("source_states", {}),
             "audit": pit_summary.get("pit_audit", {}),
-            "fundamental_state_contract": pit_summary.get("fundamental_state_contract", {}),
+            "fundamental_state_contract": {
+                "contract_id": contract.get("contract_id"),
+                "contract_version": contract.get("contract_version"),
+                "file_sha256": file_sha256(pit_dir / "fundamental_pit_state_contract_v1.json"),
+                "threshold_policy": contract.get("threshold_policy"),
+            },
             "major_negative_event_exclusion_complete": bool(
                 pit_summary.get("major_negative_event_exclusion_complete")
             ),
             "hindsight_backfill": False,
             "future_prices_or_returns_used": False,
             "parameter_search_run": False,
+        },
+        "checkpoint_receipts": {
+            "schema_version": checkpoint_summary.get("schema_version"),
+            "summary_sha256": file_sha256(pit_dir / "checkpoint_receipt_summary.json"),
+            "source_commit": checkpoint_summary.get("source_commit"),
         },
     }
 
@@ -248,10 +277,12 @@ def main() -> None:
         "pit_symbol_scope_identity": scope_summary.get("scope_identity"),
         "financing_source_query_identity": financing_summary.get("source_query_identity"),
         "issuer_pit_source_summaries": issuer_summary.get("source_summaries"),
-        "fundamental_contract_id": (
-            dict(pit_summary.get("fundamental_state_contract") or {}).get("contract_id")
-            if isinstance(pit_summary.get("fundamental_state_contract"), dict)
-            else None
+        "fundamental_contract_id": contract.get("contract_id"),
+        "fundamental_contract_sha256": file_sha256(
+            pit_dir / "fundamental_pit_state_contract_v1.json"
+        ),
+        "checkpoint_receipt_summary_sha256": file_sha256(
+            pit_dir / "checkpoint_receipt_summary.json"
         ),
         "pit_audit": pit_summary.get("pit_audit"),
     }
