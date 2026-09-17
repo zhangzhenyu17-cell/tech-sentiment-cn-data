@@ -13,12 +13,11 @@ from tech_sentiment.major_negative_review import (
     build_major_negative_coverage_ledger,
     review_major_negative_events,
 )
-from tech_sentiment.official_policy_archive import materialize_csrc_policy_archive
 from tech_sentiment.pit_price_materialization import materialize_pit_stock_prices
 from tech_sentiment.pit_public_materialization import _stable_hash, validate_materialized_pit_records
 from tech_sentiment.pit_replay_audit import audit_pit_replay
+from tech_sentiment.resumable_policy_archive import materialize_csrc_policy_archive_resumable
 from tech_sentiment.trailing_valuation_pit import (
-    VALUATION_PROVIDER,
     VALUATION_SOURCE_ID,
     build_trailing_valuation_rail,
     valuation_rail_to_pit_evidence,
@@ -110,13 +109,9 @@ def _earnings_down_events(earnings_evidence: pd.DataFrame) -> pd.DataFrame:
                 "document_id": str(row["document_id"]),
                 "revision_id": f"{row['revision_id']}:NEGATIVE_MAPPING",
                 "provenance": json.dumps(provenance, ensure_ascii=False, sort_keys=True),
-                "ingestion_identity": _stable_hash(
-                    {"identity": identity, "payload": negative_payload}
-                ),
+                "ingestion_identity": _stable_hash({"identity": identity, "payload": negative_payload}),
                 "availability_state": str(row["availability_state"]),
-                "evidence_payload": json.dumps(
-                    negative_payload, ensure_ascii=False, sort_keys=True
-                ),
+                "evidence_payload": json.dumps(negative_payload, ensure_ascii=False, sort_keys=True),
                 "source_url_identity": row.get("source_url_identity", ""),
             }
         )
@@ -283,10 +278,12 @@ def main() -> None:
         ].reset_index(drop=True)
         valuation_evidence = _canonicalize_provenance(valuation_evidence)
 
-    policy = materialize_csrc_policy_archive(
+    policy = materialize_csrc_policy_archive_resumable(
         start_date=target_start,
         end_date=target_end,
         trading_dates=trading_dates,
+        source_commit=args.source_commit,
+        checkpoint_dir=checkpoint_root / "policy",
     )
     policy_evidence = _canonicalize_provenance(policy.records)
     trend_evidence = _canonicalize_provenance(filings.trends)
