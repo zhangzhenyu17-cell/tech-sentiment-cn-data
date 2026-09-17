@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from tech_sentiment.csindex_index_price import fetch_csindex_history
 from tech_sentiment.data_akshare import download_universe_history
 from tech_sentiment.eastmoney_fund_holdings_evidence import (
     TRACKING_ETF_931152,
     fetch_and_parse_holdings_year,
 )
-from tech_sentiment.sector_index_price import fetch_sector_index_history_direct
 from tech_sentiment.sector_limit_coverage_strict import audit_strict_member_day_limit_coverage
 from tech_sentiment.sector_limit_pipeline import build_and_audit_sector_limit_rows
 from tech_sentiment.sina_index_membership_evidence import fetch_membership_intervals
@@ -345,13 +345,13 @@ def main() -> int:
     if missing_price_symbols:
         raise ValueError(f"missing stock histories: {missing_price_symbols}")
 
-    index_prices = fetch_sector_index_history_direct(
+    index_prices = fetch_csindex_history(
         INDEX_CODE,
         start_date=HOLDOUT_START.strftime("%Y-%m-%d"),
         end_date=HOLDOUT_END.strftime("%Y-%m-%d"),
         retries=2,
         retry_backoff_seconds=0.75,
-        timeout_seconds=15.0,
+        timeout_seconds=20.0,
     )
     index_prices.to_csv(out / "index_931152_prices.csv", index=False, date_format="%Y-%m-%d")
     if index_prices.empty:
