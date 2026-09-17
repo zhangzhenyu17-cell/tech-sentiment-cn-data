@@ -38,13 +38,13 @@ def test_931152_uses_fixed_eastmoney_identifier_without_discovery() -> None:
         retries=0,
     )
     assert len(session.calls) == 1
-    assert session.calls[0]["params"]["secid"] == "1.931152"
+    assert session.calls[0]["params"]["secid"] == "2.931152"
     assert session.calls[0]["params"]["beg"] == "20190422"
     assert session.calls[0]["params"]["end"] == "20190430"
     assert list(out["index_code"].unique()) == ["931152"]
     assert list(out["close"]) == [1010, 1005]
     assert set(out["provider"]) == {"eastmoney:direct_sector_index_kline"}
-    assert set(out["provider_identifier"]) == {"1.931152"}
+    assert set(out["provider_identifier"]) == {"2.931152"}
 
 
 def test_unknown_sector_index_fails_closed() -> None:
