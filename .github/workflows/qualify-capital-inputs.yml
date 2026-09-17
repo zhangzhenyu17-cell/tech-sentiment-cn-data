@@ -160,6 +160,13 @@ jobs:
           path: .cache/capital_pit_v4a
           key: capital-pit-v4a3-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-derived
 
+      - name: Stage frozen Fundamental PIT evidence contract
+        shell: bash
+        run: |
+          cp \
+            reference/v4a_fundamental_pit_state_contract_v1.json \
+            output/pit_evidence_materialization/fundamental_pit_state_contract_v1.json
+
       - name: Summarize immutable checkpoint receipts
         shell: bash
         run: |
