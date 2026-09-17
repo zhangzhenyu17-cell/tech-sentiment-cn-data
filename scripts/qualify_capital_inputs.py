@@ -16,9 +16,25 @@ from tech_sentiment.capital_input_data import (
 from tech_sentiment.index_price import fetch_index_history
 
 
+def _etf_readiness(coverage: pd.DataFrame) -> str:
+    if coverage.empty or not bool(coverage["observed"].any()):
+        return "DATA_INSUFFICIENT"
+    mature = coverage.iloc[60:].copy() if len(coverage) > 60 else coverage.iloc[0:0].copy()
+    if mature.empty:
+        return "PARTIAL_COVERAGE"
+    required = (
+        mature["eligible"].fillna(False)
+        & mature["endpoint_20d_available"].fillna(False)
+        & mature["endpoint_60d_available"].fillna(False)
+    )
+    if bool(required.all()) and bool(coverage.iloc[0]["observed"]):
+        return "QUALIFIED_INPUT"
+    return "PARTIAL_COVERAGE"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manual-only public capital-input qualification diagnostic.")
-    parser.add_argument("--start-date", default="2022-01-01")
+    parser.add_argument("--start-date", default="2022-01-04")
     parser.add_argument("--end-date", default=None)
     parser.add_argument("--fund-code", default="588000")
     parser.add_argument("--calendar-index-code", default="000906")
@@ -52,6 +68,10 @@ def main() -> None:
         window=60,
         min_coverage=0.80,
     )
+    shares = pd.to_numeric(coverage["fund_shares"], errors="coerce")
+    coverage["endpoint_20d_available"] = shares.notna() & shares.shift(20).notna()
+    coverage["endpoint_60d_available"] = shares.notna() & shares.shift(60).notna()
+
     turnover = fetch_sse_szse_a_share_turnover_history(
         trading_dates=dates,
         sleep_seconds=args.sleep_seconds,
@@ -67,19 +87,30 @@ def main() -> None:
     turnover.errors.to_csv(out / "sse_szse_turnover_errors.csv", index=False)
 
     qualified = coverage[coverage["coverage"].notna()]
+    etf_state = _etf_readiness(coverage)
+    turnover_complete_pct = float(len(turnover.combined) / len(dates)) if len(dates) else None
+    turnover_state = (
+        "QUALIFIED_INPUT"
+        if len(dates) and len(turnover.combined) == len(dates) and turnover.errors.empty
+        else "PARTIAL_COVERAGE" if len(turnover.combined) else "DATA_INSUFFICIENT"
+    )
     summary = {
         "status": "MANUAL_DIAGNOSTIC_ONLY",
         "start_date": str(dates.min().date()),
         "end_date": str(dates.max().date()),
         "trading_days": int(len(dates)),
         "fund_code": str(args.fund_code).zfill(6),
+        "etf_readiness_state": etf_state,
         "etf_observed_days": int(coverage["observed"].sum()),
         "etf_raw_coverage": float(coverage["observed"].mean()) if len(coverage) else None,
         "etf_trailing60_latest": float(qualified.iloc[-1]["coverage"]) if len(qualified) else None,
         "etf_trailing60_eligible_day_pct": float(qualified["eligible"].mean()) if len(qualified) else None,
+        "etf_endpoint_20d_days": int(coverage["endpoint_20d_available"].sum()),
+        "etf_endpoint_60d_days": int(coverage["endpoint_60d_available"].sum()),
         "etf_error_days": int(etf.errors["date"].nunique()) if len(etf.errors) else 0,
+        "turnover_readiness_state": turnover_state,
         "sse_szse_turnover_complete_days": int(len(turnover.combined)),
-        "sse_szse_turnover_complete_pct": float(len(turnover.combined) / len(dates)) if len(dates) else None,
+        "sse_szse_turnover_complete_pct": turnover_complete_pct,
         "turnover_scope": "SSE_SZSE_A_SHARES",
         "canonical_all_a_state": "INCOMPLETE_BSE_NOT_INCLUDED",
         "production_or_model_output": False,
