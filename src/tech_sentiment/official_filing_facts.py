@@ -16,7 +16,7 @@ from .pit_public_materialization import _stable_hash, validate_materialized_pit_
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v1"
+FILING_PARSER_VERSION = "official-filing-facts-v2-scoped-units-revision-time"
 
 _OFFICIAL_ATTACHMENT_HOSTS = {
     "static.cninfo.com.cn",
@@ -41,6 +41,10 @@ _FACT_LABELS: dict[str, tuple[str, ...]] = {
     ),
     "BASIC_EPS": ("基本每股收益",),
 }
+_UNIT_RE = re.compile(r"单位\s*:\s*(人民币)?(百万元|万元|元)(?:\s|$|币种|[,，;；])")
+_NUMERIC_TOKEN_RE = re.compile(
+    r"(?<![\d.])(?:-?\d[\d,]*(?:\.\d+)?|\(\d[\d,]*(?:\.\d+)?\))(?![\d.])"
+)
 
 
 @dataclass(frozen=True)
@@ -145,17 +149,36 @@ def _parse_numeric_token(token: str) -> float:
     return -value if negative else value
 
 
-def _first_value_after_label(lines: list[str], labels: Iterable[str]) -> float | None:
-    token_re = re.compile(r"(?<![\d.])(?:-?\d[\d,]*(?:\.\d+)?|\(\d[\d,]*(?:\.\d+)?\))(?![\d.])")
+def _nearest_explicit_unit(lines: list[str], index: int, *, lookback: int = 12) -> str | None:
+    """Return the nearest explicit table unit at or before a fact row.
+
+    The bounded lookup avoids using a unit declaration from an unrelated distant
+    table. No rescaling is performed: only exact yuan tables are eligible.
+    """
+
+    left = max(0, index - lookback)
+    for position in range(index, left - 1, -1):
+        match = _UNIT_RE.search(lines[position])
+        if match:
+            return str(match.group(2))
+    return None
+
+
+def _first_yuan_value_after_label(lines: list[str], labels: Iterable[str]) -> float | None:
     for index, line in enumerate(lines):
         label = next((candidate for candidate in labels if candidate in line), None)
         if label is None:
             continue
+        unit = _nearest_explicit_unit(lines, index)
+        if unit != "元":
+            # Missing/local non-yuan unit is not evidence for a canonical CNY
+            # amount. Keep searching for another explicit yuan table occurrence.
+            continue
         suffix = line.split(label, 1)[1]
-        candidates = token_re.findall(suffix)
+        candidates = _NUMERIC_TOKEN_RE.findall(suffix)
         if not candidates:
             lookahead = " ".join(lines[index + 1 : index + 3])
-            candidates = token_re.findall(lookahead)
+            candidates = _NUMERIC_TOKEN_RE.findall(lookahead)
         for token in candidates:
             try:
                 value = _parse_numeric_token(token)
@@ -167,25 +190,25 @@ def _first_value_after_label(lines: list[str], labels: Iterable[str]) -> float |
 
 
 def extract_standard_filing_facts(text: str) -> dict[str, float]:
-    """Extract standardized facts without guessing units or missing values.
+    """Extract facts only from locally proven CNY-yuan table contexts.
 
-    The parser only accepts filing text that explicitly declares yuan units. It
-    does not rescale 万元/百万元 tables. Missing rows stay missing and are audited
-    by the materializer instead of being imputed from a current-state provider.
+    A document may legitimately contain unrelated tables in 万元/百万元. Those
+    tables no longer poison the whole document, but a target fact is accepted
+    only when its nearest bounded unit declaration is exactly 元/人民币元. The
+    parser never rescales a non-yuan table and never fills a missing fact.
     """
 
-    compact = re.sub(r"\s+", "", str(text)).replace("：", ":")
-    if "单位:万元" in compact or "单位:百万元" in compact:
-        raise ValueError("filing table uses a non-yuan unit; parser refuses inferred scaling")
-    if not any(marker in compact for marker in ("单位:元", "单位:人民币元")):
-        raise ValueError("filing text does not prove CNY-yuan table units")
-
     lines = _normalize_text_lines(text)
+    if not any(_UNIT_RE.search(line) for line in lines):
+        raise ValueError("filing text does not contain an explicit table unit declaration")
+
     facts: dict[str, float] = {}
     for fact_type, labels in _FACT_LABELS.items():
-        value = _first_value_after_label(lines, labels)
+        value = _first_yuan_value_after_label(lines, labels)
         if value is not None:
             facts[fact_type] = value
+    if not facts:
+        raise ValueError("filing has no target facts with locally proven CNY-yuan units")
     if "OPERATING_REVENUE" in facts and "NET_PROFIT_PARENT" in facts:
         revenue = facts["OPERATING_REVENUE"]
         if revenue != 0:
@@ -198,6 +221,7 @@ def build_filing_fact_rows(
     entity_id: str,
     title: str,
     evidence_available_date: object,
+    publication_timestamp: object,
     source_identity: str,
     provider: str,
     document_id: str,
@@ -208,6 +232,7 @@ def build_filing_fact_rows(
 ) -> pd.DataFrame:
     period_end = filing_period_end_from_title(title)
     facts = extract_standard_filing_facts(text)
+    publication = pd.Timestamp(pd.to_datetime(publication_timestamp, errors="raise"))
     rows: list[dict[str, object]] = []
     for fact_type, value in sorted(facts.items()):
         unit = "RATIO" if fact_type == "NET_PROFIT_MARGIN" else (
@@ -221,6 +246,7 @@ def build_filing_fact_rows(
                 "value": float(value),
                 "unit": unit,
                 "evidence_available_date": pd.Timestamp(evidence_available_date).normalize(),
+                "publication_timestamp": publication.isoformat(),
                 "source_identity": str(source_identity),
                 "provider": str(provider),
                 "document_id": str(document_id),
@@ -233,7 +259,7 @@ def build_filing_fact_rows(
     return pd.DataFrame(rows)
 
 
-def _latest_fact_as_of(
+def latest_filing_fact_as_of(
     facts: pd.DataFrame,
     *,
     entity_id: str,
@@ -241,6 +267,12 @@ def _latest_fact_as_of(
     period_end: pd.Timestamp,
     as_of: pd.Timestamp,
 ) -> Mapping[str, object] | None:
+    """Select the latest genuinely knowable filing version, never by ID order."""
+
+    required = {"publication_timestamp", "evidence_available_date", "document_id", "revision_id"}
+    missing = required - set(facts.columns)
+    if missing:
+        raise ValueError(f"filing fact revision ordering missing columns: {sorted(missing)}")
     rows = facts[
         facts["entity_id"].astype(str).eq(str(entity_id))
         & facts["fact_type"].astype(str).eq(fact_type)
@@ -249,18 +281,29 @@ def _latest_fact_as_of(
     ].copy()
     if rows.empty:
         return None
-    rows["evidence_available_date"] = pd.to_datetime(rows["evidence_available_date"]).dt.normalize()
-    rows = rows.sort_values(["evidence_available_date", "document_id", "revision_id"])
-    return rows.iloc[-1].to_dict()
+    rows["evidence_available_date"] = pd.to_datetime(
+        rows["evidence_available_date"], errors="raise"
+    ).dt.normalize()
+    rows["publication_timestamp_order"] = pd.to_datetime(
+        rows["publication_timestamp"], errors="raise", utc=True
+    )
+    latest_available = rows["evidence_available_date"].max()
+    candidates = rows[rows["evidence_available_date"].eq(latest_available)].copy()
+    latest_publication = candidates["publication_timestamp_order"].max()
+    candidates = candidates[candidates["publication_timestamp_order"].eq(latest_publication)]
+    if len(candidates) != 1:
+        identities = sorted(
+            f"{row.document_id}/{row.revision_id}" for row in candidates.itertuples()
+        )
+        raise ValueError(
+            "ambiguous same-availability filing revisions without deterministic publication order: "
+            + ",".join(identities)
+        )
+    return candidates.iloc[0].drop(labels=["publication_timestamp_order"]).to_dict()
 
 
 def derive_fundamental_trend_evidence(facts: pd.DataFrame) -> pd.DataFrame:
-    """Derive only threshold-free, as-of trends from versioned filing facts.
-
-    This function materializes numerical trends only. The separate frozen
-    FUNDAMENTAL_PIT_STATE_CONTRACT_V1 consumes qualified facts without changing
-    the trend formulas here.
-    """
+    """Derive only threshold-free, as-of trends from versioned filing facts."""
 
     required = {
         "entity_id",
@@ -269,6 +312,7 @@ def derive_fundamental_trend_evidence(facts: pd.DataFrame) -> pd.DataFrame:
         "value",
         "unit",
         "evidence_available_date",
+        "publication_timestamp",
         "source_identity",
         "provider",
         "document_id",
@@ -288,6 +332,7 @@ def derive_fundamental_trend_evidence(facts: pd.DataFrame) -> pd.DataFrame:
     x["evidence_available_date"] = pd.to_datetime(
         x["evidence_available_date"], errors="raise"
     ).dt.normalize()
+    pd.to_datetime(x["publication_timestamp"], errors="raise", utc=True)
     if x.duplicated(["entity_id", "document_id", "revision_id", "fact_type"]).any():
         raise ValueError("filing facts contain duplicate document/fact identities")
 
@@ -302,7 +347,7 @@ def derive_fundamental_trend_evidence(facts: pd.DataFrame) -> pd.DataFrame:
         period_end = pd.Timestamp(current["period_end"]).normalize()
         prior_end = period_end - pd.DateOffset(years=1)
         as_of = pd.Timestamp(current["evidence_available_date"]).normalize()
-        prior = _latest_fact_as_of(
+        prior = latest_filing_fact_as_of(
             x,
             entity_id=str(current["entity_id"]),
             fact_type=str(current["fact_type"]),
@@ -331,29 +376,35 @@ def derive_fundamental_trend_evidence(facts: pd.DataFrame) -> pd.DataFrame:
             change_name: float(change),
             "formula_version": FILING_PARSER_VERSION,
             "current_document_id": str(current["document_id"]),
+            "current_publication_timestamp": str(current["publication_timestamp"]),
             "current_document_sha256": str(current["document_sha256"]),
             "prior_document_id": str(prior["document_id"]),
+            "prior_publication_timestamp": str(prior["publication_timestamp"]),
             "prior_document_sha256": str(prior["document_sha256"]),
         }
         provenance = {
+            "source_identity": DERIVED_FUNDAMENTAL_SOURCE_ID,
+            "provider": DERIVED_FUNDAMENTAL_PROVIDER,
             "derived_source_identity": DERIVED_FUNDAMENTAL_SOURCE_ID,
             "source_filing_identity": str(current["source_identity"]),
             "source_provider": str(current["provider"]),
             "document_url": str(current["document_url"]),
             "document_id": str(current["document_id"]),
             "revision_id": str(current["revision_id"]),
+            "publication_timestamp": str(current["publication_timestamp"]),
             "document_sha256": str(current["document_sha256"]),
             "prior_document_id": str(prior["document_id"]),
             "prior_revision_id": str(prior["revision_id"]),
+            "prior_publication_timestamp": str(prior["publication_timestamp"]),
             "prior_document_sha256": str(prior["document_sha256"]),
-            "as_of_selection": "LATEST_COMPARABLE_VERSION_AVAILABLE_BY_CURRENT_EVIDENCE_DATE",
+            "as_of_selection": "LATEST_AVAILABLE_DATE_THEN_LATEST_OFFICIAL_PUBLICATION_TIMESTAMP",
             "later_restatements_do_not_rewrite_prior_evidence": True,
             "parser_version": FILING_PARSER_VERSION,
         }
         evidence_type = evidence_types[str(current["fact_type"])]
         observation_id = (
             f"{current['entity_id']}:{evidence_type}:{period_end.date()}:"
-            f"{current['document_id']}"
+            f"{current['document_id']}:{current['revision_id']}"
         )
         evidence_rows.append(
             {
@@ -394,5 +445,6 @@ __all__ = [
     "filing_period_end_from_title",
     "extract_standard_filing_facts",
     "build_filing_fact_rows",
+    "latest_filing_fact_as_of",
     "derive_fundamental_trend_evidence",
 ]
