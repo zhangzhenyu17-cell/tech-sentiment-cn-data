@@ -34,7 +34,7 @@ def test_successful_sina_page_is_reused_from_checkpoint(tmp_path, monkeypatch) -
 
     monkeypatch.setattr(MODULE.sina, "fetch_related_page", fetch_related_page)
     monkeypatch.setattr(MODULE.time, "sleep", sleeps.append)
-    fetcher = MODULE._checkpointed_fetcher(tmp_path)
+    fetcher = MODULE._checkpointed_sina_fetcher(tmp_path)
 
     intervals, returned_html = fetcher(symbol, timeout=10, index_code="931152")
     assert len(intervals) == 1
@@ -74,7 +74,7 @@ def test_http_456_gets_provider_cooldown_before_retry(tmp_path, monkeypatch) -> 
 
     monkeypatch.setattr(MODULE.sina, "fetch_related_page", fetch_related_page)
     monkeypatch.setattr(MODULE.time, "sleep", sleeps.append)
-    fetcher = MODULE._checkpointed_fetcher(tmp_path)
+    fetcher = MODULE._checkpointed_sina_fetcher(tmp_path)
 
     intervals, _ = fetcher(symbol, index_code="931152")
     assert len(intervals) == 1
@@ -84,7 +84,7 @@ def test_http_456_gets_provider_cooldown_before_retry(tmp_path, monkeypatch) -> 
 
 def test_corrupted_checkpoint_is_not_silently_accepted(tmp_path, monkeypatch) -> None:
     symbol = "600276"
-    html_path, meta_path = MODULE._checkpoint_paths(tmp_path, symbol)
+    html_path, meta_path = MODULE._sina_checkpoint_paths(tmp_path, symbol)
     html_path.write_text(_valid_page(symbol), encoding="utf-8")
     meta_path.write_text(
         json.dumps(
@@ -110,6 +110,6 @@ def test_corrupted_checkpoint_is_not_silently_accepted(tmp_path, monkeypatch) ->
 
     monkeypatch.setattr(MODULE.sina, "fetch_related_page", fetch_related_page)
     monkeypatch.setattr(MODULE.time, "sleep", lambda _: None)
-    intervals, _ = MODULE._checkpointed_fetcher(tmp_path)(symbol, index_code="931152")
+    intervals, _ = MODULE._checkpointed_sina_fetcher(tmp_path)(symbol, index_code="931152")
     assert len(intervals) == 1
     assert calls == 1
