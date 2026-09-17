@@ -12,6 +12,7 @@ import pandas as pd
 CNINFO_QUERY_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 CNINFO_STOCK_MAP_URL = "https://www.cninfo.com.cn/new/data/szse_stock.json"
 CNINFO_REFERER = "https://www.cninfo.com.cn/new/commonUrl/pageOfSearch?url=disclosure/list/search"
+CNINFO_STATIC_ORIGIN = "https://static.cninfo.com.cn"
 _USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -63,6 +64,23 @@ def _publication_text(value: object) -> str:
     return text
 
 
+def _attachment_url(value: object) -> str:
+    """Normalize an immutable CNINFO attachment path without inventing one.
+
+    CNINFO's archive response normally supplies ``adjunctUrl`` for the exact
+    published attachment.  The direct detail page remains the announcement
+    identity, while this URL pins the bytes that a later filing parser may read.
+    Missing attachments are allowed for non-document notices and remain blank.
+    """
+
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith(("https://", "http://")):
+        return text
+    return f"{CNINFO_STATIC_ORIGIN}/{text.lstrip('/')}"
+
+
 def fetch_cninfo_announcements_direct(
     *,
     symbol: str,
@@ -75,9 +93,9 @@ def fetch_cninfo_announcements_direct(
 ) -> pd.DataFrame:
     """Fetch the canonical CNINFO archive with explicit orgId and pagination.
 
-    The signature deliberately accepts the same core keyword arguments used by
-    the previous AKShare wrapper so it can be injected into the existing
-    materializer without changing PIT semantics.
+    Besides the stable announcement id/detail page, preserve the exact official
+    attachment URL returned by the archive.  Downstream PIT reconstruction must
+    parse that versioned document rather than a mutable current-state F10 view.
     """
 
     del market  # CNINFO's fulltext endpoint is selected through the stock identity.
@@ -100,6 +118,7 @@ def fetch_cninfo_announcements_direct(
         "User-Agent": _USER_AGENT,
         "X-Requested-With": "XMLHttpRequest",
     }
+    columns = ["代码", "简称", "公告标题", "公告时间", "公告链接", "公告附件链接"]
     rows: list[dict[str, object]] = []
     page = 1
     while True:
@@ -144,6 +163,9 @@ def fetch_cninfo_announcements_direct(
                 f"stockCode={code}&announcementId={announcement_id}&orgId={org_id}"
                 f"&announcementTime={when[:10]}"
             )
+            attachment = _attachment_url(
+                item.get("adjunctUrl") or item.get("adjunctURL") or item.get("attachmentUrl")
+            )
             rows.append(
                 {
                     "代码": code,
@@ -151,6 +173,7 @@ def fetch_cninfo_announcements_direct(
                     "公告标题": title,
                     "公告时间": when,
                     "公告链接": detail,
+                    "公告附件链接": attachment,
                 }
             )
         total_pages_raw = payload.get("totalpages") or payload.get("totalPages")
@@ -167,12 +190,17 @@ def fetch_cninfo_announcements_direct(
         if page > 2000:
             raise ValueError("CNINFO pagination exceeded defensive limit")
     if not rows:
-        return pd.DataFrame(columns=["代码", "简称", "公告标题", "公告时间", "公告链接"])
-    return pd.DataFrame(rows).drop_duplicates(subset=["代码", "公告链接"], keep="first").reset_index(drop=True)
+        return pd.DataFrame(columns=columns)
+    return (
+        pd.DataFrame(rows, columns=columns)
+        .drop_duplicates(subset=["代码", "公告链接"], keep="first")
+        .reset_index(drop=True)
+    )
 
 
 __all__ = [
     "CNINFO_QUERY_URL",
     "CNINFO_STOCK_MAP_URL",
+    "CNINFO_STATIC_ORIGIN",
     "fetch_cninfo_announcements_direct",
 ]
