@@ -1,0 +1,67 @@
+name: one-shot 931152 design input resume
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/resume-931152-design-inputs.yml"
+      - "scripts/research/resume_931152_design_inputs.py"
+      - "src/tech_sentiment/sector_index_price.py"
+      - "tests/test_sector_index_price.py"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  resume:
+    if: github.head_ref == 'data/931152-design-inputs-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.16"
+          cache: pip
+
+      - name: Install public data dependencies
+        run: python -m pip install -e ".[data]"
+
+      - name: Reuse completed stock artifact from failed index-only run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/931152-stock-reuse
+          gh run download 35184766601 \
+            --name 931152-design-inputs \
+            --dir /tmp/931152-stock-reuse
+          test "$(sha256sum /tmp/931152-stock-reuse/stock_prices_qfq.csv | awk '{print $1}')" = \
+            "16070b6e82a93371cb976159f569db0d1bf98dbed473bcd17af41c2178cb3751"
+          test "$(sha256sum /tmp/931152-stock-reuse/stock_download_errors.csv | awk '{print $1}')" = \
+            "063ff5282a6862d60cd3dfb610b581eb752f824ec757b6902cb4ca04e3c8c8a4"
+
+      - name: Fetch only corrected 931152 index rail and qualify combined inputs
+        run: |
+          python scripts/research/resume_931152_design_inputs.py \
+            --universe data/reference/sector_931152_design_universe.csv \
+            --stock-prices /tmp/931152-stock-reuse/stock_prices_qfq.csv \
+            --stock-errors /tmp/931152-stock-reuse/stock_download_errors.csv \
+            --expected-stock-prices-sha256 16070b6e82a93371cb976159f569db0d1bf98dbed473bcd17af41c2178cb3751 \
+            --expected-stock-errors-sha256 063ff5282a6862d60cd3dfb610b581eb752f824ec757b6902cb4ca04e3c8c8a4 \
+            --stock-source-run-id 35184766601 \
+            --stock-artifact-digest sha256:73d8af31a1d4e1161c6ed8efe2b8ac916dcb8352bac25a8dca5a362a3c458b31 \
+            --output-dir /tmp/931152-design-inputs-qualified
+
+      - name: Show qualification report
+        if: always()
+        run: cat /tmp/931152-design-inputs-qualified/report.json || true
+
+      - name: Upload qualified outcome-free design inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 931152-design-inputs-qualified
+          path: /tmp/931152-design-inputs-qualified
+          if-no-files-found: error
+          retention-days: 14
