@@ -5,6 +5,8 @@ from hashlib import sha256
 import json
 from pathlib import Path
 
+from tech_sentiment.immutable_checkpoint import CHECKPOINT_SCHEMA_VERSION
+
 
 def _canonical_json(value: object) -> str:
     return json.dumps(
@@ -39,7 +41,7 @@ def main() -> None:
         payload = json.loads(receipt_path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict):
             raise ValueError(f"checkpoint receipt is not an object: {receipt_path}")
-        if payload.get("schema_version") != "v4a-checkpoint-v1":
+        if payload.get("schema_version") != CHECKPOINT_SCHEMA_VERSION:
             raise ValueError(f"checkpoint receipt schema mismatch: {receipt_path}")
         if payload.get("completion_state") != "COMPLETE_CHUNK":
             raise ValueError(f"checkpoint is not complete: {receipt_path}")
@@ -64,6 +66,14 @@ def main() -> None:
                 raise ValueError(f"checkpoint payload missing: {file_path}")
             if _file_sha256(file_path) != str(item.get("sha256") or ""):
                 raise ValueError(f"checkpoint payload hash mismatch: {file_path}")
+            text_columns = item.get("text_columns")
+            if not isinstance(text_columns, list):
+                raise ValueError(f"checkpoint text-column metadata missing: {receipt_path}")
+            columns = item.get("columns")
+            if not isinstance(columns, list) or not set(map(str, text_columns)).issubset(
+                set(map(str, columns))
+            ):
+                raise ValueError(f"checkpoint text-column metadata invalid: {receipt_path}")
         receipts.append(
             {
                 "receipt_path": receipt_path.relative_to(root).as_posix(),
@@ -71,6 +81,7 @@ def main() -> None:
                 "receipt_sha256": str(expected_receipt_hash or ""),
                 "producer": str(identity.get("producer") or ""),
                 "producer_version": str(identity.get("producer_version") or ""),
+                "checkpoint_schema_version": str(payload.get("schema_version") or ""),
                 "source_commit": str(identity.get("source_commit") or ""),
                 "source_identities": identity.get("source_identities", []),
                 "query_identity": identity.get("query_identity", {}),
@@ -81,6 +92,8 @@ def main() -> None:
                         "name": str(item.get("name") or ""),
                         "sha256": str(item.get("sha256") or ""),
                         "rows": int(item.get("rows") or 0),
+                        "columns": item.get("columns", []),
+                        "text_columns": item.get("text_columns", []),
                     }
                     for item in files
                 ],
@@ -92,7 +105,8 @@ def main() -> None:
     if len(fingerprints) != len(set(fingerprints)):
         raise ValueError("duplicate checkpoint fingerprints")
     summary = {
-        "schema_version": "v4a-checkpoint-receipt-summary-v1",
+        "schema_version": "v4a-checkpoint-receipt-summary-v2",
+        "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
         "source_commit": str(args.source_commit),
         "receipt_count": len(receipts),
         "all_completion_states_complete": True,
