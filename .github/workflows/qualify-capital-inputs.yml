@@ -59,6 +59,7 @@ jobs:
           python scripts/qualify_capital_inputs.py \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
+            --calendar-index-code "000688" \
             --out-dir output/capital_input_qualification
 
       - name: Materialize bilateral financing history
@@ -67,6 +68,7 @@ jobs:
           python scripts/materialize_financing_history.py \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
+            --calendar-index-code "000688" \
             --out-dir output/financing_materialization
 
       - name: Build frozen Capital/PIT symbol scope
