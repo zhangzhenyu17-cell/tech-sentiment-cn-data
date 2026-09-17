@@ -30,8 +30,10 @@ def audit_design_price_inputs(
     """Audit public price inputs without inspecting model events or outcomes.
 
     Stock history may begin before the design interval solely for rolling-feature
-    warm-up. No row after DESIGN_END is allowed. The official index rail must be
-    confined to the design interval and identify 931152.
+    warm-up. No row after DESIGN_END is allowed. The official index rail must
+    begin exactly on the frozen 931152 design start, remain inside the design
+    interval, and identify 931152. Exact design-trading-date coverage is checked
+    separately against the qualified strict trading calendar before publication.
     """
 
     errors: list[str] = []
@@ -70,8 +72,8 @@ def audit_design_price_inputs(
         codes = set(index["index_code"].astype(str).str.zfill(6))
         if codes != {INNOVATION_DRUG_INDEX}:
             errors.append(f"unexpected index codes: {sorted(codes)}")
-        if index["date"].min() < DESIGN_START:
-            errors.append("index rail begins before official 931152 design start")
+        if index["date"].min() != DESIGN_START:
+            errors.append("index rail does not start on frozen 2019-04-22 design start")
         if index["date"].max() > DESIGN_END:
             errors.append("index rail crosses untouched holdout boundary")
         if index["date"].duplicated().any():
