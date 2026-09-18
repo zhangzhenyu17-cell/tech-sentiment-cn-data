@@ -21,6 +21,10 @@ def test_v4a_checkpoint_cache_namespace_matches_v2_exact_identity_architecture()
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "capital-pit-v4a3-" not in text
     assert "capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-" in text
+    assert (
+        "capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-\n"
+        not in text
+    )
     assert "actions/cache/restore@v4" in text
     assert text.count("actions/cache/save@v4") >= 4
     assert "--source-commit \"${{ github.sha }}\"" in text
