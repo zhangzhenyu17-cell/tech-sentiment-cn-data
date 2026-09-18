@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
+import re
 
 
 REACHABILITY_SCHEMA_VERSION = "v4a-reachability-v2"
@@ -298,12 +299,38 @@ def _private_handoff_blockers(root: Path) -> list[str]:
         blockers.append("private_handoff_id_mismatch")
     if payload.get("public_schema_version") != "capital-pit-materialization-v4a2":
         blockers.append("private_handoff_public_schema_mismatch")
-    if payload.get("activation_state") != "ACTIVE":
-        blockers.append("private_v4a2_verifier_not_activated")
-    if not str(payload.get("private_verifier_merge_sha") or "").strip():
-        blockers.append("private_v4a2_verifier_merge_sha_missing")
+    if payload.get("public_workflow") != "qualify-capital-inputs":
+        blockers.append("private_handoff_public_workflow_mismatch")
+    if payload.get("public_success_semantics") != "PUBLIC_MATERIALIZATION_COMPLETED":
+        blockers.append("private_handoff_public_success_semantics_mismatch")
     if payload.get("public_grants_historical_qualification") is not False:
         blockers.append("public_private_qualification_boundary_invalid")
+    if payload.get("private_verifier_repository") != "zhangzhenyu17-cell/tech-sentiment-cn":
+        blockers.append("private_verifier_repository_mismatch")
+    if (
+        payload.get("private_verifier_module")
+        != "tech_sentiment.v4a_artifact_intake.verify_v4a_artifact"
+    ):
+        blockers.append("private_verifier_module_mismatch")
+    if payload.get("private_verifier_contract_id") != "v4a_artifact_intake_contract_v2":
+        blockers.append("private_verifier_contract_id_mismatch")
+    if payload.get("activation_state") != "ACTIVE":
+        blockers.append("private_v4a2_verifier_not_activated")
+    merge_sha = str(payload.get("private_verifier_merge_sha") or "").strip().lower()
+    if not merge_sha:
+        blockers.append("private_v4a2_verifier_merge_sha_missing")
+    elif re.fullmatch(r"[0-9a-f]{40}", merge_sha) is None:
+        blockers.append("private_v4a2_verifier_merge_sha_invalid")
+    if payload.get("formal_public_long_run_allowed_before_activation") is not False:
+        blockers.append("preactivation_long_run_boundary_invalid")
+    if payload.get("formal_public_long_run_allowed_after_activation") is not True:
+        blockers.append("postactivation_long_run_boundary_invalid")
+    if payload.get("forward_outcome_read_required") is not False:
+        blockers.append("forward_outcome_boundary_invalid")
+    if payload.get("parameter_search_required") is not False:
+        blockers.append("parameter_search_boundary_invalid")
+    if payload.get("production_or_trading_change_required") is not False:
+        blockers.append("production_trading_boundary_invalid")
     return blockers
 
 
