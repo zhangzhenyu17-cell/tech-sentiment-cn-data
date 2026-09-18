@@ -220,10 +220,10 @@ jobs:
           {
             echo "## V4-A preflight report"
             echo
-            echo "- source commit: `${{ github.sha }}`"
-            echo "- start date: `${{ inputs.start_date }}`"
-            echo "- requested end date: `${{ inputs.end_date || 'Asia/Shanghai current date' }}`"
-            echo "- preflight only: `${{ inputs.preflight_only }}`"
+            echo "- source commit: ${{ github.sha }}"
+            echo "- start date: ${{ inputs.start_date }}"
+            echo "- requested end date: ${{ inputs.end_date || 'Asia/Shanghai current date' }}"
+            echo "- preflight only: ${{ inputs.preflight_only }}"
             echo
             echo "| preflight | result |"
             echo "| --- | --- |"
@@ -233,7 +233,7 @@ jobs:
             echo "| issuer | ${{ needs.preflight_issuer.result }} |"
             echo "| shared | ${{ needs.preflight_shared.result }} |"
             echo
-            echo "On failure, inspect the matching `v4a-preflight-*-diagnostics` artifact before rerunning."
+            echo "On failure, inspect the matching v4a-preflight-*-diagnostics artifact before rerunning."
           } >> "$GITHUB_STEP_SUMMARY"
 
   preflight_gate:
