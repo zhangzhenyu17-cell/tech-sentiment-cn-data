@@ -11,6 +11,7 @@ from .official_filing_facts import (
     DERIVED_FUNDAMENTAL_PROVIDER,
     DERIVED_FUNDAMENTAL_SOURCE_ID,
     FILING_PARSER_VERSION,
+    latest_filing_fact_as_of,
 )
 from .pit_public_materialization import _stable_hash, validate_materialized_pit_records
 
@@ -40,18 +41,13 @@ def _latest_fact(
     fact_type: str,
     as_of: pd.Timestamp,
 ) -> Mapping[str, object] | None:
-    rows = facts[
-        facts["entity_id"].astype(str).eq(entity_id)
-        & facts["fact_type"].astype(str).eq(fact_type)
-        & facts["period_end"].eq(period_end)
-        & facts["evidence_available_date"].le(as_of)
-    ].copy()
-    if rows.empty:
-        return None
-    rows = rows.sort_values(
-        ["evidence_available_date", "document_id", "revision_id"]
+    return latest_filing_fact_as_of(
+        facts,
+        entity_id=entity_id,
+        fact_type=fact_type,
+        period_end=period_end,
+        as_of=as_of,
     )
-    return rows.iloc[-1].to_dict()
 
 
 def _facts_for_period_as_of(
@@ -151,6 +147,7 @@ def _support_identity(rows: Mapping[str, Mapping[str, object]]) -> list[dict[str
                 "fact_type": fact_type,
                 "document_id": str(row["document_id"]),
                 "revision_id": str(row["revision_id"]),
+                "publication_timestamp": str(row["publication_timestamp"]),
                 "document_sha256": str(row["document_sha256"]),
                 "source_identity": str(row["source_identity"]),
                 "provider": str(row["provider"]),
@@ -172,6 +169,7 @@ def materialize_fundamental_state_evidence(
         "value",
         "unit",
         "evidence_available_date",
+        "publication_timestamp",
         "source_identity",
         "provider",
         "document_id",
@@ -203,6 +201,7 @@ def materialize_fundamental_state_evidence(
     x["evidence_available_date"] = pd.to_datetime(
         x["evidence_available_date"], errors="raise"
     ).dt.normalize()
+    pd.to_datetime(x["publication_timestamp"], errors="raise", utc=True)
     if x.duplicated(["entity_id", "document_id", "revision_id", "fact_type"]).any():
         raise ValueError("filing facts contain duplicate document/fact identities")
     if x["document_sha256"].isna().any() or x["document_sha256"].astype(str).str.strip().eq("").any():
@@ -277,7 +276,7 @@ def materialize_fundamental_state_evidence(
                     "contract_id": CONTRACT_ID,
                     "formula_version": FORMULA_VERSION,
                     "filing_parser_version": FILING_PARSER_VERSION,
-                    "selection_semantics": "LATEST_REQUIRED_FACT_VERSION_AVAILABLE_AS_OF_STATE_DATE",
+                    "selection_semantics": "LATEST_AVAILABLE_DATE_THEN_LATEST_OFFICIAL_PUBLICATION_TIMESTAMP",
                     "prior_comparable_semantics": "EXACT_SAME_REPORT_PERIOD_ONE_CALENDAR_YEAR_EARLIER",
                     "append_only": True,
                     "later_restatements_do_not_rewrite_earlier_as_of_state": True,
