@@ -23,7 +23,7 @@ from .pit_public_materialization import (
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v2-scoped-units-revision-time"
+FILING_PARSER_VERSION = "official-filing-facts-v3-layout-safe-units-revision-time"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -385,6 +385,7 @@ def _normalize_text_lines(text: str) -> list[str]:
         .replace("：", ":")
         .replace("（", "(")
         .replace("）", ")")
+        .replace("／", "/")
         .replace("−", "-")
         .replace("—", "-")
     )
@@ -414,9 +415,38 @@ def _nearest_explicit_unit(lines: list[str], index: int, *, lookback: int = 12) 
     return None
 
 
+def _logical_row_window(
+    lines: list[str],
+    index: int,
+    *,
+    max_lines: int = 4,
+) -> str:
+    """Rejoin one visually wrapped PDF table row without crossing into later values.
+
+    pypdf layout extraction can split a single Chinese table label across
+    physical lines, for example 归属于上市公司 / 股东的净利润. We only
+    join forward until the first numeric token appears, capped at four physical
+    lines, so labels may be reconstructed without flattening adjacent table rows.
+    """
+
+    parts: list[str] = []
+    for position in range(index, min(len(lines), index + max_lines)):
+        parts.append(lines[position])
+        joined = " ".join(parts)
+        if _NUMERIC_TOKEN_RE.search(joined):
+            break
+    return " ".join(parts)
+
+
+def _compact_row_text(value: str) -> str:
+    return re.sub(r"\s+", "", str(value))
+
+
 def _first_yuan_value_after_label(lines: list[str], labels: Iterable[str]) -> float | None:
-    for index, line in enumerate(lines):
-        label = next((candidate for candidate in labels if candidate in line), None)
+    for index in range(len(lines)):
+        logical_row = _logical_row_window(lines, index)
+        compact = _compact_row_text(logical_row)
+        label = next((candidate for candidate in labels if candidate in compact), None)
         if label is None:
             continue
         unit = _nearest_explicit_unit(lines, index)
@@ -424,12 +454,8 @@ def _first_yuan_value_after_label(lines: list[str], labels: Iterable[str]) -> fl
             # Missing/local non-yuan unit is not evidence for a canonical CNY
             # amount. Keep searching for another explicit yuan table occurrence.
             continue
-        suffix = line.split(label, 1)[1]
-        candidates = _NUMERIC_TOKEN_RE.findall(suffix)
-        if not candidates:
-            lookahead = " ".join(lines[index + 1 : index + 3])
-            candidates = _NUMERIC_TOKEN_RE.findall(lookahead)
-        for token in candidates:
+        suffix = compact.split(label, 1)[1]
+        for token in _NUMERIC_TOKEN_RE.findall(suffix):
             try:
                 value = _parse_numeric_token(token)
             except ValueError:
@@ -437,6 +463,34 @@ def _first_yuan_value_after_label(lines: list[str], labels: Iterable[str]) -> fl
             if pd.notna(value):
                 return float(value)
     return None
+
+
+def _first_basic_eps_value(lines: list[str], labels: Iterable[str]) -> float | None:
+    """Extract EPS from an explicitly proven per-share row, including wrapped units."""
+
+    for index in range(len(lines)):
+        logical_row = _logical_row_window(lines, index)
+        compact = _compact_row_text(logical_row)
+        label = next((candidate for candidate in labels if candidate in compact), None)
+        if label is None:
+            continue
+        suffix = compact.split(label, 1)[1]
+        first_number = _NUMERIC_TOKEN_RE.search(suffix)
+        if first_number is None:
+            continue
+        unit_region = suffix[: first_number.start()]
+        if "元/股" not in unit_region:
+            continue
+        try:
+            value = _parse_numeric_token(first_number.group(0))
+        except ValueError:
+            continue
+        if pd.notna(value):
+            return float(value)
+
+    # Preserve the existing explicit-table-unit contract for legacy layouts in
+    # which EPS shares the table's declared 单位：元 context.
+    return _first_yuan_value_after_label(lines, labels)
 
 
 def extract_standard_filing_facts(text: str) -> dict[str, float]:
@@ -454,13 +508,18 @@ def extract_standard_filing_facts(text: str) -> dict[str, float]:
 
     facts: dict[str, float] = {}
     for fact_type, labels in _FACT_LABELS.items():
-        value = _first_yuan_value_after_label(lines, labels)
+        value = (
+            _first_basic_eps_value(lines, labels)
+            if fact_type == "BASIC_EPS"
+            else _first_yuan_value_after_label(lines, labels)
+        )
         if value is not None:
             facts[fact_type] = value
     if not facts:
-        for index, line in enumerate(lines):
+        for index in range(len(lines)):
+            compact = _compact_row_text(_logical_row_window(lines, index))
             contains_target = any(
-                label in line
+                label in compact
                 for labels in _FACT_LABELS.values()
                 for label in labels
             )
