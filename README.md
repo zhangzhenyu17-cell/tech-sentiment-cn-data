@@ -4,6 +4,10 @@ Public utilities for reconstructing point-in-time A-share index membership and p
 
 This repository contains only the market-data layer. It does not contain sentiment-model features, thresholds, portfolio rules, personal holdings, forward-validation records, or investment signals. Generated bundles are assembled from an explicit file allowlist and are rejected when point-in-time membership or coverage checks fail.
 
+## Engineering architecture
+
+Long-running, decomposable public-data pipelines should follow the repository's [parallel execution architecture](docs/parallel_execution_architecture.md): shared preflight inputs, independently verifiable parallel stages/shards, checkpoint-only resume caches, immutable artifact handoff, fail-closed aggregation, and one canonical final bundle.
+
 ## Local checks
 
 ```bash
