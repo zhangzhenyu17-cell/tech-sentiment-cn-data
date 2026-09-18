@@ -1,8 +1,15 @@
+import importlib.util
 from pathlib import Path
 
 import pytest
 
-from scripts.assemble_v4a_derived_pit import _manifest_shard_identity
+
+_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "assemble_v4a_derived_pit.py"
+_SPEC = importlib.util.spec_from_file_location("assemble_v4a_derived_pit_test_module", _SCRIPT)
+assert _SPEC is not None and _SPEC.loader is not None
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
+_manifest_shard_identity = _MODULE._manifest_shard_identity
 
 
 def test_manifest_shard_identity_accepts_zero_index():
