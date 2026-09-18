@@ -56,6 +56,75 @@ def _coverage_blockers(path: Path, *, label: str) -> list[str]:
     return [f"{label}:non_complete_status={','.join(details)}"]
 
 
+
+def _fundamental_stage_blockers(root: Path) -> list[str]:
+    blockers: list[str] = []
+    manifest = _read_json(root / "stage_manifest.json")
+    raw_summary = manifest.get("fundamental_state_contract")
+    summary = dict(raw_summary) if isinstance(raw_summary, dict) else {}
+    readiness = str(summary.get("readiness_state") or "DATA_INSUFFICIENT")
+    if readiness != QUALIFIED:
+        blockers.append(f"fundamental_readiness_state={readiness}")
+    if summary.get("latest_required_comparable_coverage_complete") is not True:
+        blockers.append("fundamental_latest_required_comparable_coverage_complete=false")
+
+    evidence_path = root / "fundamental_state_evidence.csv"
+    if not evidence_path.is_file():
+        blockers.append("fundamental:missing_evidence")
+        return blockers
+    evidence = pd.read_csv(evidence_path)
+    required = {"entity_id", "evidence_available_date", "availability_state"}
+    missing_columns = required - set(evidence.columns)
+    if missing_columns:
+        blockers.append(
+            "fundamental:missing_evidence_columns="
+            + ",".join(sorted(missing_columns))
+        )
+        return blockers
+
+    start = pd.Timestamp(str(manifest.get("start_date") or "")).normalize()
+    end = pd.Timestamp(str(manifest.get("end_date") or "")).normalize()
+    if end < start:
+        blockers.append("fundamental:invalid_stage_window")
+        return blockers
+
+    dates = pd.to_datetime(
+        evidence["evidence_available_date"],
+        errors="raise",
+    ).dt.normalize()
+    target = evidence[dates.between(start, end)].copy()
+    if target.empty:
+        blockers.append("fundamental:no_target_evidence")
+        return blockers
+
+    qualified = target[
+        target["availability_state"].astype(str).eq("HISTORICAL_RECONSTRUCTABLE")
+    ]
+    non_qualified = int(len(target) - len(qualified))
+    if non_qualified:
+        blockers.append(f"fundamental:non_reconstructable_target_records={non_qualified}")
+
+    raw_symbols = manifest.get("symbols")
+    expected_symbols = (
+        {str(value).zfill(6) for value in raw_symbols}
+        if isinstance(raw_symbols, list)
+        else set()
+    )
+    if not expected_symbols:
+        blockers.append("fundamental:missing_expected_symbols")
+        return blockers
+    qualified_symbols = {
+        str(value).split(".", 1)[0].zfill(6)
+        for value in qualified["entity_id"].dropna().astype(str)
+    }
+    missing_symbols = sorted(expected_symbols - qualified_symbols)
+    if missing_symbols:
+        blockers.append(
+            "fundamental:missing_qualified_symbols="
+            + ",".join(missing_symbols[:10])
+        )
+    return blockers
+
 def stage_blockers(kind: str, root: Path) -> list[str]:
     blockers: list[str] = []
 
@@ -111,6 +180,7 @@ def stage_blockers(kind: str, root: Path) -> list[str]:
                 label="earnings",
             )
         )
+        blockers.extend(_fundamental_stage_blockers(root))
 
     elif kind == "policy":
         manifest = _read_json(root / "stage_manifest.json")

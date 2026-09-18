@@ -95,18 +95,71 @@ def test_issuer_guard_blocks_partial_source_or_failed_symbol_query(tmp_path: Pat
     assert "failed_symbol_queries=1" in blockers
 
 
-def test_fundamental_earnings_guard_only_requires_query_coverage(tmp_path: Path):
+def test_fundamental_earnings_guard_fails_when_final_fundamental_readiness_is_impossible(
+    tmp_path: Path,
+):
     root = tmp_path / "fundamental"
     _coverage(root / "filing_coverage.csv", ["COMPLETE_WINDOW", "COMPLETE_WINDOW"])
     _coverage(
         root / "earnings_direction_coverage.csv",
         ["COMPLETE_WINDOW", "COMPLETE_WINDOW"],
     )
+    _write_json(
+        root / "stage_manifest.json",
+        {
+            "start_date": "2025-01-01",
+            "end_date": "2025-12-31",
+            "symbols": ["600000", "000001"],
+            "fundamental_state_contract": {
+                "readiness_state": "QUALIFIED_INPUT",
+                "latest_required_comparable_coverage_complete": True,
+            },
+        },
+    )
+    pd.DataFrame(
+        [
+            {
+                "entity_id": "600000.SH",
+                "evidence_available_date": "2025-04-30",
+                "availability_state": "HISTORICAL_RECONSTRUCTABLE",
+            },
+            {
+                "entity_id": "000001.SZ",
+                "evidence_available_date": "2025-04-30",
+                "availability_state": "HISTORICAL_RECONSTRUCTABLE",
+            },
+        ]
+    ).to_csv(root / "fundamental_state_evidence.csv", index=False)
     assert stage_blockers("fundamental_earnings", root) == []
+
+    broken = pd.read_csv(root / "fundamental_state_evidence.csv")
+    broken.loc[broken["entity_id"].eq("000001.SZ"), "availability_state"] = (
+        "DATA_INSUFFICIENT"
+    )
+    broken.to_csv(root / "fundamental_state_evidence.csv", index=False)
+    blockers = stage_blockers("fundamental_earnings", root)
+    assert "fundamental:non_reconstructable_target_records=1" in blockers
+    assert "fundamental:missing_qualified_symbols=000001" in blockers
+
+    _write_json(
+        root / "stage_manifest.json",
+        {
+            "start_date": "2025-01-01",
+            "end_date": "2025-12-31",
+            "symbols": ["600000", "000001"],
+            "fundamental_state_contract": {
+                "readiness_state": "PARTIAL_COVERAGE",
+                "latest_required_comparable_coverage_complete": False,
+            },
+        },
+    )
+    blockers = stage_blockers("fundamental_earnings", root)
+    assert "fundamental_readiness_state=PARTIAL_COVERAGE" in blockers
+    assert "fundamental_latest_required_comparable_coverage_complete=false" in blockers
 
     _coverage(root / "filing_coverage.csv", ["COMPLETE_WINDOW", "FAILED"])
     blockers = stage_blockers("fundamental_earnings", root)
-    assert blockers == ["filings:non_complete_status=FAILED"]
+    assert "filings:non_complete_status=FAILED" in blockers
 
 
 def test_policy_guard_matches_existing_policy_readiness(tmp_path: Path):
