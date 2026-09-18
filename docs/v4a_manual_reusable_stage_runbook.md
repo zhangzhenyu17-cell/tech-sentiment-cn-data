@@ -41,8 +41,10 @@ imported local `tech_sentiment` modules, relevant frozen reference inputs, and
 An unrelated repository commit therefore does not invalidate a successful
 stage. A change to the stage producer, frozen input, or any upstream bundle does.
 
-Existing assets are never overwritten. A repeated publication succeeds only if
-all existing bytes are identical.
+Existing assets are never overwritten. A repeated or interrupted publication
+first verifies every already-present asset byte-for-byte, uploads only missing
+assets, and then re-verifies the complete three-asset bundle. Any byte mismatch
+fails closed.
 
 ## Manual workflow order
 
