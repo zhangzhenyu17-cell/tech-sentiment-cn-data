@@ -42,6 +42,30 @@ def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
         extract_standard_filing_facts("单位：万元\n营业收入 10 9")
 
 
+
+
+def test_explicit_yuan_unit_tolerates_pdf_layout_whitespace_and_line_wrap():
+    text = """
+    主要会计数据
+    单 位 ： 人 民 币
+    元 币 种 ： 人 民 币
+    营业收入 1,200.00 1,000.00
+    归属于上市公司股东的净利润 120.00 100.00
+    """
+    facts = extract_standard_filing_facts(text)
+    assert facts["OPERATING_REVENUE"] == 1200.0
+    assert facts["NET_PROFIT_PARENT"] == 120.0
+    assert facts["NET_PROFIT_MARGIN"] == pytest.approx(0.1)
+
+
+def test_spaced_non_yuan_unit_remains_fail_closed():
+    text = """
+    单 位 ： 万 元
+    营业收入 10 9
+    """
+    with pytest.raises(ValueError, match="non-yuan unit"):
+        extract_standard_filing_facts(text)
+
 def test_standard_filing_facts_handle_real_sse_wrapped_600519_layout():
     # Representative pypdf layout from the official 600519 2023 annual report:
     # long Chinese labels and the EPS unit are visually wrapped across lines.

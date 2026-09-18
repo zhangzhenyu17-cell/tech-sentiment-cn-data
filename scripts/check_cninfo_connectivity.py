@@ -112,13 +112,21 @@ def main() -> None:
                 "CNINFO connectivity/protocol probe failed: "
                 f"{probe['symbol']} official PDF lacks a usable text layer"
             )
-        facts = extract_standard_filing_facts(extracted_text)
+        try:
+            facts = extract_standard_filing_facts(extracted_text)
+        except Exception as exc:
+            raise SystemExit(
+                "CNINFO connectivity/protocol probe failed: "
+                f"role={probe['role']} symbol={probe['symbol']} parser_error="
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
         required_facts = set(REQUIRED_FACTS) | {"BASIC_EPS"}
         missing_facts = required_facts - set(facts)
         if missing_facts:
             raise SystemExit(
                 "CNINFO connectivity/protocol probe failed: "
-                f"{probe['symbol']} annual report parser missing critical facts "
+                f"role={probe['role']} symbol={probe['symbol']} "
+                "annual report parser missing critical facts "
                 f"{sorted(missing_facts)}"
             )
         row = immutable.iloc[0]
