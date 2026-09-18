@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from tech_sentiment.bounded_retry import call_with_bounded_network_retry
 from tech_sentiment.official_pit_archives import (
     fetch_sse_announcements,
     fetch_szse_announcements,
@@ -29,10 +30,14 @@ PROBES = (
 def _run_probe(probe: dict[str, str]) -> dict[str, object]:
     market = probe["market"]
     fetcher = fetch_sse_announcements if market == "SSE" else fetch_szse_announcements
-    frame = fetcher(
-        symbol=probe["symbol"],
-        start_date=probe["start_date"],
-        end_date=probe["end_date"],
+    frame = call_with_bounded_network_retry(
+        lambda: fetcher(
+            symbol=probe["symbol"],
+            start_date=probe["start_date"],
+            end_date=probe["end_date"],
+        ),
+        attempts=3,
+        backoff_seconds=0.5,
     )
     required = {"symbol", "title", "publication_time", "document_id", "source_url"}
     missing = required - set(frame.columns)

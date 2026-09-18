@@ -4,6 +4,7 @@ from urllib.error import HTTPError
 import pandas as pd
 import pytest
 
+import tech_sentiment.official_filing_facts as filing_module
 from tech_sentiment.official_filing_facts import (
     download_official_document,
     build_filing_fact_rows,
@@ -217,3 +218,57 @@ def test_cninfo_fallback_retries_transient_transport_failure_only():
     assert downloaded.retrieval_url == calls[-1]
     assert len(calls) == 3
     assert calls[1] == calls[2]
+
+def test_cninfo_double_403_uses_cookie_session_https_only(monkeypatch):
+    opener_calls: list[str] = []
+
+    def opener(request, timeout):
+        opener_calls.append(request.full_url)
+        raise HTTPError(request.full_url, 403, "Forbidden", hdrs=None, fp=None)
+
+    class FakeResponse:
+        def __init__(self, url: str, status_code: int, content: bytes):
+            self.url = url
+            self.status_code = status_code
+            self.content = content
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise AssertionError(f"unexpected status {self.status_code}")
+
+    class FakeSession:
+        def __init__(self):
+            self.calls: list[str] = []
+
+        def get(self, url, **kwargs):
+            self.calls.append(url)
+            if url == "https://www.cninfo.com.cn/":
+                return FakeResponse(url, 200, b"<html></html>")
+            if url.startswith("https://static.cninfo.com.cn/"):
+                return FakeResponse(url, 403, b"")
+            return FakeResponse(url, 200, b"%PDF-1.7 session transport")
+
+        def close(self):
+            pass
+
+    session = FakeSession()
+    monkeypatch.setattr(filing_module.requests, "Session", lambda: session)
+
+    original = "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF"
+    downloaded = download_official_document(original, opener=opener)
+
+    assert opener_calls == [
+        original,
+        (
+            "https://www.cninfo.com.cn/new/announcement/download"
+            "?bulletinId=1225568832&announceTime=2026-09-16"
+        ),
+    ]
+    assert session.calls[0] == "https://www.cninfo.com.cn/"
+    assert session.calls[1] == original
+    assert session.calls[2].startswith("https://www.cninfo.com.cn/new/announcement/download?")
+    assert all(url.startswith("https://") for url in session.calls)
+    assert downloaded.url == original
+    assert downloaded.retrieval_url == session.calls[2]
+    assert downloaded.content.startswith(b"%PDF-")
+
