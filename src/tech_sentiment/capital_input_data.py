@@ -9,11 +9,20 @@ import numpy as np
 import pandas as pd
 
 from .bounded_retry import call_with_bounded_network_retry
+from .official_exchange_transport import fetch_official_json
 
 SSE_ETF_SHARE_SOURCE_ID = "SSE_ETF_SCALE_DAILY"
 SSE_ETF_SHARE_SOURCE_URL = "https://www.sse.com.cn/assortment/fund/etf/list/scale/"
 SSE_ETF_SCALE_QUERY_URL = "https://query.sse.com.cn/commonQuery.do"
 SSE_ETF_SCALE_SQL_ID = "COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L"
+SSE_ETF_EXACT_SQL_ID = "COMMON_SSE_ZQPZ_ETFZL_ETFJBXX_JJGM_SEARCH_L"
+SSE_ETF_DETAIL_PAGE_TEMPLATE = (
+    "https://www.sse.com.cn/assortment/fund/list/etfinfo/scale/"
+    "index.shtml?FUNDID={fund_code}"
+)
+SSE_TURNOVER_QUERY_URL = SSE_ETF_SCALE_QUERY_URL
+SSE_TURNOVER_SQL_ID = "COMMON_SSE_SJ_GPSJ_CJGK_MRGK_C"
+SZSE_TURNOVER_QUERY_URL = "https://www.szse.cn/api/report/ShowReport/data"
 SSE_TURNOVER_SOURCE_ID = "SSE_DAILY_STOCK_OVERVIEW"
 SSE_TURNOVER_SOURCE_URL = "https://www.sse.com.cn/market/stockdata/overview/day/"
 SZSE_TURNOVER_SOURCE_ID = "SZSE_MARKET_OVERVIEW_DAILY"
@@ -67,18 +76,45 @@ def _sse_etf_scale_payload_frame(payload: object) -> pd.DataFrame:
     return frame
 
 
-def _validate_sse_response_url(response: object, *, expected_host: str, default_url: str) -> None:
-    final_url = str(getattr(response, "url", default_url) or default_url)
-    parsed = urlparse(final_url)
-    if parsed.scheme != "https" or (parsed.hostname or "").lower() != expected_host:
-        raise ValueError("SSE ETF scale transport redirected outside official HTTPS host")
-
-
-def _validate_sse_query_response_url(response: object) -> None:
-    _validate_sse_response_url(
-        response,
-        expected_host="query.sse.com.cn",
-        default_url=SSE_ETF_SCALE_QUERY_URL,
+def _sse_etf_exact_payload_frame(
+    payload: object,
+    *,
+    date: str,
+    fund_code: str,
+) -> pd.DataFrame:
+    if not isinstance(payload, dict) or not isinstance(payload.get("result"), list):
+        raise ValueError("SSE ETF exact response lacks result rows")
+    code = str(fund_code).zfill(6)
+    stat_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+    matches: list[dict[str, object]] = []
+    for row in payload["result"]:
+        if not isinstance(row, dict):
+            continue
+        row_code = str(row.get("SEC_CODE") or "").zfill(6)
+        row_date = str(row.get("STAT_DATE") or "").strip()
+        if row_code == code and row_date == stat_date:
+            matches.append(row)
+    if len(matches) != 1:
+        raise ValueError(
+            "SSE ETF exact response requires exactly one target code/date row"
+        )
+    row = matches[0]
+    shares_10k = pd.to_numeric(
+        pd.Series([row.get("TOT_VOL")]), errors="coerce"
+    ).iloc[0]
+    if pd.isna(shares_10k) or float(shares_10k) <= 0:
+        raise ValueError("SSE ETF exact response contains invalid TOT_VOL")
+    return pd.DataFrame(
+        [
+            {
+                "序号": pd.to_numeric(row.get("NUM"), errors="coerce"),
+                "基金代码": code,
+                "基金简称": str(row.get("SEC_NAME") or ""),
+                "ETF类型": str(row.get("ETF_TYPE") or ""),
+                "统计日期": pd.Timestamp(stat_date).date(),
+                "基金份额": float(shares_10k) * 10_000.0,
+            }
+        ]
     )
 
 
@@ -90,124 +126,182 @@ def _fetch_sse_etf_scale_direct(
     browser_get: Callable[..., object] | None = None,
     browser_session_factory: Callable[[], object] | None = None,
 ) -> pd.DataFrame:
-    """Fetch the official SSE ETF scale endpoint with bounded same-source fallbacks.
-
-    Transport order is plain HTTPS, one-shot browser-fingerprint HTTPS, then a
-    browser-fingerprint session warmed on the official SSE ETF scale page. Every
-    accepted response remains on the same official SSE HTTPS hosts and uses the
-    same SQL identity and raw field semantics.
-    """
+    """Fetch the official SSE all-ETF daily scale table."""
 
     if len(date) != 8 or not date.isdigit():
         raise ValueError("SSE ETF scale date must be YYYYMMDD")
     stat_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
-    params = {
-        "isPagination": "true",
-        "pageHelp.pageSize": "10000",
-        "pageHelp.pageNo": "1",
-        "pageHelp.beginPage": "1",
-        "pageHelp.cacheSize": "1",
-        "pageHelp.endPage": "1",
-        "sqlId": SSE_ETF_SCALE_SQL_ID,
-        "STAT_DATE": stat_date,
-    }
-    headers = {
-        "Referer": SSE_ETF_SHARE_SOURCE_URL,
-        "Accept": "application/json,text/plain,*/*",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
-        "X-Requested-With": "XMLHttpRequest",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 Chrome/124 Safari/537.36"
-        ),
-    }
-    if plain_get is None:
-        import requests as plain_requests
+    payload = fetch_official_json(
+        url=SSE_ETF_SCALE_QUERY_URL,
+        params={
+            "isPagination": "true",
+            "pageHelp.pageSize": "10000",
+            "pageHelp.pageNo": "1",
+            "pageHelp.beginPage": "1",
+            "pageHelp.cacheSize": "1",
+            "pageHelp.endPage": "1",
+            "sqlId": SSE_ETF_SCALE_SQL_ID,
+            "STAT_DATE": stat_date,
+        },
+        referer=SSE_ETF_SHARE_SOURCE_URL,
+        allowed_query_hosts=("query.sse.com.cn",),
+        warmup_url=SSE_ETF_SHARE_SOURCE_URL,
+        allowed_warmup_hosts=("www.sse.com.cn",),
+        timeout=timeout,
+        plain_get=plain_get,
+        browser_get=browser_get,
+        browser_session_factory=browser_session_factory,
+    )
+    return _sse_etf_scale_payload_frame(payload)
 
-        plain_get = plain_requests.get
-    try:
-        response = plain_get(
-            SSE_ETF_SCALE_QUERY_URL,
-            params=params,
-            headers=headers,
-            timeout=timeout,
-            allow_redirects=True,
+
+def _fetch_sse_etf_scale_exact(
+    date: str,
+    fund_code: str,
+    *,
+    timeout: float = 20.0,
+) -> pd.DataFrame:
+    """Fetch one exact SSE ETF/date after the bulk endpoint is transport-blocked."""
+
+    if len(date) != 8 or not date.isdigit():
+        raise ValueError("SSE ETF scale date must be YYYYMMDD")
+    code = str(fund_code).zfill(6)
+    stat_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+    referer = SSE_ETF_DETAIL_PAGE_TEMPLATE.format(fund_code=code)
+    payload = fetch_official_json(
+        url=SSE_ETF_SCALE_QUERY_URL,
+        params={
+            "isPagination": "false",
+            "sqlId": SSE_ETF_EXACT_SQL_ID,
+            "SEC_CODE": code,
+            "STAT_DATE": stat_date,
+        },
+        referer=referer,
+        allowed_query_hosts=("query.sse.com.cn",),
+        warmup_url=referer,
+        allowed_warmup_hosts=("www.sse.com.cn",),
+        timeout=timeout,
+    )
+    return _sse_etf_exact_payload_frame(payload, date=date, fund_code=code)
+
+
+def _sse_turnover_payload_frame(payload: object) -> pd.DataFrame:
+    if not isinstance(payload, dict) or not isinstance(payload.get("result"), list):
+        raise ValueError("SSE daily overview response lacks result rows")
+    temp = pd.DataFrame(payload["result"]).T
+    temp.reset_index(inplace=True)
+    if len(temp) != 11:
+        raise ValueError(
+            f"SSE daily overview expected 11 metric rows, got {len(temp)}"
         )
-        response.raise_for_status()
-        _validate_sse_query_response_url(response)
-        return _sse_etf_scale_payload_frame(response.json())
-    except Exception:
-        pass
-
-    curl_requests = None
-    if browser_get is None or browser_session_factory is None:
-        try:
-            from curl_cffi import requests as curl_requests
-        except ImportError as exc:  # pragma: no cover - installed by data extra
-            raise RuntimeError(
-                "curl_cffi is required for SSE ETF browser transport fallback"
-            ) from exc
-    if browser_get is None:
-        browser_get = curl_requests.get
-
-    try:
-        response = browser_get(
-            SSE_ETF_SCALE_QUERY_URL,
-            params=params,
-            headers=headers,
-            impersonate="chrome",
-            timeout=timeout,
-            allow_redirects=True,
+    if len(temp.columns) == 5:
+        temp.columns = ["单日情况", "主板A", "主板B", "科创板", "股票"]
+        temp["股票回购"] = pd.NA
+    elif len(temp.columns) == 4:
+        temp.columns = ["单日情况", "主板A", "主板B", "科创板"]
+        temp["股票"] = pd.NA
+        temp["股票回购"] = pd.NA
+    elif len(temp.columns) == 6:
+        temp.columns = ["单日情况", "主板A", "主板B", "科创板", "股票回购", "股票"]
+    else:
+        raise ValueError(
+            f"SSE daily overview has unexpected product-column count {len(temp.columns)}"
         )
-        response.raise_for_status()
-        _validate_sse_query_response_url(response)
-        return _sse_etf_scale_payload_frame(response.json())
-    except Exception:
-        pass
+    temp["单日情况"] = [
+        "市价总值",
+        "成交量",
+        "平均市盈率",
+        "换手率",
+        "成交金额",
+        "-",
+        "流通市值",
+        "流通换手率",
+        "报告日期",
+        "挂牌数",
+        "-",
+    ]
+    temp = temp[~temp["单日情况"].isin(["-", "报告日期"])].copy()
+    for column in ("股票", "主板A", "主板B", "科创板", "股票回购"):
+        temp[column] = pd.to_numeric(temp[column], errors="coerce")
+    return temp[
+        ["单日情况", "股票", "主板A", "主板B", "科创板", "股票回购"]
+    ].reset_index(drop=True)
 
-    if browser_session_factory is None:
-        browser_session_factory = curl_requests.Session
 
-    session = browser_session_factory()
-    try:
-        bootstrap_headers = {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": headers["Accept-Language"],
-            "User-Agent": headers["User-Agent"],
-        }
-        try:
-            bootstrap = session.get(
-                SSE_ETF_SHARE_SOURCE_URL,
-                headers=bootstrap_headers,
-                impersonate="chrome",
-                timeout=min(timeout, 10.0),
-                allow_redirects=True,
-            )
-            _validate_sse_response_url(
-                bootstrap,
-                expected_host="www.sse.com.cn",
-                default_url=SSE_ETF_SHARE_SOURCE_URL,
-            )
-            # WAF challenge responses can set useful domain cookies even when
-            # they are not 2xx, so warm-up is intentionally best-effort.
-        except Exception:
-            pass
+def _fetch_sse_turnover_official(date: str, *, timeout: float = 20.0) -> pd.DataFrame:
+    if len(date) != 8 or not date.isdigit():
+        raise ValueError("SSE turnover date must be YYYYMMDD")
+    payload = fetch_official_json(
+        url=SSE_TURNOVER_QUERY_URL,
+        params={
+            "sqlId": SSE_TURNOVER_SQL_ID,
+            "PRODUCT_CODE": "01,02,03,11,17",
+            "type": "inParams",
+            "SEARCH_DATE": f"{date[:4]}-{date[4:6]}-{date[6:]}",
+        },
+        referer=SSE_TURNOVER_SOURCE_URL,
+        allowed_query_hosts=("query.sse.com.cn",),
+        warmup_url=SSE_TURNOVER_SOURCE_URL,
+        allowed_warmup_hosts=("www.sse.com.cn",),
+        timeout=timeout,
+    )
+    return _sse_turnover_payload_frame(payload)
 
-        response = session.get(
-            SSE_ETF_SCALE_QUERY_URL,
-            params=params,
-            headers=headers,
-            impersonate="chrome",
-            timeout=timeout,
-            allow_redirects=True,
+
+def _szse_turnover_payload_frame(payload: object) -> pd.DataFrame:
+    if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
+        raise ValueError("SZSE market overview response must be a non-empty JSON array")
+    rows = payload[0].get("data")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("SZSE market overview response lacks data rows")
+    parsed: list[dict[str, object]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        category = row.get("zqlb", row.get("lbmc"))
+        amount = row.get("cjje")
+        if category is None or amount is None:
+            continue
+        parsed.append(
+            {
+                "证券类别": str(category).strip(),
+                "成交金额": pd.to_numeric(
+                    str(amount).replace(",", ""), errors="coerce"
+                ),
+            }
         )
-        response.raise_for_status()
-        _validate_sse_query_response_url(response)
-        return _sse_etf_scale_payload_frame(response.json())
-    finally:
-        close = getattr(session, "close", None)
-        if callable(close):
-            close()
+    frame = pd.DataFrame(parsed)
+    if frame.empty or {"股票", "主板B股"}.difference(set(frame["证券类别"])):
+        # Older reports may label B shares simply as B股; the normalizer already
+        # accepts that alias.
+        if frame.empty or "股票" not in set(frame.get("证券类别", [])) or not (
+            {"主板B股", "B股"} & set(frame.get("证券类别", []))
+        ):
+            raise ValueError("SZSE market overview lacks 股票/B股 rows")
+    return frame
+
+
+def _fetch_szse_turnover_official(date: str, *, timeout: float = 20.0) -> pd.DataFrame:
+    if len(date) != 8 or not date.isdigit():
+        raise ValueError("SZSE turnover date must be YYYYMMDD")
+    referer = SZSE_TURNOVER_SOURCE_URL
+    payload = fetch_official_json(
+        url=SZSE_TURNOVER_QUERY_URL,
+        params={
+            "SHOWTYPE": "JSON",
+            "CATALOGID": "1803_sczm",
+            "TABKEY": "tab1",
+            "txtQueryDate": f"{date[:4]}-{date[4:6]}-{date[6:]}",
+            "PAGENO": "1",
+            "PAGESIZE": "50",
+        },
+        referer=referer,
+        allowed_query_hosts=("www.szse.cn",),
+        warmup_url=referer,
+        allowed_warmup_hosts=("www.szse.cn",),
+        timeout=timeout,
+    )
+    return _szse_turnover_payload_frame(payload)
 
 def normalize_sse_etf_share_snapshot(
     frame: pd.DataFrame,
@@ -275,8 +369,7 @@ def fetch_sse_etf_share_history(
     retry_attempts: int = 3,
     retry_backoff_seconds: float = 0.5,
 ) -> EtfShareFetchResult:
-    if fetcher is None:
-        fetcher = _fetch_sse_etf_scale_direct
+    use_official_default = fetcher is None
     data_parts: list[pd.DataFrame] = []
     errors: list[dict[str, str]] = []
     dates = pd.DatetimeIndex(
@@ -285,11 +378,45 @@ def fetch_sse_etf_share_history(
     for value in dates:
         date_arg = pd.Timestamp(value).strftime("%Y%m%d")
         try:
-            raw = call_with_bounded_network_retry(
-                lambda: fetcher(date_arg),
-                attempts=retry_attempts,
-                backoff_seconds=retry_backoff_seconds,
-            )
+            if use_official_default:
+                try:
+                    raw = call_with_bounded_network_retry(
+                        lambda: _fetch_sse_etf_scale_direct(date_arg),
+                        attempts=retry_attempts,
+                        backoff_seconds=retry_backoff_seconds,
+                    )
+                except RuntimeError as bulk_exc:
+                    exact_parts: list[pd.DataFrame] = []
+                    exact_errors: list[str] = []
+                    for code in sorted({str(value).zfill(6) for value in fund_codes}):
+                        try:
+                            exact_parts.append(
+                                call_with_bounded_network_retry(
+                                    lambda code=code: _fetch_sse_etf_scale_exact(
+                                        date_arg, code
+                                    ),
+                                    attempts=retry_attempts,
+                                    backoff_seconds=retry_backoff_seconds,
+                                )
+                            )
+                        except Exception as exact_exc:
+                            exact_errors.append(
+                                f"{code}:{type(exact_exc).__name__}:{exact_exc}"
+                            )
+                    if exact_errors or not exact_parts:
+                        raise RuntimeError(
+                            "SSE ETF bulk and exact official transports failed; "
+                            f"bulk={type(bulk_exc).__name__}:{bulk_exc}; "
+                            f"exact={exact_errors}"
+                        ) from bulk_exc
+                    raw = pd.concat(exact_parts, ignore_index=True)
+            else:
+                assert fetcher is not None
+                raw = call_with_bounded_network_retry(
+                    lambda: fetcher(date_arg),
+                    attempts=retry_attempts,
+                    backoff_seconds=retry_backoff_seconds,
+                )
             normalized = normalize_sse_etf_share_snapshot(
                 raw, observation_date=value, fund_codes=fund_codes
             )
@@ -561,13 +688,10 @@ def fetch_sse_szse_a_share_turnover_history(
     retry_attempts: int = 3,
     retry_backoff_seconds: float = 0.5,
 ) -> ExchangeTurnoverFetchResult:
-    if sse_fetcher is None or szse_fetcher is None:
-        import akshare as ak  # type: ignore
-
-        if sse_fetcher is None:
-            sse_fetcher = lambda date: ak.stock_sse_deal_daily(date=date)
-        if szse_fetcher is None:
-            szse_fetcher = lambda date: ak.stock_szse_summary(date=date)
+    if sse_fetcher is None:
+        sse_fetcher = _fetch_sse_turnover_official
+    if szse_fetcher is None:
+        szse_fetcher = _fetch_szse_turnover_official
     sse_rows: list[dict[str, object]] = []
     szse_rows: list[dict[str, object]] = []
     errors: list[dict[str, str]] = []
