@@ -39,3 +39,39 @@ def test_issuer_preflight_covers_both_exchanges_and_exact_historical_disclosures
     assert {probe["market"] for probe in probes} == {"SSE", "SZSE"}
     assert all(probe["expected_title_token"] for probe in probes)
     assert all(probe["start_date"] <= probe["end_date"] for probe in probes)
+
+
+def test_cninfo_preflight_requires_two_annual_report_fact_probes():
+    path = ROOT / "scripts" / "check_cninfo_connectivity.py"
+    spec = importlib.util.spec_from_file_location("v4a_cninfo_probe", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    probes = list(module.PROBES)
+    assert {probe["symbol"] for probe in probes} == {"600519", "000538"}
+
+    source = path.read_text(encoding="utf-8")
+    assert "annual_report_fact_probes.append(parsed_probe)" in source
+    assert "critical_filing_facts_verified" in source
+
+
+def test_source_freshness_preflight_checks_window_boundaries_and_historical_prices():
+    source = (ROOT / "scripts" / "check_v4a_source_freshness.py").read_text(
+        encoding="utf-8"
+    )
+    assert "earliest = pd.Timestamp(calendar.min()).normalize()" in source
+    assert "latest = pd.Timestamp(calendar.max()).normalize()" in source
+    assert "boundary_dates = pd.DatetimeIndex([earliest, latest])" in source
+    assert "materialize_financing_history(boundary_dates)" in source
+    assert '"historical_price_symbol": historical_price_symbol' in source
+
+
+def test_csrc_preflight_checks_second_page_identity_and_order():
+    source = (ROOT / "scripts" / "check_csrc_policy_connectivity.py").read_text(
+        encoding="utf-8"
+    )
+    assert "requested_page=2" in source
+    assert "duplicate manuscript across pages" in source
+    assert "cross-page order drift" in source
+    assert "total drift across pages" in source
