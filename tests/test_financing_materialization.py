@@ -60,3 +60,30 @@ def test_materializer_preserves_missing_dates_and_never_guesses_units():
         8000.0 * 1e8
     )
     assert len(result.errors) == 1
+
+
+def test_financing_retries_transient_szse_failure():
+    calls = 0
+
+    def sse_fetcher(start: str, end: str) -> pd.DataFrame:
+        return pd.DataFrame({
+            "信用交易日期": ["2022-01-04"],
+            "融资余额": [9.0e11],
+        })
+
+    def szse_fetcher(date: str) -> pd.DataFrame:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionResetError(104, "reset")
+        return pd.DataFrame({"融资余额": [8000.0]})
+
+    result = materialize_financing_history(
+        pd.to_datetime(["2022-01-04"]),
+        sse_fetcher=sse_fetcher,
+        szse_fetcher=szse_fetcher,
+        retry_backoff_seconds=0,
+    )
+    assert calls == 2
+    assert result.errors.empty
+    assert result.summary["bilateral_coverage"] == pytest.approx(1.0)

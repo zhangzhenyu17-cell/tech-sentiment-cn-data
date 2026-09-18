@@ -111,3 +111,35 @@ def test_turnover_fetcher_keeps_exchange_failures_explicit():
     assert len(result.combined) == 1
     assert result.combined.loc[0, "szse_a_share_turnover_yuan"] == 150_000_000_000
     assert result.errors.to_dict("records")[0]["exchange"] == "SSE"
+
+
+def test_turnover_fetcher_retries_transient_transport_failure():
+    calls = 0
+
+    def sse_fetch(date):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionResetError(104, "reset")
+        return pd.DataFrame({
+            "单日情况": ["成交金额"],
+            "主板A": [1000.0],
+            "科创板": [200.0],
+        })
+
+    def szse_fetch(date):
+        return pd.DataFrame({
+            "证券类别": ["股票", "主板B股"],
+            "成交金额": [150_100_000_000.0, 100_000_000.0],
+        })
+
+    result = fetch_sse_szse_a_share_turnover_history(
+        trading_dates=pd.to_datetime(["2026-09-16"]),
+        sse_fetcher=sse_fetch,
+        szse_fetcher=szse_fetch,
+        sleep_seconds=0,
+        retry_backoff_seconds=0,
+    )
+    assert calls == 2
+    assert result.errors.empty
+    assert len(result.combined) == 1

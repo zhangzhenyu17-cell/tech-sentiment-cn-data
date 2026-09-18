@@ -265,6 +265,7 @@ def materialize_versioned_filing_facts(
                             "document_id": document_id,
                             "publication_timestamp": str(publication),
                             "document_url": downloaded.url,
+                            "document_retrieval_url": downloaded.retrieval_url,
                             "document_sha256": downloaded.sha256,
                         },
                     )

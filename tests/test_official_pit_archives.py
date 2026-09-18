@@ -105,3 +105,27 @@ def test_official_archive_does_not_relabel_wrong_exchange_symbol():
     assert result.records.empty
     assert result.coverage.iloc[0]["query_status"] == "COMPLETE_WINDOW"
     assert int(result.coverage.iloc[0]["records"]) == 0
+
+
+def test_official_archive_retries_transient_transport_failure():
+    calls = 0
+
+    def fetcher(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionResetError(104, "reset")
+        return _frame("600276", "sse-doc-retry")
+
+    result = materialize_official_archive(
+        ["600276"],
+        spec=SSE_SPEC,
+        start_date="2022-01-04",
+        end_date="2022-05-05",
+        trading_dates=_calendar(),
+        fetcher=fetcher,
+        retry_backoff_seconds=0,
+    )
+    assert calls == 2
+    assert result.errors.empty
+    assert result.coverage.iloc[0]["query_status"] == "COMPLETE_WINDOW"

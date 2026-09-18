@@ -80,6 +80,9 @@ def _to_evidence(directions: pd.DataFrame) -> pd.DataFrame:
             "source_identity": CNINFO_SOURCE_ID,
             "provider": CNINFO_PROVIDER,
             "document_url": str(item["document_url"]),
+            "document_retrieval_url": str(
+                item.get("document_retrieval_url") or item["document_url"]
+            ),
             "document_id": str(item["document_id"]),
             "document_sha256": str(item["document_sha256"]),
             "classifier_version": str(item["classifier_version"]),
@@ -234,6 +237,7 @@ def materialize_cninfo_earnings_directions(
                                 "earnings_expectation_direction": direction,
                                 "evidence_available_date": available_date,
                                 "document_url": downloaded.url,
+                                "document_retrieval_url": downloaded.retrieval_url or downloaded.url,
                                 "document_sha256": downloaded.sha256,
                                 "classifier_version": EARNINGS_CLASSIFIER_VERSION,
                                 "availability_rule": availability_rule,
@@ -243,7 +247,11 @@ def materialize_cninfo_earnings_directions(
                     store.save(
                         identity,
                         frames={"direction": direction_frame},
-                        metadata={"document_sha256": downloaded.sha256},
+                        metadata={
+                            "document_url": downloaded.url,
+                            "document_retrieval_url": downloaded.retrieval_url or downloaded.url,
+                            "document_sha256": downloaded.sha256,
+                        },
                     )
                     executed_docs += 1
                 if len(direction_frame):

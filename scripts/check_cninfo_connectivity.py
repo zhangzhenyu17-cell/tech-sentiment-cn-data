@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 
 from tech_sentiment.cninfo_direct import fetch_cninfo_announcements_direct
-from tech_sentiment.official_filing_facts import download_official_document
+from tech_sentiment.official_filing_facts import (
+    download_official_document,
+    extract_pdf_text,
+)
 
 
 PROBES = (
@@ -59,12 +62,19 @@ def main() -> None:
                     "CNINFO connectivity/protocol probe failed: "
                     "official attachment did not return PDF bytes"
                 )
+            extracted_text = extract_pdf_text(downloaded.content)
+            if len(extracted_text.strip()) < 100:
+                raise SystemExit(
+                    "CNINFO connectivity/protocol probe failed: "
+                    "official PDF lacks a usable text layer"
+                )
             attachment_probe = {
                 "symbol": probe["symbol"],
                 "canonical_attachment_url": canonical_url,
-                "retrieval_url": downloaded.url,
+                "retrieval_url": downloaded.retrieval_url or downloaded.url,
                 "document_sha256": downloaded.sha256,
                 "pdf_bytes_verified": True,
+                "pdf_text_layer_verified": True,
             }
         results.append(
             {
