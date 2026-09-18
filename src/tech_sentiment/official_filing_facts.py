@@ -5,6 +5,7 @@ from hashlib import sha256
 import io
 import json
 import re
+import unicodedata
 from typing import Callable, Iterable, Mapping
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlparse
@@ -23,7 +24,7 @@ from .pit_public_materialization import (
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v7-multi-text-engine-safe-units-revision-time"
+FILING_PARSER_VERSION = "official-filing-facts-v8-unicode-multiengine-safe-units-revision-time"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -361,16 +362,41 @@ def _pdfplumber_text(content: bytes) -> str:
     return "\n".join(parts).strip()
 
 
+def _pymupdf_text(content: bytes) -> str:
+    """Extract only the existing PDF text layer with PyMuPDF; no OCR."""
+
+    try:
+        import pymupdf
+    except ImportError as exc:  # pragma: no cover - installed by the data extra
+        raise RuntimeError(
+            "pymupdf is required for tertiary official filing text extraction"
+        ) from exc
+
+    parts: list[str] = []
+    document = pymupdf.open(stream=content, filetype="pdf")
+    try:
+        for page in document:
+            text = page.get_text("text", sort=True) or ""
+            if text.strip():
+                parts.append(text)
+    finally:
+        document.close()
+    return "\n".join(parts).strip()
+
+
 def extract_pdf_text(content: bytes) -> str:
     """Extract the embedded text layer through conservative parser fallbacks.
 
     Order:
     1. pypdf layout mode;
-    2. pypdf ordinary text mode, but only when it restores an explicit unit;
-    3. pdfplumber/pdfminer, but only when it restores an explicit unit.
+    2. pypdf ordinary text mode;
+    3. pdfplumber/pdfminer;
+    4. PyMuPDF.
 
-    All paths read the same immutable official PDF bytes. OCR, image inference,
-    unit inference and non-official substitute documents are deliberately absent.
+    A fallback is selected only when it restores an explicit table-unit
+    declaration. All paths read the same immutable official PDF bytes. OCR,
+    image inference, unit inference and non-official substitute documents are
+    deliberately absent.
     """
 
     try:
@@ -392,30 +418,37 @@ def extract_pdf_text(content: bytes) -> str:
                 parts.append(text)
         return "\n".join(parts).strip()
 
+    candidates: list[str] = []
+
     layout_text = _collect(layout=True)
-    if layout_text and _has_explicit_unit_declaration(
-        _normalize_text_lines(layout_text)
-    ):
-        return layout_text
+    if layout_text:
+        candidates.append(layout_text)
+        if _has_explicit_unit_declaration(_normalize_text_lines(layout_text)):
+            return layout_text
 
     plain_text = _collect(layout=False)
-    if plain_text and _has_explicit_unit_declaration(
-        _normalize_text_lines(plain_text)
-    ):
-        return plain_text
+    if plain_text:
+        candidates.append(plain_text)
+        if _has_explicit_unit_declaration(_normalize_text_lines(plain_text)):
+            return plain_text
 
     miner_text = _pdfplumber_text(content)
-    if miner_text and _has_explicit_unit_declaration(
-        _normalize_text_lines(miner_text)
-    ):
-        return miner_text
-
-    if layout_text:
-        return layout_text
-    if plain_text:
-        return plain_text
     if miner_text:
-        return miner_text
+        candidates.append(miner_text)
+        if _has_explicit_unit_declaration(_normalize_text_lines(miner_text)):
+            return miner_text
+
+    mupdf_text = _pymupdf_text(content)
+    if mupdf_text:
+        candidates.append(mupdf_text)
+        if _has_explicit_unit_declaration(_normalize_text_lines(mupdf_text)):
+            return mupdf_text
+
+    if candidates:
+        # Preserve the primary text layer for diagnostics when every parser
+        # fails the explicit-unit gate; downstream fact extraction remains
+        # fail-closed and will never infer a unit.
+        return candidates[0]
     raise ValueError("official filing has no extractable text layer")
 
 
@@ -436,9 +469,29 @@ def filing_period_end_from_title(title: object) -> pd.Timestamp:
     raise ValueError("filing title does not identify a supported report period")
 
 
+def _normalize_pdf_unicode(value: object) -> str:
+    """Normalize compatibility glyphs and strip invisible PDF control artifacts.
+
+    Only Unicode compatibility/control cleanup is performed. Visible CJK text,
+    punctuation, digits and signs are preserved; this is not OCR or semantic
+    repair.
+    """
+
+    normalized = unicodedata.normalize("NFKC", str(value))
+    chars: list[str] = []
+    for char in normalized:
+        if char in {"\n", "\r", "\t"}:
+            chars.append(char)
+            continue
+        if unicodedata.category(char).startswith("C"):
+            continue
+        chars.append(char)
+    return "".join(chars)
+
+
 def _normalize_text_lines(text: str) -> list[str]:
     clean = (
-        str(text)
+        _normalize_pdf_unicode(text)
         .replace("，", ",")
         .replace("：", ":")
         .replace("（", "(")
@@ -459,43 +512,52 @@ def _parse_numeric_token(token: str) -> float:
 
 
 def _explicit_unit_from_text(value: str) -> str | None:
-    """Read only an explicit 单位 declaration while ignoring PDF layout whitespace."""
+    """Read only an explicit 单位 declaration after Unicode/layout cleanup."""
 
-    compact = re.sub(r"\s+", "", str(value))
+    compact = re.sub(r"\s+", "", _normalize_pdf_unicode(value))
+    compact = compact.replace("：", ":")
     match = _UNIT_RE.search(compact)
     return str(match.group(1)) if match else None
 
 
-def _nearest_explicit_unit(lines: list[str], index: int, *, lookback: int = 12) -> str | None:
+def _nearest_explicit_unit(
+    lines: list[str],
+    index: int,
+    *,
+    lookback: int = 12,
+    max_unit_lines: int = 3,
+) -> str | None:
     """Return the nearest explicit table unit at or before a fact row.
 
     The bounded lookup avoids using a unit declaration from an unrelated distant
-    table. Whitespace inserted by PDF layout extraction is ignored only inside
-    the explicit unit declaration; no unit is inferred and no rescaling is done.
+    table. A declaration may span up to three physical PDF-text lines. No unit is
+    inferred and no rescaling is done.
     """
 
     left = max(0, index - lookback)
     for position in range(index, left - 1, -1):
-        unit = _explicit_unit_from_text(lines[position])
-        if unit is not None:
-            return unit
-        if position < index and position + 1 < len(lines):
+        max_span = min(max_unit_lines, index - position + 1)
+        for span in range(1, max_span + 1):
             unit = _explicit_unit_from_text(
-                lines[position] + " " + lines[position + 1]
+                " ".join(lines[position : position + span])
             )
             if unit is not None:
                 return unit
     return None
 
 
-def _has_explicit_unit_declaration(lines: list[str]) -> bool:
-    for position, line in enumerate(lines):
-        if _explicit_unit_from_text(line) is not None:
-            return True
-        if position + 1 < len(lines) and _explicit_unit_from_text(
-            line + " " + lines[position + 1]
-        ) is not None:
-            return True
+def _has_explicit_unit_declaration(
+    lines: list[str],
+    *,
+    max_unit_lines: int = 3,
+) -> bool:
+    for position in range(len(lines)):
+        for span in range(1, max_unit_lines + 1):
+            end = position + span
+            if end > len(lines):
+                break
+            if _explicit_unit_from_text(" ".join(lines[position:end])) is not None:
+                return True
     return False
 
 
