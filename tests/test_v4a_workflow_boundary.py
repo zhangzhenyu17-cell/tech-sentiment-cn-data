@@ -15,6 +15,9 @@ def test_v4a_materialization_workflow_is_manual_only_and_has_no_universe_overrid
     assert "${{ inputs.pit_symbols }}" not in text
     assert re.search(r"(?m)^\s+pit_symbols:\s*$", text) is None
     assert "--symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv" in text
+    assert "preflight_only:" in text
+    assert 'description: "Run fast-fail preflights only; skip expensive materialization"' in text
+    assert re.search(r"(?ms)^      preflight_only:\n.*?default: false\n.*?type: boolean", text)
 
 
 def test_v4a_parallel_dag_has_verified_stage_boundaries():
@@ -110,6 +113,7 @@ def test_all_expensive_jobs_are_blocked_by_unified_fast_fail_gate():
         block = match.group(1)
         assert "needs:" in block
         assert "preflight_gate" in block
+        assert "if: ${{ inputs.preflight_only != true }}" in block
     assert "needs.preflight.outputs.end_date" not in text
 
 
