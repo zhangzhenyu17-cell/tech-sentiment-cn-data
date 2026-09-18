@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 
-import pandas as pd
 
 from tech_sentiment.bounded_retry import call_with_bounded_network_retry
 from tech_sentiment.official_policy_archive import (
@@ -61,8 +60,11 @@ def main() -> None:
             )
 
         pagination_verified = True
-        second_page_rows = 0
-        if int(meta["total"]) > int(meta["rows"]):
+        first_page_capacity = int(meta["rows"])
+        first_page_actual_rows = int(meta["actual_rows"])
+        second_page_capacity = 0
+        second_page_actual_rows = 0
+        if int(meta["total"]) > first_page_actual_rows:
             page2_url = _search_list_url(
                 channel.channel_id,
                 page=2,
@@ -74,7 +76,8 @@ def main() -> None:
                 channel=channel,
                 requested_page=2,
             )
-            second_page_rows = int(page2_meta["rows"])
+            second_page_capacity = int(page2_meta["rows"])
+            second_page_actual_rows = int(page2_meta["actual_rows"])
             if int(page2_meta["total"]) != int(meta["total"]):
                 raise SystemExit(
                     f"CSRC protocol probe failed: {channel_code} total drift across pages"
@@ -85,14 +88,12 @@ def main() -> None:
                 raise SystemExit(
                     f"CSRC protocol probe failed: {channel_code} duplicate manuscript across pages"
                 )
-            if entries and page2_entries:
-                first_tail = pd.Timestamp(entries[-1].publication_timestamp)
-                second_head = pd.Timestamp(page2_entries[0].publication_timestamp)
-                if second_head > first_tail:
-                    raise SystemExit(
-                        f"CSRC protocol probe failed: {channel_code} cross-page order drift"
-                    )
-
+            first_urls = {entry.url for entry in entries}
+            second_urls = {entry.url for entry in page2_entries}
+            if first_urls.intersection(second_urls):
+                raise SystemExit(
+                    f"CSRC protocol probe failed: {channel_code} duplicate canonical URL across pages"
+                )
         channels.append(
             {
                 "segment": segment,
@@ -100,9 +101,11 @@ def main() -> None:
                 "channel_id": channel.channel_id,
                 "channel_name": channel.channel_name,
                 "page": meta["page"],
-                "rows": meta["rows"],
+                "page_capacity": first_page_capacity,
+                "actual_rows": first_page_actual_rows,
                 "total": meta["total"],
-                "second_page_rows": second_page_rows,
+                "second_page_capacity": second_page_capacity,
+                "second_page_actual_rows": second_page_actual_rows,
                 "pagination_verified": pagination_verified,
                 "protocol_ok": True,
             }

@@ -63,11 +63,12 @@ def _page_payload(
     page: int,
     items: list[dict[str, object]],
     total: int | None = None,
+    rows: int | None = None,
 ) -> dict[str, object]:
     return {
         "data": {
             "page": page,
-            "rows": len(items),
+            "rows": len(items) if rows is None else rows,
             "total": len(items) if total is None else total,
             "channelId": _CHANNEL_IDS[code],
             "results": items,
@@ -189,7 +190,7 @@ def test_official_channel_metadata_and_search_page_are_identity_bound():
         ],
     )
     entries, meta = parse_csrc_search_page(payload, channel=channel, requested_page=1)
-    assert meta == {"page": 1, "rows": 2, "total": 2}
+    assert meta == {"page": 1, "rows": 2, "actual_rows": 2, "total": 2}
     assert [entry.manuscript_id for entry in entries] == ["2", "1"]
     assert entries[0].url.startswith("https://www.csrc.gov.cn/")
 
@@ -236,7 +237,7 @@ def test_policy_materializer_uses_official_json_archive_and_pins_article_hashes(
     )
     assert result.summary["source_coverage_complete"] is True
     assert result.summary["readiness_state"] == "QUALIFIED_INPUT"
-    assert result.summary["archive_protocol"] == "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V3_FULL_ENUMERATION"
+    assert result.summary["archive_protocol"] == "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V4_PAGE_CAPACITY_FULL_ENUMERATION"
     assert set(result.records["source_identity"]) == {POLICY_SOURCE_ID}
     assert result.coverage["query_status"].eq("COMPLETE_WINDOW").all()
     assert len(result.records) == len(CSRC_CHANNELS)
@@ -344,3 +345,56 @@ def test_policy_materializer_enumerates_full_advertised_total_before_date_filter
     assert result.summary["source_coverage_complete"] is True
     assert len(result.records) == len(CSRC_CHANNELS) * 3
     assert all((code, 2) in page_calls for code in _CHANNEL_IDS)
+
+
+
+def test_search_page_treats_rows_as_page_capacity_and_accepts_short_page():
+    channel = PolicyChannel(
+        segment="CSRC_ORDERS",
+        channel_code="c101953",
+        channel_id="a" * 32,
+        channel_name="orders",
+        default_evidence_type="REGULATORY_EVENT",
+    )
+    payload = _page_payload(
+        "c101953",
+        page=1,
+        total=100,
+        rows=20,
+        items=[
+            _item("c101953", manuscript="a", when="2026-01-20 10:00:00"),
+            _item("c101953", manuscript="b", when="2025-01-20 10:00:00"),
+        ],
+    )
+
+    entries, meta = parse_csrc_search_page(
+        payload, channel=channel, requested_page=1
+    )
+
+    assert len(entries) == 2
+    assert meta["rows"] == 20
+    assert meta["actual_rows"] == 2
+    assert meta["total"] == 100
+
+
+def test_search_page_rejects_actual_results_exceeding_declared_capacity():
+    channel = PolicyChannel(
+        segment="CSRC_ORDERS",
+        channel_code="c101953",
+        channel_id="a" * 32,
+        channel_name="orders",
+        default_evidence_type="REGULATORY_EVENT",
+    )
+    payload = _page_payload(
+        "c101953",
+        page=1,
+        total=3,
+        rows=1,
+        items=[
+            _item("c101953", manuscript="a", when="2026-01-20 10:00:00"),
+            _item("c101953", manuscript="b", when="2025-01-20 10:00:00"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="exceed page capacity"):
+        parse_csrc_search_page(payload, channel=channel, requested_page=1)

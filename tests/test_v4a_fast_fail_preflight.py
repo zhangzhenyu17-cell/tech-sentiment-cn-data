@@ -67,13 +67,19 @@ def test_source_freshness_preflight_checks_window_boundaries_and_historical_pric
     assert '"historical_price_symbol": historical_price_symbol' in source
 
 
-def test_csrc_preflight_checks_second_page_identity_and_order():
+def test_csrc_preflight_checks_second_page_identity_and_capacity_contract():
     source = (ROOT / "scripts" / "check_csrc_policy_connectivity.py").read_text(
         encoding="utf-8"
     )
     assert "requested_page=2" in source
     assert "duplicate manuscript across pages" in source
-    assert "cross-page order drift" in source
+    assert "duplicate canonical URL across pages" in source
+    assert "total drift across pages" in source
+    assert "first_page_capacity" in source
+    assert "first_page_actual_rows" in source
+    assert "second_page_capacity" in source
+    assert "second_page_actual_rows" in source
+    assert "cross-page order drift" not in source
     assert "total drift across pages" in source
 
 

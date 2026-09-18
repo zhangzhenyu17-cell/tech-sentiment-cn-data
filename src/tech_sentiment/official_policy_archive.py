@@ -293,12 +293,21 @@ def parse_csrc_search_page(
     raw_results = data.get("results")
     if not isinstance(raw_results, list):
         raise ValueError("CSRC searchList results must be a list")
-    if rows != len(raw_results):
+    actual_rows = len(raw_results)
+    # CSRC's "rows" field is a page-capacity / requested-row-count field, not
+    # a promise that every page contains exactly that many results. Short pages
+    # are valid. Coverage is proven later by stable advertised total plus unique
+    # immutable identities across all enumerated pages.
+    if actual_rows > rows:
         raise ValueError(
-            f"CSRC searchList rows mismatch: metadata={rows} actual={len(raw_results)}"
+            f"CSRC searchList actual rows exceed page capacity: "
+            f"capacity={rows} actual={actual_rows}"
         )
-    if rows > total and total >= 0:
-        raise ValueError("CSRC searchList page rows exceed total")
+    if actual_rows > total:
+        raise ValueError(
+            f"CSRC searchList actual page results exceed advertised total: "
+            f"actual={actual_rows} total={total}"
+        )
 
     entries: list[PolicyListEntry] = []
     seen_manuscripts: set[str] = set()
@@ -346,7 +355,12 @@ def parse_csrc_search_page(
             )
         )
 
-    return entries, {"page": page, "rows": rows, "total": total}
+    return entries, {
+        "page": page,
+        "rows": rows,
+        "actual_rows": actual_rows,
+        "total": total,
+    }
 
 
 def _parse_date(value: str) -> pd.Timestamp | None:
@@ -533,7 +547,7 @@ def materialize_csrc_policy_archive(
     json_fetcher: Callable[[str], Mapping[str, object]] = _fetch_json,
     article_fetcher: Callable[[str], str] = _fetch_text,
     max_pages_per_segment: int = 500,
-    page_size: int = 50,
+    page_size: int = 20,
     retry_attempts: int = 3,
     retry_backoff_seconds: float = 0.5,
 ) -> PitMaterializationResult:
@@ -696,7 +710,7 @@ def materialize_csrc_policy_archive(
     summary = {
         "source_identity": POLICY_SOURCE_ID,
         "provider": POLICY_PROVIDER,
-        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V3_FULL_ENUMERATION",
+        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V4_PAGE_CAPACITY_FULL_ENUMERATION",
         "start_date": str(start.date()),
         "end_date": str(end.date()),
         "coverage_segments": sorted(CSRC_CHANNELS),
