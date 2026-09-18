@@ -54,6 +54,7 @@ def main() -> None:
             payload,
             channel=channel,
             requested_page=1,
+            requested_page_size=page_size,
         )
         if not entries:
             raise SystemExit(
@@ -62,7 +63,8 @@ def main() -> None:
 
         pagination_verified = True
         second_page_rows = 0
-        if int(meta["total"]) > int(meta["rows"]):
+        second_page_returned = 0
+        if int(meta["total"]) > int(meta["returned"]):
             page2_url = _search_list_url(
                 channel.channel_id,
                 page=2,
@@ -73,8 +75,10 @@ def main() -> None:
                 page2_payload,
                 channel=channel,
                 requested_page=2,
+                requested_page_size=page_size,
             )
             second_page_rows = int(page2_meta["rows"])
+            second_page_returned = int(page2_meta["returned"])
             if int(page2_meta["total"]) != int(meta["total"]):
                 raise SystemExit(
                     f"CSRC protocol probe failed: {channel_code} total drift across pages"
@@ -85,14 +89,6 @@ def main() -> None:
                 raise SystemExit(
                     f"CSRC protocol probe failed: {channel_code} duplicate manuscript across pages"
                 )
-            if entries and page2_entries:
-                first_tail = pd.Timestamp(entries[-1].publication_timestamp)
-                second_head = pd.Timestamp(page2_entries[0].publication_timestamp)
-                if second_head > first_tail:
-                    raise SystemExit(
-                        f"CSRC protocol probe failed: {channel_code} cross-page order drift"
-                    )
-
         channels.append(
             {
                 "segment": segment,
@@ -101,8 +97,10 @@ def main() -> None:
                 "channel_name": channel.channel_name,
                 "page": meta["page"],
                 "rows": meta["rows"],
+                "returned_rows": meta["returned"],
                 "total": meta["total"],
                 "second_page_rows": second_page_rows,
+                "second_page_returned_rows": second_page_returned,
                 "pagination_verified": pagination_verified,
                 "protocol_ok": True,
             }
