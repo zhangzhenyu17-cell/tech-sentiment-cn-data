@@ -6,6 +6,7 @@ from typing import Iterable, Mapping
 import numpy as np
 import pandas as pd
 
+from .official_filing_facts import latest_filing_fact_as_of
 from .pit_public_materialization import _stable_hash, validate_materialized_pit_records
 
 
@@ -32,15 +33,13 @@ def _latest_fact(
     period_end: pd.Timestamp,
     as_of: pd.Timestamp,
 ) -> Mapping[str, object] | None:
-    x = eps_facts[
-        eps_facts["entity_id"].astype(str).eq(entity_id)
-        & eps_facts["period_end"].eq(period_end)
-        & eps_facts["evidence_available_date"].le(as_of)
-    ].copy()
-    if x.empty:
-        return None
-    x = x.sort_values(["evidence_available_date", "document_id", "revision_id"])
-    return x.iloc[-1].to_dict()
+    return latest_filing_fact_as_of(
+        eps_facts,
+        entity_id=entity_id,
+        fact_type="BASIC_EPS",
+        period_end=period_end,
+        as_of=as_of,
+    )
 
 
 def _ttm_eps_as_of(
@@ -133,6 +132,7 @@ def build_trailing_valuation_rail(
         "value",
         "unit",
         "evidence_available_date",
+        "publication_timestamp",
         "document_id",
         "revision_id",
         "document_sha256",
@@ -145,8 +145,16 @@ def build_trailing_valuation_rail(
     if price_missing:
         raise ValueError(f"stock prices missing columns: {sorted(price_missing)}")
 
-    reference_by_date = _calendar_20d_reference(trading_dates)
-    calendar_dates = set(reference_by_date) | set(reference_by_date.values())
+    calendar = (
+        pd.DatetimeIndex(pd.to_datetime(list(trading_dates), errors="raise"))
+        .normalize()
+        .sort_values()
+        .unique()
+    )
+    if not len(calendar):
+        raise ValueError("valuation trading calendar cannot be empty")
+    reference_by_date = _calendar_20d_reference(calendar)
+    calendar_dates = set(calendar)
 
     eps = filing_facts[filing_facts["fact_type"].astype(str).eq("BASIC_EPS")].copy()
     eps["period_end"] = pd.to_datetime(eps["period_end"], errors="raise").dt.normalize()
@@ -195,11 +203,20 @@ def build_trailing_valuation_rail(
                 "current_document_id": str(current["document_id"]),
                 "current_revision_id": str(current["revision_id"]),
                 "current_document_sha256": str(current["document_sha256"]),
+                "current_publication_timestamp": str(current["publication_timestamp"]),
                 "prior_fy_document_id": (
                     str(trace["prior_fy"]["document_id"]) if trace["prior_fy"] else None
                 ),
                 "prior_comparable_document_id": (
                     str(trace["prior_comparable"]["document_id"])
+                    if trace["prior_comparable"]
+                    else None
+                ),
+                "prior_fy_publication_timestamp": (
+                    str(trace["prior_fy"]["publication_timestamp"]) if trace["prior_fy"] else None
+                ),
+                "prior_comparable_publication_timestamp": (
+                    str(trace["prior_comparable"]["publication_timestamp"])
                     if trace["prior_comparable"]
                     else None
                 ),
