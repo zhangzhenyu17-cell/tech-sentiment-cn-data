@@ -83,6 +83,83 @@ def test_pdf_text_keeps_layout_when_layout_already_has_explicit_unit(monkeypatch
     assert calls == ["layout"]
     assert text.startswith("单位：元")
 
+
+
+def test_pdf_text_uses_pdfminer_text_layer_when_both_pypdf_modes_lose_unit(monkeypatch):
+    pypdf_calls: list[str] = []
+
+    class FakePage:
+        def extract_text(self, extraction_mode=None):
+            pypdf_calls.append("layout" if extraction_mode == "layout" else "plain")
+            return (
+                "主要会计数据\n"
+                "营业收入 124,099,843,771.99 106,190,154,843.76\n"
+                "归属于上市公司股东的净利润 62,716,443,738.27 52,460,144,378.16\n"
+            )
+
+    class FakeReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [FakePage()]
+
+    class MinerPage:
+        def extract_text(self, **kwargs):
+            return (
+                "3.1 近3年的主要会计数据和财务指标\n"
+                "单位：元 币种：人民币\n"
+                "营业收入 124,099,843,771.99 106,190,154,843.76\n"
+                "归属于上市公司股东的净利润 62,716,443,738.27 52,460,144,378.16\n"
+            )
+
+    class FakePdf:
+        pages = [MinerPage()]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=FakeReader))
+    monkeypatch.setitem(
+        sys.modules,
+        "pdfplumber",
+        SimpleNamespace(open=lambda stream: FakePdf()),
+    )
+
+    text = extract_pdf_text(b"%PDF-fixture")
+    facts = extract_standard_filing_facts(text)
+
+    assert pypdf_calls == ["layout", "plain"]
+    assert "单位：元" in text
+    assert facts["OPERATING_REVENUE"] == 124_099_843_771.99
+    assert facts["NET_PROFIT_PARENT"] == 62_716_443_738.27
+
+
+def test_600519_2022_summary_table_layout_remains_fail_closed_and_complete():
+    text = """
+    3 公司主要会计数据和财务指标
+    3.1 近 3 年的主要会计数据和财务指标
+    单位：元 币种：人民币
+    总资产 254,364,804,995.25 255,168,195,159.90 -0.31 213,395,810,527.46
+    营业收入 124,099,843,771.99 106,190,154,843.76 16.87 94,915,380,916.72
+    归属于上市公司股东的净
+    利润
+    62,716,443,738.27 52,460,144,378.16 19.55 46,697,285,429.81
+    经营活动产生的现金流量
+    净额
+    36,698,595,830.03 64,028,676,147.37 -42.68 51,669,068,693.03
+    基本每股收益（元／股） 49.93 41.76 19.55 37.17
+    """
+    facts = extract_standard_filing_facts(text)
+
+    assert facts["OPERATING_REVENUE"] == 124_099_843_771.99
+    assert facts["NET_PROFIT_PARENT"] == 62_716_443_738.27
+    assert facts["OPERATING_CASH_FLOW_NET"] == 36_698_595_830.03
+    assert facts["BASIC_EPS"] == 49.93
+    assert facts["NET_PROFIT_MARGIN"] == pytest.approx(
+        62_716_443_738.27 / 124_099_843_771.99
+    )
+
 def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
     text = """
     主要会计数据和财务指标  单位：元 币种：人民币
