@@ -73,9 +73,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-
+            v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-
       - name: Materialize CNINFO issuer shard
         id: materialize
         run: |
@@ -93,7 +93,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal CNINFO shard
         if: ${{ success() }}
         run: |
@@ -152,9 +152,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-issuer-sse-${{ env.STAGE_COMPAT }}-
+            v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-
       - name: Materialize SSE issuer archive
         id: materialize
         run: |
@@ -171,7 +171,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal SSE shard
         if: ${{ success() }}
         run: |
@@ -225,9 +225,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-issuer-szse-${{ env.STAGE_COMPAT }}-
+            v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-
       - name: Materialize SZSE issuer archive
         id: materialize
         run: |
@@ -244,7 +244,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal SZSE shard
         if: ${{ success() }}
         run: |
