@@ -60,9 +60,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/capital
-          key: v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-capital-${{ env.STAGE_COMPAT }}-
+            v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.sha }}-
       - name: Materialize ETF-share and SSE+SZSE turnover
         id: materialize
         run: |
@@ -79,7 +79,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/capital
-          key: v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal Capital stage
         if: ${{ success() }}
         run: |
