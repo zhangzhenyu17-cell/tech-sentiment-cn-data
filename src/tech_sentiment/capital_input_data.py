@@ -296,6 +296,7 @@ def _fetch_szse_turnover_official(date: str, *, timeout: float = 20.0) -> pd.Dat
             "txtQueryDate": f"{date[:4]}-{date[4:6]}-{date[6:]}",
             "PAGENO": "1",
             "PAGESIZE": "50",
+            "random": "0.39339437497296137",
         },
         referer=referer,
         allowed_query_hosts=("www.szse.cn",),
