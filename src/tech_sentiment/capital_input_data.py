@@ -11,12 +11,21 @@ import numpy as np
 import pandas as pd
 
 from .bounded_retry import call_with_bounded_network_retry
+from .official_exchange_transport import fetch_official_json
 
 SSE_ETF_SHARE_SOURCE_ID = "SSE_ETF_SCALE_DAILY"
 SSE_ETF_SHARE_SOURCE_URL = "https://www.sse.com.cn/assortment/fund/etf/list/scale/"
 SSE_ETF_SCALE_QUERY_URL = "https://query.sse.com.cn/commonQuery.do"
 SSE_ETF_SCALE_SOA_QUERY_URL = "https://query.sse.com.cn/commonSoaQuery.do"
 SSE_ETF_SCALE_SQL_ID = "COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L"
+SSE_ETF_EXACT_SQL_ID = "COMMON_SSE_ZQPZ_ETFZL_ETFJBXX_JJGM_SEARCH_L"
+SSE_ETF_DETAIL_PAGE_TEMPLATE = (
+    "https://www.sse.com.cn/assortment/fund/list/etfinfo/scale/"
+    "index.shtml?FUNDID={fund_code}"
+)
+SSE_TURNOVER_QUERY_URL = SSE_ETF_SCALE_QUERY_URL
+SSE_TURNOVER_SQL_ID = "COMMON_SSE_SJ_GPSJ_CJGK_MRGK_C"
+SZSE_TURNOVER_QUERY_URL = "https://www.szse.cn/api/report/ShowReport/data"
 SSE_TURNOVER_SOURCE_ID = "SSE_DAILY_STOCK_OVERVIEW"
 SSE_TURNOVER_SOURCE_URL = "https://www.sse.com.cn/market/stockdata/overview/day/"
 SZSE_TURNOVER_SOURCE_ID = "SZSE_MARKET_OVERVIEW_DAILY"
@@ -68,6 +77,79 @@ def _sse_etf_scale_payload_frame(payload: object) -> pd.DataFrame:
     frame["统计日期"] = pd.to_datetime(frame["统计日期"], errors="coerce").dt.date
     frame["基金份额"] = pd.to_numeric(frame["基金份额"], errors="coerce") * 10_000.0
     return frame
+
+
+def _sse_etf_exact_payload_frame(
+    payload: object,
+    *,
+    date: str,
+    fund_code: str,
+) -> pd.DataFrame:
+    if not isinstance(payload, dict) or not isinstance(payload.get("result"), list):
+        raise ValueError("SSE ETF exact response lacks result rows")
+    code = str(fund_code).zfill(6)
+    stat_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+    matches = [
+        row
+        for row in payload["result"]
+        if isinstance(row, dict)
+        and str(row.get("SEC_CODE") or "").zfill(6) == code
+        and str(row.get("STAT_DATE") or "").strip() == stat_date
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "SSE ETF exact response requires exactly one target code/date row"
+        )
+    row = matches[0]
+    shares_10k = pd.to_numeric(
+        pd.Series([row.get("TOT_VOL")]), errors="coerce"
+    ).iloc[0]
+    if pd.isna(shares_10k) or float(shares_10k) <= 0:
+        raise ValueError("SSE ETF exact response contains invalid TOT_VOL")
+    frame = pd.DataFrame(
+        [
+            {
+                "序号": pd.to_numeric(row.get("NUM"), errors="coerce"),
+                "基金代码": code,
+                "基金简称": str(row.get("SEC_NAME") or ""),
+                "ETF类型": str(row.get("ETF_TYPE") or ""),
+                "统计日期": pd.Timestamp(stat_date).date(),
+                "基金份额": float(shares_10k) * 10_000.0,
+            }
+        ]
+    )
+    frame.attrs["provider_interface"] = SSE_ETF_SCALE_QUERY_URL
+    return frame
+
+
+def _fetch_sse_etf_scale_exact(
+    date: str,
+    fund_code: str,
+    *,
+    timeout: float = 20.0,
+) -> pd.DataFrame:
+    """Final exact-code/date fallback on the same official SSE query host."""
+
+    if len(date) != 8 or not date.isdigit():
+        raise ValueError("SSE ETF scale date must be YYYYMMDD")
+    code = str(fund_code).zfill(6)
+    stat_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+    referer = SSE_ETF_DETAIL_PAGE_TEMPLATE.format(fund_code=code)
+    payload = fetch_official_json(
+        url=SSE_ETF_SCALE_QUERY_URL,
+        params={
+            "isPagination": "false",
+            "sqlId": SSE_ETF_EXACT_SQL_ID,
+            "SEC_CODE": code,
+            "STAT_DATE": stat_date,
+        },
+        referer=referer,
+        allowed_query_hosts=("query.sse.com.cn",),
+        warmup_url=referer,
+        allowed_warmup_hosts=("www.sse.com.cn",),
+        timeout=timeout,
+    )
+    return _sse_etf_exact_payload_frame(payload, date=date, fund_code=code)
 
 
 def _validate_sse_response_url(response: object, *, expected_host: str, default_url: str) -> None:
@@ -357,8 +439,10 @@ def fetch_sse_etf_share_history(
     retry_attempts: int = 3,
     retry_backoff_seconds: float = 0.5,
 ) -> EtfShareFetchResult:
-    if fetcher is None:
-        fetcher = _fetch_sse_etf_scale_direct
+    use_official_default = fetcher is None
+    requested_codes = tuple(sorted({str(value).zfill(6) for value in fund_codes}))
+    if not requested_codes:
+        raise ValueError("at least one SSE ETF fund code is required")
     data_parts: list[pd.DataFrame] = []
     errors: list[dict[str, str]] = []
     dates = pd.DatetimeIndex(
@@ -367,13 +451,41 @@ def fetch_sse_etf_share_history(
     for value in dates:
         date_arg = pd.Timestamp(value).strftime("%Y%m%d")
         try:
-            raw = call_with_bounded_network_retry(
-                lambda: fetcher(date_arg),
-                attempts=retry_attempts,
-                backoff_seconds=retry_backoff_seconds,
-            )
+            if use_official_default:
+                try:
+                    raw = call_with_bounded_network_retry(
+                        lambda: _fetch_sse_etf_scale_direct(date_arg),
+                        attempts=retry_attempts,
+                        backoff_seconds=retry_backoff_seconds,
+                    )
+                except RuntimeError as bulk_exc:
+                    exact_parts: list[pd.DataFrame] = []
+                    exact_errors: list[str] = []
+                    for code in requested_codes:
+                        try:
+                            exact_parts.append(
+                                _fetch_sse_etf_scale_exact(date_arg, code)
+                            )
+                        except Exception as exact_exc:
+                            exact_errors.append(
+                                f"{code}:{type(exact_exc).__name__}:{exact_exc}"
+                            )
+                    if exact_errors or not exact_parts:
+                        raise RuntimeError(
+                            "SSE ETF interface-family and exact official "
+                            "fallbacks failed; "
+                            f"bulk={bulk_exc}; exact={exact_errors}"
+                        ) from bulk_exc
+                    raw = pd.concat(exact_parts, ignore_index=True)
+            else:
+                assert fetcher is not None
+                raw = call_with_bounded_network_retry(
+                    lambda: fetcher(date_arg),
+                    attempts=retry_attempts,
+                    backoff_seconds=retry_backoff_seconds,
+                )
             normalized = normalize_sse_etf_share_snapshot(
-                raw, observation_date=value, fund_codes=fund_codes
+                raw, observation_date=value, fund_codes=requested_codes
             )
             if len(normalized):
                 data_parts.append(normalized)
