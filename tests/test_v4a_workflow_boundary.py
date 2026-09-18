@@ -58,7 +58,7 @@ def test_v4a_checkpoint_cache_namespace_matches_parallel_exact_identity_architec
     assert "capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-" in text
     assert "actions/cache/restore@v4" in text
     assert text.count("actions/cache/save@v4") >= 7
-    assert "--source-commit "${{ github.sha }}"" in text
+    assert '--source-commit "${{ github.sha }}"' in text
 
 
 def test_cninfo_protocol_probe_runs_in_preflight_before_materialization():
