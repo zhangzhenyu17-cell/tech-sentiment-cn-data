@@ -39,6 +39,16 @@
 - 从 `TOT_VOL` 读取总份额（万份）；
 - 按基金代码筛选目标 ETF。
 
+正式实时/历史物化仍以这个“按日期取全市场 ETF”的 SQL 作为首选查询。为处理 GitHub hosted runner 对大响应的间歇性 WAF/403，工程层允许在该首选查询的 HTTPS transport 全部失败后，使用同一上交所官方 `query.sse.com.cn/commonQuery.do` 的精确查询：
+
+- `sqlId=COMMON_SSE_ZQPZ_ETFZL_ETFJBXX_JJGM_SEARCH_L`；
+- `SEC_CODE=<目标 ETF>`；
+- `STAT_DATE=YYYY-MM-DD`；
+- 仍只接受 `TOT_VOL`，单位仍为万份；
+- 必须恰好匹配目标证券代码和目标日期，不允许回退到“最近可用日”。
+
+该精确查询只是同一官方数据集的 transport/query-shape fallback，不产生新的 source identity，也不改变 point-in-time、coverage 或 canonical qualification 规则。
+
 但当前 Git 版本没有可直接版本固定并复核的 588000 历史数据文件。因此它只登记为 `METHOD_REFERENCE_ONLY`，用于交叉证明采集方法和字段语义，不作为历史 archive 数据源。
 
 ## 审计实现
