@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from typing import Callable, Iterable
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import pandas as pd
@@ -69,10 +69,59 @@ def _decode_json_or_jsonp(raw: bytes) -> dict[str, object]:
     return payload
 
 
-def _get_json(url: str, *, headers: dict[str, str], timeout: float) -> dict[str, object]:
+def _validate_https_host(url: object, *, expected_host: str) -> str:
+    text = str(url or "").strip()
+    parsed = urlparse(text)
+    if parsed.scheme != "https" or (parsed.hostname or "").lower() != expected_host:
+        raise ValueError(f"official archive transport redirected outside {expected_host}")
+    return text
+
+
+def _get_json(
+    url: str,
+    *,
+    headers: dict[str, str],
+    timeout: float,
+    expected_host: str | None = None,
+) -> dict[str, object]:
     request = Request(url, headers=headers, method="GET")
-    with urlopen(request, timeout=timeout) as response:  # nosec B310 - fixed official HTTPS endpoints
+    with urlopen(request, timeout=timeout) as response:  # nosec B310 - official HTTPS host checked by caller
+        if expected_host is not None:
+            final_url = response.geturl() if hasattr(response, "geturl") else url
+            _validate_https_host(final_url, expected_host=expected_host)
         return _decode_json_or_jsonp(response.read())
+
+
+def _sse_browser_session_factory():
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError as exc:  # pragma: no cover - installed by data extra
+        raise RuntimeError(
+            "curl_cffi is required for SSE issuer browser transport fallback"
+        ) from exc
+    return curl_requests.Session()
+
+
+def _sse_browser_get_json(
+    session: object,
+    *,
+    url: str,
+    headers: dict[str, str],
+    timeout: float,
+) -> dict[str, object]:
+    response = session.get(
+        url,
+        headers=headers,
+        impersonate="chrome",
+        timeout=timeout,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+    _validate_https_host(
+        getattr(response, "url", url),
+        expected_host="query.sse.com.cn",
+    )
+    return _decode_json_or_jsonp(bytes(getattr(response, "content", b"")))
 
 
 def _post_json(
@@ -108,6 +157,7 @@ def fetch_sse_announcements(
     start_date: object,
     end_date: object,
     timeout: float = 30.0,
+    browser_session_factory: Callable[[], object] | None = None,
 ) -> pd.DataFrame:
     """Fetch an issuer's official SSE announcement archive in bounded yearly windows."""
 
@@ -117,11 +167,20 @@ def fetch_sse_announcements(
     rows: list[dict[str, object]] = []
     headers = {
         "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
         "Referer": SSE_REFERER,
         "User-Agent": _USER_AGENT,
         "X-Requested-With": "XMLHttpRequest",
+        "Pragma": "no-cache",
+        "Cache-Control": "no-cache",
     }
-    for window_start, window_end in _year_windows(start_date, end_date):
+    browser_session: object | None = None
+    browser_warmed = False
+    if browser_session_factory is None:
+        browser_session_factory = _sse_browser_session_factory
+
+    try:
+        for window_start, window_end in _year_windows(start_date, end_date):
         params = {
             "isPagination": "false",
             "productId": str(symbol).zfill(6),
@@ -132,53 +191,94 @@ def fetch_sse_announcements(
             "beginDate": window_start.strftime("%Y-%m-%d"),
             "endDate": window_end.strftime("%Y-%m-%d"),
         }
-        payload = _get_json(
-            f"{SSE_QUERY_URL}?{urlencode(params)}", headers=headers, timeout=timeout
-        )
-        data = payload.get("result")
-        if not isinstance(data, list):
-            page_help = payload.get("pageHelp")
-            data = page_help.get("data") if isinstance(page_help, dict) else None
-        if data is None:
-            raise ValueError("SSE announcement payload lacks result/pageHelp.data")
-        if not isinstance(data, list):
-            raise ValueError("SSE announcement result is not a list")
-        for item in data:
-            if not isinstance(item, dict):
-                continue
-            code = str(item.get("SECURITY_CODE") or item.get("securityCode") or symbol)
-            code = "".join(ch for ch in code if ch.isdigit()).zfill(6)
-            if code != str(symbol).zfill(6):
-                continue
-            title = str(item.get("TITLE") or item.get("title") or "").strip()
-            published = str(item.get("SSEDATE") or item.get("publishDate") or "").strip()
-            relative_url = str(item.get("URL") or item.get("url") or "").strip()
-            if not title or not published or not relative_url:
-                raise ValueError("SSE announcement row lacks title/date/url identity")
-            source_url = (
-                relative_url
-                if relative_url.startswith(("http://", "https://"))
-                else f"https://www.sse.com.cn{relative_url if relative_url.startswith('/') else '/' + relative_url}"
-            )
-            native_id = str(
-                item.get("BULLETIN_ID")
-                or item.get("bulletinId")
-                or item.get("SSEBULLETINID")
-                or ""
-            ).strip()
-            if not native_id:
-                native_id = hashlib.sha256(
-                    f"{symbol}|{published}|{title}|{source_url}".encode("utf-8")
-                ).hexdigest()[:24]
-            rows.append(
-                {
-                    "symbol": str(symbol).zfill(6),
-                    "title": title,
-                    "publication_time": published,
-                    "document_id": native_id,
-                    "source_url": source_url,
-                }
-            )
+            query_url = f"{SSE_QUERY_URL}?{urlencode(params)}"
+            try:
+                payload = _get_json(
+                    query_url,
+                    headers=headers,
+                    timeout=timeout,
+                    expected_host="query.sse.com.cn",
+                )
+            except Exception:
+                if browser_session is None:
+                    browser_session = browser_session_factory()
+                if not browser_warmed:
+                    try:
+                        bootstrap_headers = {
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                            "Accept-Language": headers["Accept-Language"],
+                            "User-Agent": headers["User-Agent"],
+                        }
+                        bootstrap = browser_session.get(
+                            SSE_REFERER,
+                            headers=bootstrap_headers,
+                            impersonate="chrome",
+                            timeout=min(timeout, 10.0),
+                            allow_redirects=True,
+                        )
+                        _validate_https_host(
+                            getattr(bootstrap, "url", SSE_REFERER),
+                            expected_host="www.sse.com.cn",
+                        )
+                    except Exception:
+                        pass
+                    browser_warmed = True
+                payload = _sse_browser_get_json(
+                    browser_session,
+                    url=query_url,
+                    headers=headers,
+                    timeout=timeout,
+                )
+            data = payload.get("result")
+            if not isinstance(data, list):
+                page_help = payload.get("pageHelp")
+                data = page_help.get("data") if isinstance(page_help, dict) else None
+            if data is None:
+                raise ValueError("SSE announcement payload lacks result/pageHelp.data")
+            if not isinstance(data, list):
+                raise ValueError("SSE announcement result is not a list")
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                code = str(item.get("SECURITY_CODE") or item.get("securityCode") or symbol)
+                code = "".join(ch for ch in code if ch.isdigit()).zfill(6)
+                if code != str(symbol).zfill(6):
+                    continue
+                title = str(item.get("TITLE") or item.get("title") or "").strip()
+                published = str(item.get("SSEDATE") or item.get("publishDate") or "").strip()
+                relative_url = str(item.get("URL") or item.get("url") or "").strip()
+                if not title or not published or not relative_url:
+                    raise ValueError("SSE announcement row lacks title/date/url identity")
+                source_url = (
+                    relative_url
+                    if relative_url.startswith(("http://", "https://"))
+                    else f"https://www.sse.com.cn{relative_url if relative_url.startswith('/') else '/' + relative_url}"
+                )
+                native_id = str(
+                    item.get("BULLETIN_ID")
+                    or item.get("bulletinId")
+                    or item.get("SSEBULLETINID")
+                    or ""
+                ).strip()
+                if not native_id:
+                    native_id = hashlib.sha256(
+                        f"{symbol}|{published}|{title}|{source_url}".encode("utf-8")
+                    ).hexdigest()[:24]
+                rows.append(
+                    {
+                        "symbol": str(symbol).zfill(6),
+                        "title": title,
+                        "publication_time": published,
+                        "document_id": native_id,
+                        "source_url": source_url,
+                    }
+                )
+    finally:
+        if browser_session is not None:
+            close = getattr(browser_session, "close", None)
+            if callable(close):
+                close()
+
     if not rows:
         return pd.DataFrame(columns=["symbol", "title", "publication_time", "document_id", "source_url"])
     out = pd.DataFrame(rows).drop_duplicates(
