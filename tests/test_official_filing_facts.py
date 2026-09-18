@@ -272,3 +272,53 @@ def test_cninfo_double_403_uses_cookie_session_https_only(monkeypatch):
     assert downloaded.retrieval_url == session.calls[2]
     assert downloaded.content.startswith(b"%PDF-")
 
+def test_cninfo_triple_403_uses_browser_fingerprint_https_fallback(monkeypatch):
+    opener_calls: list[str] = []
+    browser_calls: list[tuple[str, str]] = []
+
+    def opener(request, timeout):
+        opener_calls.append(request.full_url)
+        raise HTTPError(request.full_url, 403, "Forbidden", hdrs=None, fp=None)
+
+    def session_fallback(canonical_url, fallback_url, *, timeout):
+        raise HTTPError(
+            fallback_url,
+            403,
+            "Forbidden after CNINFO HTTPS session transport",
+            hdrs=None,
+            fp=None,
+        )
+
+    def browser_fallback(canonical_url, fallback_url, *, timeout):
+        browser_calls.append((canonical_url, fallback_url))
+        assert timeout == 30.0
+        return (
+            b"%PDF-1.7 browser transport",
+            fallback_url,
+        )
+
+    monkeypatch.setattr(
+        filing_module,
+        "_download_cninfo_with_https_session",
+        session_fallback,
+    )
+    monkeypatch.setattr(
+        filing_module,
+        "_download_cninfo_with_browser_transport",
+        browser_fallback,
+    )
+
+    original = "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF"
+    downloaded = download_official_document(original, opener=opener)
+
+    expected_fallback = (
+        "https://www.cninfo.com.cn/new/announcement/download"
+        "?bulletinId=1225568832&announceTime=2026-09-16"
+    )
+    assert opener_calls == [original, expected_fallback]
+    assert browser_calls == [(original, expected_fallback)]
+    assert downloaded.url == original
+    assert downloaded.retrieval_url == expected_fallback
+    assert downloaded.content.startswith(b"%PDF-")
+    assert len(downloaded.sha256) == 64
+
