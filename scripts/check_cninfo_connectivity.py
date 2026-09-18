@@ -8,6 +8,7 @@ import pandas as pd
 from tech_sentiment.bounded_retry import call_with_bounded_network_retry
 from tech_sentiment.cninfo_direct import fetch_cninfo_announcements_direct
 from tech_sentiment.data_akshare import fetch_stock_history
+from tech_sentiment.filing_materialization import is_numeric_financial_filing_title
 from tech_sentiment.fundamental_pit_state import (
     REQUIRED_FACTS,
     materialize_fundamental_state_evidence,
@@ -58,6 +59,78 @@ def _entity_id(symbol: str) -> str:
     return f"{code}{suffix}"
 
 
+def _select_numeric_report_candidate(
+    frame: pd.DataFrame,
+    *,
+    expected_title_token: str,
+) -> tuple[pd.Series, int, int]:
+    """Select one deterministic Chinese numeric financial report for the probe.
+
+    The preflight must exercise the same title eligibility contract as the formal
+    filing materializer. English translations, summaries, audit reports, inquiry
+    replies and similar documents are excluded by is_numeric_financial_filing_title.
+
+    When multiple eligible versions exist in the probe window, choose the latest
+    official publication timestamp. If more than one distinct document remains
+    at that exact latest timestamp, fail closed rather than relying on source row
+    order.
+    """
+
+    required = {"公告标题", "公告时间", "公告链接", "公告附件链接"}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(
+            f"CNINFO probe frame missing required columns: {sorted(missing)}"
+        )
+
+    titles = frame["公告标题"].astype(str)
+    raw_matches = frame[
+        titles.str.contains(expected_title_token, regex=False)
+    ].copy()
+    eligible = raw_matches[
+        raw_matches["公告标题"].map(is_numeric_financial_filing_title)
+    ].copy()
+    eligible = eligible[
+        eligible["公告附件链接"].astype(str).str.startswith(
+            "https://static.cninfo.com.cn/"
+        )
+    ].copy()
+
+    if eligible.empty:
+        raise ValueError(
+            "no eligible numeric Chinese financial report with immutable HTTPS attachment"
+        )
+
+    eligible["_publication_order"] = pd.to_datetime(
+        eligible["公告时间"], errors="raise"
+    )
+    latest_publication = eligible["_publication_order"].max()
+    latest = eligible[
+        eligible["_publication_order"].eq(latest_publication)
+    ].copy()
+
+    if len(latest) != 1:
+        identities: list[str] = []
+        for _, row in latest.iterrows():
+            try:
+                document_id = _announcement_id(str(row["公告链接"]))
+            except Exception:
+                document_id = "UNKNOWN"
+            identities.append(
+                f"{document_id}:{str(row['公告标题']).strip()}"
+            )
+        raise ValueError(
+            "ambiguous latest eligible financial reports: "
+            + " | ".join(sorted(identities))
+        )
+
+    return (
+        latest.iloc[0].drop(labels=["_publication_order"]),
+        int(len(raw_matches)),
+        int(len(eligible)),
+    )
+
+
 def _announcement_id(detail_url: str) -> str:
     values = parse_qs(urlparse(str(detail_url)).query).get("announcementId", [])
     document_id = str(values[0]).strip() if values else ""
@@ -78,28 +151,19 @@ def main() -> None:
             start_date=str(probe["start_date"]),
             end_date=str(probe["end_date"]),
         )
-        matching = frame[
-            frame["公告标题"].astype(str).str.contains(
-                str(probe["expected_title_token"]), regex=False
+        try:
+            selected_row, raw_match_count, eligible_match_count = (
+                _select_numeric_report_candidate(
+                    frame,
+                    expected_title_token=str(probe["expected_title_token"]),
+                )
             )
-            & ~frame["公告标题"].astype(str).str.contains("摘要", regex=False)
-        ]
-        if matching.empty:
+        except Exception as exc:
             raise SystemExit(
                 "CNINFO connectivity/protocol probe failed: "
-                f"{probe['symbol']} missing expected historical disclosure"
-            )
-        immutable = matching[
-            matching["公告附件链接"].astype(str).str.startswith(
-                "https://static.cninfo.com.cn/"
-            )
-        ]
-        if immutable.empty:
-            raise SystemExit(
-                "CNINFO connectivity/protocol probe failed: "
-                f"{probe['symbol']} lacks immutable HTTPS attachment identity"
-            )
-        selected_row = immutable.iloc[0]
+                f"role={probe['role']} symbol={probe['symbol']} "
+                f"candidate_selection_error={type(exc).__name__}: {exc}"
+            ) from exc
         selected_title = str(selected_row["公告标题"]).strip()
         canonical_url = str(selected_row["公告附件链接"]).strip()
         downloaded = download_official_document(canonical_url)
@@ -120,7 +184,8 @@ def main() -> None:
             raise SystemExit(
                 "CNINFO connectivity/protocol probe failed: "
                 f"role={probe['role']} symbol={probe['symbol']} "
-                f"title={selected_title!r} matching_records={len(matching)} "
+                f"title={selected_title!r} raw_title_matches={raw_match_count} "
+                f"eligible_matches={eligible_match_count} "
                 f"canonical_url={canonical_url} "
                 f"retrieval_url={downloaded.retrieval_url or downloaded.url} "
                 f"sha256={downloaded.sha256} parser_error="
@@ -172,7 +237,8 @@ def main() -> None:
             {
                 "symbol": probe["symbol"],
                 "query_window": [probe["start_date"], probe["end_date"]],
-                "matching_records": int(len(matching)),
+                "raw_title_matches": raw_match_count,
+                "eligible_matches": eligible_match_count,
                 "protocol_ok": True,
             }
         )
