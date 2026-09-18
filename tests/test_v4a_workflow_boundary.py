@@ -37,7 +37,8 @@ def test_v4a_parallel_dag_has_verified_stage_boundaries():
     assert text.count("write_v4a_stage_receipt.py") >= 8
     assert text.count("verify_v4a_stage_receipt.py") >= 5
     assert "merge-multiple: true" in text
-    assert "parallel" not in text.lower() or True  # naming is not a semantic gate
+    assert "stage/issuer_aggregate" in text
+    assert "stage/derived/pit_evidence_materialization" in text
 
 
 def test_v4a_parallelism_is_bounded_and_source_aware():
