@@ -121,3 +121,40 @@ def test_finalizer_remains_single_canonical_bundle_authority():
     assert text.count("finalize_capital_pit_materialization.py") == 1
     assert text.count("name: capital-pit-input-materialization\n") == 1
     assert text.count("write_capital_pit_artifact_receipt.py") == 1
+
+
+def test_qualification_blocker_guards_run_after_diagnostics_are_preserved():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert text.count("assert_v4a_stage_qualifiable.py") == 8
+    expected = {
+        "capital": "--kind capital",
+        "financing": "--kind financing",
+        "issuer_cninfo": "--kind issuer",
+        "issuer_sse": "--kind issuer",
+        "issuer_szse": "--kind issuer",
+        "fundamental_earnings": "--kind fundamental_earnings",
+        "policy": "--kind policy",
+        "derived_aggregate": "--kind derived",
+    }
+    for job, kind in expected.items():
+        marker = f"  {job}:\n"
+        start = text.index(marker) + len(marker)
+        next_job = re.search(r"(?m)^  [A-Za-z0-9_]+:\s*$", text[start:])
+        end = start + next_job.start() if next_job is not None else len(text)
+        block = text[start:end]
+        assert kind in block
+        assert block.index("actions/upload-artifact@v4") < block.index(
+            "assert_v4a_stage_qualifiable.py"
+        )
+
+    prices_start = text.index("  prices:\n")
+    prices_next = re.search(
+        r"(?m)^  [A-Za-z0-9_]+:\s*$",
+        text[prices_start + len("  prices:\n"):],
+    )
+    prices_end = (
+        prices_start + len("  prices:\n") + prices_next.start()
+        if prices_next is not None
+        else len(text)
+    )
+    assert "assert_v4a_stage_qualifiable.py" not in text[prices_start:prices_end]
