@@ -15,7 +15,7 @@
     "grant HISTORICAL_DATA_QUALIFIED only inside the private repository after every required verification passes",
     "open V4-C Context gate only after private HISTORICAL_DATA_QUALIFIED"
   ],
-  "private_verifier_merge_sha": "b953b9c302467f40dbdb51d421b06ed1f78904b1",
+  "private_verifier_merge_sha": "6c99d6640e044a6fe86ca27a4c9b756952b32b0d",
   "activation_state": "ACTIVE",
   "formal_public_long_run_allowed_before_activation": false,
   "forward_outcome_read_required": false,
