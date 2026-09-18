@@ -11,8 +11,28 @@ try:  # requests is an optional runtime dependency at import time.
 except ImportError:  # pragma: no cover
     requests = None  # type: ignore[assignment]
 
+try:  # curl_cffi is installed by the data extra, but keep import optional.
+    from curl_cffi.requests import RequestsError as CurlRequestsError
+except ImportError:  # pragma: no cover
+    CurlRequestsError = None  # type: ignore[assignment]
+
 
 T = TypeVar("T")
+
+# libcurl transport-level errors that are safe to retry verbatim. HTTP status
+# failures are deliberately excluded (for example CURLE_HTTP_RETURNED_ERROR=22).
+_CURL_TRANSIENT_CODES = {
+    5,   # COULDNT_RESOLVE_PROXY
+    6,   # COULDNT_RESOLVE_HOST
+    7,   # COULDNT_CONNECT
+    18,  # PARTIAL_FILE
+    28,  # OPERATION_TIMEDOUT
+    35,  # SSL_CONNECT_ERROR
+    52,  # GOT_NOTHING
+    55,  # SEND_ERROR
+    56,  # RECV_ERROR
+    92,  # HTTP2_STREAM
+}
 
 
 def is_transient_network_error(exc: BaseException) -> bool:
@@ -46,6 +66,12 @@ def is_transient_network_error(exc: BaseException) -> bool:
         ),
     ):
         return True
+    if CurlRequestsError is not None and isinstance(exc, CurlRequestsError):
+        try:
+            code = int(getattr(exc, "code", 0) or 0)
+        except (TypeError, ValueError):
+            code = 0
+        return code in _CURL_TRANSIENT_CODES
     return False
 
 
