@@ -270,6 +270,7 @@ def parse_csrc_search_page(
     *,
     channel: PolicyChannel,
     requested_page: int,
+    requested_page_size: int,
 ) -> tuple[list[PolicyListEntry], dict[str, int]]:
     data = payload.get("data")
     if not isinstance(data, Mapping):
@@ -280,12 +281,21 @@ def parse_csrc_search_page(
         total = int(data.get("total"))
     except (TypeError, ValueError) as exc:
         raise ValueError("CSRC searchList pagination metadata is invalid") from exc
+    if requested_page_size < 1:
+        raise ValueError("CSRC requested_page_size must be positive")
     if page != requested_page:
         raise ValueError(
             f"CSRC searchList page mismatch: requested={requested_page} returned={page}"
         )
     if rows < 0 or total < 0:
         raise ValueError("CSRC searchList rows/total cannot be negative")
+    if total > 0 and rows <= 0:
+        raise ValueError("CSRC searchList effective page capacity must be positive")
+    if rows > requested_page_size:
+        raise ValueError(
+            "CSRC searchList effective page capacity exceeds requested page size: "
+            f"requested={requested_page_size} returned={rows}"
+        )
     returned_channel_id = str(data.get("channelId") or "").strip()
     if returned_channel_id and returned_channel_id != channel.channel_id:
         raise ValueError("CSRC searchList channelId drifted")
@@ -293,12 +303,14 @@ def parse_csrc_search_page(
     raw_results = data.get("results")
     if not isinstance(raw_results, list):
         raise ValueError("CSRC searchList results must be a list")
-    if rows != len(raw_results):
+    returned = len(raw_results)
+    if returned > rows:
         raise ValueError(
-            f"CSRC searchList rows mismatch: metadata={rows} actual={len(raw_results)}"
+            "CSRC searchList returned rows exceed effective page capacity: "
+            f"capacity={rows} actual={returned}"
         )
-    if rows > total and total >= 0:
-        raise ValueError("CSRC searchList page rows exceed total")
+    if returned > total:
+        raise ValueError("CSRC searchList returned rows exceed advertised total")
 
     entries: list[PolicyListEntry] = []
     seen_manuscripts: set[str] = set()
@@ -346,7 +358,12 @@ def parse_csrc_search_page(
             )
         )
 
-    return entries, {"page": page, "rows": rows, "total": total}
+    return entries, {
+        "page": page,
+        "rows": rows,
+        "returned": returned,
+        "total": total,
+    }
 
 
 def _parse_date(value: str) -> pd.Timestamp | None:
@@ -470,7 +487,10 @@ def _enumerate_channel(
             backoff_seconds=retry_backoff_seconds,
         )
         page_entries, meta = parse_csrc_search_page(
-            payload, channel=channel, requested_page=page
+            payload,
+            channel=channel,
+            requested_page=page,
+            requested_page_size=page_size,
         )
         pages_read += 1
         total = int(meta["total"])
@@ -696,7 +716,7 @@ def materialize_csrc_policy_archive(
     summary = {
         "source_identity": POLICY_SOURCE_ID,
         "provider": POLICY_PROVIDER,
-        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V3_FULL_ENUMERATION",
+        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V4_SERVER_PAGE_CAPACITY",
         "start_date": str(start.date()),
         "end_date": str(end.date()),
         "coverage_segments": sorted(CSRC_CHANNELS),
