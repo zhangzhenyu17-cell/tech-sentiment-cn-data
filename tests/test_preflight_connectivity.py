@@ -1,6 +1,9 @@
+import runpy
+
 import pandas as pd
 
-import scripts.check_issuer_archive_connectivity as issuer_probe
+
+issuer_probe = runpy.run_path("scripts/check_issuer_archive_connectivity.py")
 
 
 def test_issuer_preflight_retries_transient_transport_reset(monkeypatch):
@@ -23,8 +26,9 @@ def test_issuer_preflight_retries_transient_transport_reset(monkeypatch):
             ]
         )
 
-    monkeypatch.setattr(issuer_probe, "fetch_szse_announcements", fetcher)
-    result = issuer_probe._run_probe(
+    monkeypatch.setitem(issuer_probe, "fetch_szse_announcements", fetcher)
+    issuer_probe["_run_probe"].__globals__["fetch_szse_announcements"] = fetcher
+    result = issuer_probe["_run_probe"](
         {
             "market": "SZSE",
             "symbol": "000538",
