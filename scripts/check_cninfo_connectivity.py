@@ -99,7 +99,9 @@ def main() -> None:
                 "CNINFO connectivity/protocol probe failed: "
                 f"{probe['symbol']} lacks immutable HTTPS attachment identity"
             )
-        canonical_url = str(immutable.iloc[0]["公告附件链接"]).strip()
+        selected_row = immutable.iloc[0]
+        selected_title = str(selected_row["公告标题"]).strip()
+        canonical_url = str(selected_row["公告附件链接"]).strip()
         downloaded = download_official_document(canonical_url)
         if not downloaded.content.startswith(b"%PDF-"):
             raise SystemExit(
@@ -117,7 +119,11 @@ def main() -> None:
         except Exception as exc:
             raise SystemExit(
                 "CNINFO connectivity/protocol probe failed: "
-                f"role={probe['role']} symbol={probe['symbol']} parser_error="
+                f"role={probe['role']} symbol={probe['symbol']} "
+                f"title={selected_title!r} matching_records={len(matching)} "
+                f"canonical_url={canonical_url} "
+                f"retrieval_url={downloaded.retrieval_url or downloaded.url} "
+                f"sha256={downloaded.sha256} parser_error="
                 f"{type(exc).__name__}: {exc}"
             ) from exc
         required_facts = set(REQUIRED_FACTS) | {"BASIC_EPS"}
@@ -129,8 +135,8 @@ def main() -> None:
                 "annual report parser missing critical facts "
                 f"{sorted(missing_facts)}"
             )
-        row = immutable.iloc[0]
-        title = str(row["公告标题"]).strip()
+        row = selected_row
+        title = selected_title
         publication = str(row["公告时间"]).strip()
         document_id = _announcement_id(str(row["公告链接"]))
         fact_rows = build_filing_fact_rows(
