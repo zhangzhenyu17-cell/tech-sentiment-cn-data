@@ -99,3 +99,27 @@ def test_stage_receipt_fails_closed_on_commit_or_scope_mismatch(tmp_path: Path) 
             stage_kind="policy",
             end_date="2026-09-17",
         )
+
+
+def test_stage_receipt_accepts_legitimate_zero_byte_payload(tmp_path: Path) -> None:
+    root = tmp_path / "stage"
+    root.mkdir()
+    empty = root / "empty.csv"
+    empty.write_bytes(b"")
+    payload = build_stage_receipt(
+        root=root,
+        files=[empty],
+        stage_kind="fundamental_earnings",
+        stage_id="fundamental-0-of-4",
+        source_commit="e" * 40,
+        start_date="2022-01-04",
+        end_date="2026-09-18",
+    )
+    write_stage_receipt(root / "receipt.json", payload)
+    verified = verify_stage_receipt(
+        root=root,
+        receipt_path=root / "receipt.json",
+        source_commit="e" * 40,
+        stage_kind="fundamental_earnings",
+    )
+    assert verified["files"][0]["bytes"] == 0
