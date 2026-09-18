@@ -212,7 +212,7 @@ def main() -> None:
             "failed_symbol_queries": failed,
             "materialized_records": int(len(records)),
             "tail_records_beyond_asof_not_materialized": int(tail_omitted),
-            "checkpoint_schema": "issuer-pit-exact-identity-v2",
+            "checkpoint_schema": "issuer-pit-exact-identity-v3-success-only",
             "readiness_state": state,
             "parallel_shards": shard_count,
         }
