@@ -105,12 +105,11 @@ def test_all_expensive_jobs_are_blocked_by_unified_fast_fail_gate():
         "derived_aggregate",
         "finalize",
     ):
-        match = re.search(
-            rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [A-Za-z0-9_]+:\n|\\Z)",
-            text,
-        )
-        assert match is not None
-        block = match.group(1)
+        marker = f"  {job}:\n"
+        start = text.index(marker) + len(marker)
+        next_job = re.search(r"(?m)^  [A-Za-z0-9_]+:\s*$", text[start:])
+        end = start + next_job.start() if next_job is not None else len(text)
+        block = text[start:end]
         assert "needs:" in block
         assert "preflight_gate" in block
         assert "if: ${{ inputs.preflight_only != true }}" in block
