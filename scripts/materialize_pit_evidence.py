@@ -62,6 +62,15 @@ def _entity_suffix(symbol: str) -> str:
     return ""
 
 
+def _shard(values: list[str], *, index: int, count: int) -> list[str]:
+    if count < 1:
+        raise ValueError("shard-count must be >= 1")
+    if index < 0 or index >= count:
+        raise ValueError("shard-index must satisfy 0 <= index < shard-count")
+    ordered = sorted(values)
+    return [value for position, value in enumerate(ordered) if position % count == index]
+
+
 def _publication_has_precise_clock(value: object) -> bool:
     return bool(re.search(r"(?:^|\s)\d{1,2}:\d{2}(?::\d{2})?(?:\s|$)", str(value).strip()))
 
@@ -276,6 +285,13 @@ def main() -> None:
     parser.add_argument("--calendar-csv", required=True)
     parser.add_argument("--calendar-date-column", default="date")
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument(
+        "--source",
+        choices=("ALL", CNINFO_SOURCE_ID, SSE_SOURCE_ID, SZSE_SOURCE_ID),
+        default="ALL",
+    )
+    parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("--checkpoint-dir", default=".cache/capital_pit_v4a/issuer")
     parser.add_argument("--out-dir", default="output/pit_evidence_materialization")
     args = parser.parse_args()
@@ -371,38 +387,39 @@ def main() -> None:
             omitted=omitted,
         )
 
-    source_results = {
-        CNINFO_SOURCE_ID: _run_source(
-            source=CNINFO_SOURCE_ID,
-            symbols=symbols,
-            start_date=start_date,
-            end_date=end_date,
-            source_commit=args.source_commit,
-            calendar_identity=calendar_identity,
-            store=store,
-            materialize_one=cninfo_one,
-        ),
-        SSE_SOURCE_ID: _run_source(
-            source=SSE_SOURCE_ID,
-            symbols=sh_symbols,
-            start_date=start_date,
-            end_date=end_date,
-            source_commit=args.source_commit,
-            calendar_identity=calendar_identity,
-            store=store,
-            materialize_one=sse_one,
-        ),
-        SZSE_SOURCE_ID: _run_source(
-            source=SZSE_SOURCE_ID,
-            symbols=sz_symbols,
-            start_date=start_date,
-            end_date=end_date,
-            source_commit=args.source_commit,
-            calendar_identity=calendar_identity,
-            store=store,
-            materialize_one=szse_one,
-        ),
+    source_specs = {
+        CNINFO_SOURCE_ID: (symbols, cninfo_one),
+        SSE_SOURCE_ID: (sh_symbols, sse_one),
+        SZSE_SOURCE_ID: (sz_symbols, szse_one),
     }
+    selected_sources = (
+        list(source_specs)
+        if args.source == "ALL"
+        else [str(args.source)]
+    )
+    source_results: dict[str, tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, object]]] = {}
+    for source in selected_sources:
+        source_symbols, materialize_one = source_specs[source]
+        shard_symbols = _shard(
+            list(source_symbols),
+            index=int(args.shard_index),
+            count=int(args.shard_count),
+        )
+        if not shard_symbols:
+            raise SystemExit(
+                f"issuer shard has no applicable symbols: source={source} "
+                f"index={args.shard_index} count={args.shard_count}"
+            )
+        source_results[source] = _run_source(
+            source=source,
+            symbols=shard_symbols,
+            start_date=start_date,
+            end_date=end_date,
+            source_commit=args.source_commit,
+            calendar_identity=calendar_identity,
+            store=store,
+            materialize_one=materialize_one,
+        )
     all_records = [result[0] for result in source_results.values() if len(result[0])]
     all_coverage = [result[1] for result in source_results.values() if len(result[1])]
     all_errors = [result[2] for result in source_results.values() if len(result[2])]
@@ -478,6 +495,9 @@ def main() -> None:
         "symbols": len(symbols),
         "sh_symbols": len(sh_symbols),
         "sz_symbols": len(sz_symbols),
+        "selected_sources": selected_sources,
+        "shard_index": int(args.shard_index),
+        "shard_count": int(args.shard_count),
         "materialized_records": int(len(records)),
         "failed_symbol_queries": int(sum(int(result[3]["failed_symbol_queries"]) for result in source_results.values())),
         "source_states": source_states,

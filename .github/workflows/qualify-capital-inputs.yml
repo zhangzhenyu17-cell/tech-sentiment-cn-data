@@ -18,9 +18,11 @@ permissions:
   contents: read
 
 jobs:
-  qualify:
+  preflight:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 30
+    outputs:
+      end_date: ${{ steps.dates.outputs.end_date }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,8 +46,7 @@ jobs:
             --require-reachable
 
       - name: CNINFO protocol connectivity preflight
-        run: |
-          python scripts/check_cninfo_connectivity.py
+        run: python scripts/check_cninfo_connectivity.py
 
       - name: Resolve end date
         id: dates
@@ -58,136 +59,824 @@ jobs:
           fi
           echo "end_date=${END_DATE}" >> "$GITHUB_OUTPUT"
 
-      - name: Restore exact-identity V4-A checkpoints
-        id: checkpoint_restore
-        uses: actions/cache/restore@v4
-        with:
-          path: .cache/capital_pit_v4a
-          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-restore
-          restore-keys: |
-            capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-
-
-      - name: Prepare checkpoint directories
-        shell: bash
+      - name: Build shared real trading calendar
         run: |
-          mkdir -p \
-            .cache/capital_pit_v4a/capital \
-            .cache/capital_pit_v4a/financing \
-            .cache/capital_pit_v4a/issuer \
-            .cache/capital_pit_v4a/derived
-
-      - name: Materialize ETF-share and SSE+SZSE turnover inputs
-        id: capital_materialize
-        shell: bash
-        run: |
-          python scripts/qualify_capital_inputs.py \
+          mkdir -p stage/shared
+          python scripts/build_v4a_shared_calendar.py \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --calendar-index-code "000688" \
             --source-commit "${{ github.sha }}" \
-            --checkpoint-dir .cache/capital_pit_v4a/capital \
-            --out-dir output/capital_input_qualification
-
-      - name: Save Capital checkpoints
-        if: ${{ always() && steps.capital_materialize.outcome != 'skipped' }}
-        uses: actions/cache/save@v4
-        with:
-          path: .cache/capital_pit_v4a
-          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-capital
-
-      - name: Materialize bilateral financing history
-        id: financing_materialize
-        shell: bash
-        run: |
-          python scripts/materialize_financing_history.py \
-            --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ steps.dates.outputs.end_date }}" \
-            --calendar-index-code "000688" \
-            --source-commit "${{ github.sha }}" \
-            --checkpoint-dir .cache/capital_pit_v4a/financing \
-            --out-dir output/financing_materialization
-
-      - name: Save financing checkpoints
-        if: ${{ always() && steps.financing_materialize.outcome != 'skipped' }}
-        uses: actions/cache/save@v4
-        with:
-          path: .cache/capital_pit_v4a
-          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-financing
+            --out-dir stage/shared
 
       - name: Build frozen Capital/PIT symbol scope
-        id: scope_build
-        shell: bash
         run: |
           python scripts/build_capital_pit_symbol_scope.py \
-            --out-dir output/pit_symbol_scope
+            --out-dir stage/shared/pit_symbol_scope
 
-      - name: Materialize independent CNINFO, SSE and SZSE PIT issuer archives
-        id: issuer_pit_materialize
-        shell: bash
+      - name: Seal shared-input stage
         run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root stage/shared \
+            --stage-kind shared \
+            --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ steps.dates.outputs.end_date }}" \
+            --out stage/shared/receipt.json
+
+      - name: Upload shared-input stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+          if-no-files-found: error
+          retention-days: 7
+
+  capital:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - name: Restore Capital checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/capital
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-capital-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-capital-
+      - name: Materialize ETF-share and SSE+SZSE turnover
+        id: materialize
+        run: |
+          mkdir -p stage/capital/capital_input_qualification .cache/capital_pit_v4a/capital
+          python scripts/qualify_capital_inputs.py \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --source-commit "${{ github.sha }}" \
+            --checkpoint-dir .cache/capital_pit_v4a/capital \
+            --out-dir stage/capital/capital_input_qualification
+      - name: Save Capital checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/capital
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-capital-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal Capital stage
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root stage/capital --stage-kind capital --stage-id capital \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out stage/capital/receipt.json
+      - name: Upload Capital stage and checkpoints
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-capital
+          path: |
+            stage/capital
+            .cache/capital_pit_v4a/capital
+          if-no-files-found: error
+          retention-days: 7
+
+  financing:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - name: Restore financing checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/financing
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-financing-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-financing-
+      - name: Materialize bilateral financing history
+        id: materialize
+        run: |
+          mkdir -p stage/financing/financing_materialization .cache/capital_pit_v4a/financing
+          python scripts/materialize_financing_history.py \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --source-commit "${{ github.sha }}" \
+            --checkpoint-dir .cache/capital_pit_v4a/financing \
+            --out-dir stage/financing/financing_materialization
+      - name: Save financing checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/financing
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-financing-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal financing stage
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root stage/financing --stage-kind financing --stage-id financing \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out stage/financing/receipt.json
+      - name: Upload financing stage and checkpoints
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-financing
+          path: |
+            stage/financing
+            .cache/capital_pit_v4a/financing
+          if-no-files-found: error
+          retention-days: 7
+
+  issuer_cninfo:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - name: Restore CNINFO issuer checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-cninfo-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-cninfo-${{ matrix.shard }}-
+      - name: Materialize CNINFO issuer shard
+        id: materialize
+        run: |
+          mkdir -p "stage/issuer/cninfo-${{ matrix.shard }}" .cache/capital_pit_v4a/issuer
           python scripts/materialize_pit_evidence.py \
-            --symbols-csv output/pit_symbol_scope/capital_pit_symbols.csv \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ steps.dates.outputs.end_date }}" \
-            --calendar-csv output/capital_input_qualification/trading_calendar.csv \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --calendar-csv stage/shared/trading_calendar.csv \
             --source-commit "${{ github.sha }}" \
+            --source CNINFO_ANNOUNCEMENT_ARCHIVE \
+            --shard-index "${{ matrix.shard }}" --shard-count 4 \
             --checkpoint-dir .cache/capital_pit_v4a/issuer \
-            --out-dir output/pit_evidence_materialization
-
-      - name: Save issuer PIT checkpoints
-        if: ${{ always() && steps.issuer_pit_materialize.outcome != 'skipped' }}
+            --out-dir "stage/issuer/cninfo-${{ matrix.shard }}"
+      - name: Save CNINFO issuer checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
         uses: actions/cache/save@v4
         with:
-          path: .cache/capital_pit_v4a
-          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-issuer
-
-      - name: Materialize fundamental, earnings, valuation, policy and major-negative PIT rails
-        id: derived_pit_materialize
-        shell: bash
+          path: .cache/capital_pit_v4a/issuer
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-cninfo-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal CNINFO issuer shard
+        if: ${{ success() }}
         run: |
-          python scripts/materialize_v4a_derived_pit.py \
-            --symbols-csv output/pit_symbol_scope/capital_pit_symbols.csv \
-            --calendar-csv output/capital_input_qualification/trading_calendar.csv \
-            --issuer-evidence-csv output/pit_evidence_materialization/pit_evidence.csv \
-            --issuer-coverage-csv output/pit_evidence_materialization/pit_source_coverage.csv \
-            --issuer-manifest output/pit_evidence_materialization/pit_materialization_manifest.json \
-            --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ steps.dates.outputs.end_date }}" \
+          python scripts/write_v4a_stage_receipt.py \
+            --root "stage/issuer/cninfo-${{ matrix.shard }}" \
+            --stage-kind issuer --stage-id "cninfo-${{ matrix.shard }}-of-4" \
             --source-commit "${{ github.sha }}" \
-            --checkpoint-dir .cache/capital_pit_v4a/derived \
-            --out-dir output/pit_evidence_materialization
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out "stage/issuer/cninfo-${{ matrix.shard }}/receipt.json"
+      - name: Upload CNINFO issuer shard
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-issuer-cninfo-${{ matrix.shard }}
+          path: |
+            stage/issuer/cninfo-${{ matrix.shard }}
+            .cache/capital_pit_v4a/issuer
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Save derived PIT checkpoints
-        if: ${{ always() && steps.derived_pit_materialize.outcome != 'skipped' }}
+  issuer_sse:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - name: Restore SSE issuer checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-sse-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-sse-
+      - name: Materialize SSE issuer archive
+        id: materialize
+        run: |
+          mkdir -p stage/issuer/sse .cache/capital_pit_v4a/issuer
+          python scripts/materialize_pit_evidence.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --source-commit "${{ github.sha }}" \
+            --source SSE_ANNOUNCEMENT_ARCHIVE \
+            --shard-index 0 --shard-count 1 \
+            --checkpoint-dir .cache/capital_pit_v4a/issuer \
+            --out-dir stage/issuer/sse
+      - name: Save SSE issuer checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
         uses: actions/cache/save@v4
         with:
-          path: .cache/capital_pit_v4a
-          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-derived
-
-      - name: Stage frozen Fundamental PIT evidence contract
-        shell: bash
+          path: .cache/capital_pit_v4a/issuer
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-sse-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal SSE issuer stage
+        if: ${{ success() }}
         run: |
-          cp \
-            reference/v4a_fundamental_pit_state_contract_v1.json \
-            output/pit_evidence_materialization/fundamental_pit_state_contract_v1.json
+          python scripts/write_v4a_stage_receipt.py \
+            --root stage/issuer/sse --stage-kind issuer --stage-id sse-0-of-1 \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out stage/issuer/sse/receipt.json
+      - name: Upload SSE issuer stage
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-issuer-sse
+          path: |
+            stage/issuer/sse
+            .cache/capital_pit_v4a/issuer
+          if-no-files-found: error
+          retention-days: 7
 
+  issuer_szse:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - name: Restore SZSE issuer checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-szse-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-szse-
+      - name: Materialize SZSE issuer archive
+        id: materialize
+        run: |
+          mkdir -p stage/issuer/szse .cache/capital_pit_v4a/issuer
+          python scripts/materialize_pit_evidence.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --source-commit "${{ github.sha }}" \
+            --source SZSE_ANNOUNCEMENT_ARCHIVE \
+            --shard-index 0 --shard-count 1 \
+            --checkpoint-dir .cache/capital_pit_v4a/issuer \
+            --out-dir stage/issuer/szse
+      - name: Save SZSE issuer checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-szse-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal SZSE issuer stage
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root stage/issuer/szse --stage-kind issuer --stage-id szse-0-of-1 \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out stage/issuer/szse/receipt.json
+      - name: Upload SZSE issuer stage
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-issuer-szse
+          path: |
+            stage/issuer/szse
+            .cache/capital_pit_v4a/issuer
+          if-no-files-found: error
+          retention-days: 7
+
+  issuer_aggregate:
+    needs: [preflight, issuer_cninfo, issuer_sse, issuer_szse]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v4a-stage-issuer-*
+          path: .
+          merge-multiple: true
+      - name: Aggregate and verify issuer shards
+        run: |
+          mkdir -p stage/issuer_aggregate
+          python scripts/aggregate_v4a_issuer_shards.py \
+            --shard-root stage/issuer \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out-dir stage/issuer_aggregate
+      - name: Seal issuer aggregate
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root stage/issuer_aggregate --stage-kind issuer_aggregate --stage-id issuer_aggregate \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out stage/issuer_aggregate/receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-issuer-aggregate
+          path: stage/issuer_aggregate
+          if-no-files-found: error
+          retention-days: 7
+
+  fundamental_earnings:
+    needs: [preflight, issuer_cninfo]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - name: Restore filing checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/filings
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-filings-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-filings-${{ matrix.shard }}-
+      - name: Materialize filing/fundamental/earnings shard
+        id: materialize
+        run: |
+          mkdir -p "stage/fundamental/${{ matrix.shard }}" .cache/capital_pit_v4a/derived/filings
+          python scripts/materialize_v4a_fundamental_earnings_shard.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --source-commit "${{ github.sha }}" \
+            --shard-index "${{ matrix.shard }}" --shard-count 4 \
+            --checkpoint-dir .cache/capital_pit_v4a/derived/filings \
+            --out-dir "stage/fundamental/${{ matrix.shard }}"
+      - name: Save filing checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/filings
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-filings-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal fundamental/earnings shard
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root "stage/fundamental/${{ matrix.shard }}" \
+            --stage-kind fundamental_earnings --stage-id "fundamental-${{ matrix.shard }}-of-4" \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out "stage/fundamental/${{ matrix.shard }}/receipt.json"
+      - name: Upload fundamental/earnings shard
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-fundamental-${{ matrix.shard }}
+          path: |
+            stage/fundamental/${{ matrix.shard }}
+            .cache/capital_pit_v4a/derived/filings
+          if-no-files-found: error
+          retention-days: 7
+
+  prices:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - name: Restore price checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/prices
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-prices-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-prices-${{ matrix.shard }}-
+      - name: Materialize PIT price shard
+        id: materialize
+        run: |
+          mkdir -p "stage/prices/${{ matrix.shard }}" .cache/capital_pit_v4a/derived/prices
+          python scripts/materialize_v4a_price_shard.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --source-commit "${{ github.sha }}" \
+            --shard-index "${{ matrix.shard }}" --shard-count 4 \
+            --checkpoint-dir .cache/capital_pit_v4a/derived/prices \
+            --out-dir "stage/prices/${{ matrix.shard }}"
+      - name: Save price checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/prices
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-prices-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal price shard
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root "stage/prices/${{ matrix.shard }}" \
+            --stage-kind prices --stage-id "prices-${{ matrix.shard }}-of-4" \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out "stage/prices/${{ matrix.shard }}/receipt.json"
+      - name: Upload price shard
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-prices-${{ matrix.shard }}
+          path: |
+            stage/prices/${{ matrix.shard }}
+            .cache/capital_pit_v4a/derived/prices
+          if-no-files-found: error
+          retention-days: 7
+
+  policy:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - name: Restore policy checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/policy
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-policy-
+      - name: Materialize policy/regulatory archive
+        id: materialize
+        run: |
+          mkdir -p stage/policy .cache/capital_pit_v4a/derived/policy
+          python scripts/materialize_v4a_policy_stage.py \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --source-commit "${{ github.sha }}" \
+            --checkpoint-dir .cache/capital_pit_v4a/derived/policy \
+            --out-dir stage/policy
+      - name: Save policy checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/policy
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-policy-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal policy stage
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root stage/policy --stage-kind policy --stage-id policy \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out stage/policy/receipt.json
+      - name: Upload policy stage
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-policy
+          path: |
+            stage/policy
+            .cache/capital_pit_v4a/derived/policy
+          if-no-files-found: error
+          retention-days: 7
+
+  derived_aggregate:
+    needs: [preflight, issuer_aggregate, fundamental_earnings, prices, policy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-issuer-aggregate
+          path: stage/issuer_aggregate
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v4a-stage-fundamental-*
+          path: .
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v4a-stage-prices-*
+          path: .
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-policy
+          path: .
+      - name: Assemble derived PIT rails
+        run: |
+          mkdir -p stage/derived/pit_evidence_materialization
+          python scripts/assemble_v4a_derived_pit.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --issuer-dir stage/issuer_aggregate \
+            --fundamental-root stage/fundamental \
+            --price-root stage/prices \
+            --policy-dir stage/policy \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --source-commit "${{ github.sha }}" \
+            --out-dir stage/derived/pit_evidence_materialization
+      - name: Seal derived aggregate
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root stage/derived --stage-kind derived --stage-id derived \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --out stage/derived/receipt.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v4a-stage-derived
+          path: stage/derived
+          if-no-files-found: error
+          retention-days: 7
+
+  finalize:
+    needs: [preflight, capital, financing, derived_aggregate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-shared
+          path: stage/shared
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-capital
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-financing
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v4a-stage-issuer-cninfo-*
+          path: .
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-issuer-sse
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-issuer-szse
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v4a-stage-fundamental-*
+          path: .
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v4a-stage-prices-*
+          path: .
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-policy
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          name: v4a-stage-derived
+          path: stage/derived
+      - name: Verify final handoff stages
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/capital --stage-kind capital --stage-id capital \
+            --source-commit "${{ github.sha }}" --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/financing --stage-kind financing --stage-id financing \
+            --source-commit "${{ github.sha }}" --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/derived --stage-kind derived --stage-id derived \
+            --source-commit "${{ github.sha }}" --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
+      - name: Assemble canonical output tree
+        run: |
+          mkdir -p output
+          cp -a stage/capital/capital_input_qualification output/capital_input_qualification
+          cp -a stage/financing/financing_materialization output/financing_materialization
+          cp -a stage/shared/pit_symbol_scope output/pit_symbol_scope
+          cp -a stage/derived/pit_evidence_materialization output/pit_evidence_materialization
+          cp reference/v4a_fundamental_pit_state_contract_v1.json \
+            output/pit_evidence_materialization/fundamental_pit_state_contract_v1.json
       - name: Summarize immutable checkpoint receipts
-        shell: bash
         run: |
           python scripts/summarize_v4a_checkpoints.py \
             --checkpoint-root .cache/capital_pit_v4a \
             --source-commit "${{ github.sha }}" \
             --out output/pit_evidence_materialization/checkpoint_receipt_summary.json
-
       - name: Finalize immutable public materialization bundle
-        shell: bash
         run: |
           python scripts/finalize_capital_pit_materialization.py \
             --output-root output \
             --out-dir output/materialization_identity \
             --workflow-run-id "${{ github.run_id }}" \
             --source-commit "${{ github.sha }}"
-
       - name: Upload immutable materialization artifact
         id: upload_materialization
         uses: actions/upload-artifact@v4
@@ -200,9 +889,7 @@ jobs:
             output/pit_evidence_materialization
             output/materialization_identity
           if-no-files-found: error
-
       - name: Record post-upload artifact identity
-        shell: bash
         run: |
           python scripts/write_capital_pit_artifact_receipt.py \
             --preupload-identity output/materialization_identity/bundle_identity_preupload.json \
@@ -212,7 +899,6 @@ jobs:
             --workflow-run-id "${{ github.run_id }}" \
             --source-commit "${{ github.sha }}" \
             --out output/materialization_identity/artifact_receipt.json
-
       - name: Upload artifact identity receipt
         uses: actions/upload-artifact@v4
         with:
