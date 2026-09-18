@@ -2,6 +2,8 @@ import pandas as pd
 import pytest
 
 from tech_sentiment.financing_materialization import (
+    _sse_margin_payload_frame,
+    _szse_margin_payload_frame,
     materialize_financing_history,
     normalize_sse_financing_history,
     normalize_szse_financing_snapshot,
@@ -26,6 +28,40 @@ def test_szse_snapshot_keeps_frozen_cny_100m_source_unit():
     assert row["szse_source_unit"] == "CNY_100M"
     assert row["szse_financing_balance"] == pytest.approx(8000.0)
 
+
+
+
+def test_sse_margin_named_payload_preserves_cny_balance():
+    frame = _sse_margin_payload_frame(
+        {
+            "pageHelp": {
+                "data": [
+                    {"opDate": "20220104", "rzye": "910000000000.00"},
+                    {"opDate": "20220105", "rzye": "920000000000.00"},
+                ]
+            }
+        }
+    )
+    out = normalize_sse_financing_history(frame)
+    assert out["date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2022-01-04",
+        "2022-01-05",
+    ]
+    assert out["sse_financing_balance"].tolist() == [
+        910_000_000_000.0,
+        920_000_000_000.0,
+    ]
+
+
+def test_szse_margin_named_payload_keeps_100m_yuan_raw_unit():
+    frame = _szse_margin_payload_frame(
+        [{"data": [{"jrrzye": "8,000.50"}]}]
+    )
+    row = normalize_szse_financing_snapshot(
+        frame, observation_date="2022-01-04"
+    )
+    assert row["szse_source_unit"] == "CNY_100M"
+    assert row["szse_financing_balance"] == pytest.approx(8000.5)
 
 def test_materializer_preserves_missing_dates_and_never_guesses_units():
     cal = pd.to_datetime(["2022-01-04", "2022-01-05", "2022-01-06"])
