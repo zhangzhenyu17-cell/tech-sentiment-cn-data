@@ -61,9 +61,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/prices
-          key: v4a-prices-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-prices-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-prices-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-
+            v4a-prices-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-
       - name: Materialize price shard
         id: materialize
         run: |
@@ -80,7 +80,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/derived/prices
-          key: v4a-prices-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-prices-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal price shard
         if: ${{ success() }}
         run: |
