@@ -67,7 +67,7 @@ def _request_json(
                 )
                 response.raise_for_status()
                 return response.json(), url
-            except (requests.RequestException, ValueError, json.JSONDecodeError) as exc:
+            except (requests.exceptions.RequestException, ValueError, json.JSONDecodeError) as exc:
                 errors.append(
                     f"{url}|attempt={attempt}|{type(exc).__name__}:{str(exc)[:240]}"
                 )
