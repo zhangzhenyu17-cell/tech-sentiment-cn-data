@@ -6,7 +6,8 @@ import io
 import json
 import re
 from typing import Callable, Iterable, Mapping
-from urllib.parse import urlparse
+from urllib.error import HTTPError
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import pandas as pd
@@ -89,29 +90,80 @@ def _canonical_host(url: str) -> str:
     return host
 
 
+_CNINFO_STATIC_ATTACHMENT_RE = re.compile(
+    r"^/finalpage/(?P<date>20\\d{2}-\\d{2}-\\d{2})/(?P<document_id>\\d+)\\.PDF$",
+    re.IGNORECASE,
+)
+
+
+def _cninfo_https_download_fallback(url: str) -> str | None:
+    """Derive CNINFO's official HTTPS download endpoint from an exact attachment URL."""
+
+    parsed = urlparse(str(url).strip())
+    if parsed.scheme != "https" or (parsed.hostname or "").lower() != "static.cninfo.com.cn":
+        return None
+    match = _CNINFO_STATIC_ATTACHMENT_RE.fullmatch(parsed.path)
+    if match is None:
+        return None
+    query = urlencode(
+        {
+            "bulletinId": match.group("document_id"),
+            "announceTime": match.group("date"),
+        }
+    )
+    return f"https://www.cninfo.com.cn/new/announcement/download?{query}"
+
+
+def _download_once(
+    url: str,
+    *,
+    timeout: float,
+    opener: Callable[..., object],
+) -> bytes:
+    host = _canonical_host(url)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
+    }
+    if host in {"static.cninfo.com.cn", "www.cninfo.com.cn"}:
+        headers["Referer"] = "https://www.cninfo.com.cn/"
+    request = Request(url, headers=headers, method="GET")
+    with opener(request, timeout=timeout) as response:  # nosec B310 - host allowlist above
+        return response.read()
+
+
 def download_official_document(
     url: str,
     *,
     timeout: float = 30.0,
     opener: Callable[..., object] = urlopen,
 ) -> DownloadedOfficialDocument:
-    """Download one exact official filing version and bind it to a content hash."""
+    """Download one exact official filing version and bind it to a content hash.
+
+    CNINFO's immutable static HTTPS attachment can return HTTP 403 to non-browser
+    infrastructure even when the same exact bulletin remains available through
+    CNINFO's official HTTPS download endpoint.  Only that deterministic,
+    same-provider endpoint is allowed as a fallback, and only for a 403 from
+    static.cninfo.com.cn.  The bulletin id and announcement date are derived
+    from the immutable attachment URL; no search, substitution, or HTTP
+    transport downgrade is permitted.
+    """
 
     _canonical_host(url)
-    request = Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
-            "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
-        },
-        method="GET",
-    )
-    with opener(request, timeout=timeout) as response:  # nosec B310 - host allowlist above
-        content = response.read()
+    retrieval_url = url
+    try:
+        content = _download_once(url, timeout=timeout, opener=opener)
+    except HTTPError as exc:
+        fallback = _cninfo_https_download_fallback(url)
+        if exc.code != 403 or fallback is None:
+            raise
+        retrieval_url = fallback
+        content = _download_once(fallback, timeout=timeout, opener=opener)
+
     if not content:
         raise ValueError("official filing attachment is empty")
     return DownloadedOfficialDocument(
-        url=url,
+        url=retrieval_url,
         sha256=sha256(content).hexdigest(),
         content=content,
     )
