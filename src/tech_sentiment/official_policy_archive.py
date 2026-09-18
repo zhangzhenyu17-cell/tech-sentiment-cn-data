@@ -389,6 +389,7 @@ def _enumerate_channel(
     seen_manuscripts: set[str] = set()
     seen_urls: set[str] = set()
     expected_total: int | None = None
+    previous_oldest_timestamp: pd.Timestamp | None = None
     pages_read = 0
     reached_start = False
 
@@ -411,6 +412,21 @@ def _enumerate_channel(
                 f"CSRC total drift for {channel.channel_code}: "
                 f"{expected_total} -> {total}"
             )
+        if page_entries:
+            page_timestamps = [
+                pd.Timestamp(entry.publication_timestamp) for entry in page_entries
+            ]
+            page_newest = max(page_timestamps)
+            page_oldest = min(page_timestamps)
+            if (
+                previous_oldest_timestamp is not None
+                and page_newest > previous_oldest_timestamp
+            ):
+                raise ValueError(
+                    f"CSRC cross-page publication order drift for {channel.channel_code}"
+                )
+            previous_oldest_timestamp = page_oldest
+
         for entry in page_entries:
             if entry.manuscript_id in seen_manuscripts:
                 raise ValueError(
