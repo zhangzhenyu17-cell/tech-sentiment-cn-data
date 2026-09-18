@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import time
 from typing import Callable, Iterable
+from urllib.parse import urlparse
 
 import numpy as np
 import pandas as pd
@@ -11,6 +12,8 @@ from .bounded_retry import call_with_bounded_network_retry
 
 SSE_ETF_SHARE_SOURCE_ID = "SSE_ETF_SCALE_DAILY"
 SSE_ETF_SHARE_SOURCE_URL = "https://www.sse.com.cn/assortment/fund/etf/list/scale/"
+SSE_ETF_SCALE_QUERY_URL = "https://query.sse.com.cn/commonQuery.do"
+SSE_ETF_SCALE_SQL_ID = "COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L"
 SSE_TURNOVER_SOURCE_ID = "SSE_DAILY_STOCK_OVERVIEW"
 SSE_TURNOVER_SOURCE_URL = "https://www.sse.com.cn/market/stockdata/overview/day/"
 SZSE_TURNOVER_SOURCE_ID = "SZSE_MARKET_OVERVIEW_DAILY"
@@ -33,6 +36,111 @@ class EtfShareFetchResult:
 def _date(value: object) -> pd.Timestamp:
     return pd.Timestamp(value).normalize()
 
+
+def _sse_etf_scale_payload_frame(payload: object) -> pd.DataFrame:
+    if not isinstance(payload, dict):
+        raise ValueError("SSE ETF scale response is not a JSON object")
+    rows = payload.get("result")
+    if not isinstance(rows, list):
+        raise ValueError("SSE ETF scale response lacks result rows")
+    columns = ["序号", "基金代码", "基金简称", "ETF类型", "统计日期", "基金份额"]
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    frame = pd.DataFrame(rows)
+    required = {"NUM", "SEC_CODE", "SEC_NAME", "ETF_TYPE", "STAT_DATE", "TOT_VOL"}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(f"SSE ETF scale response missing fields: {sorted(missing)}")
+    frame = frame.rename(
+        columns={
+            "NUM": "序号",
+            "SEC_CODE": "基金代码",
+            "SEC_NAME": "基金简称",
+            "ETF_TYPE": "ETF类型",
+            "STAT_DATE": "统计日期",
+            "TOT_VOL": "基金份额",
+        }
+    )[columns].copy()
+    frame["序号"] = pd.to_numeric(frame["序号"], errors="coerce")
+    frame["统计日期"] = pd.to_datetime(frame["统计日期"], errors="coerce").dt.date
+    frame["基金份额"] = pd.to_numeric(frame["基金份额"], errors="coerce") * 10_000.0
+    return frame
+
+
+def _validate_sse_query_response_url(response: object) -> None:
+    final_url = str(getattr(response, "url", SSE_ETF_SCALE_QUERY_URL) or SSE_ETF_SCALE_QUERY_URL)
+    parsed = urlparse(final_url)
+    if parsed.scheme != "https" or (parsed.hostname or "").lower() != "query.sse.com.cn":
+        raise ValueError("SSE ETF scale transport redirected outside official HTTPS host")
+
+
+def _fetch_sse_etf_scale_direct(
+    date: str,
+    *,
+    timeout: float = 20.0,
+    plain_get: Callable[..., object] | None = None,
+    browser_get: Callable[..., object] | None = None,
+) -> pd.DataFrame:
+    """Fetch the official SSE ETF scale endpoint with browser transport fallback."""
+
+    if len(date) != 8 or not date.isdigit():
+        raise ValueError("SSE ETF scale date must be YYYYMMDD")
+    stat_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+    params = {
+        "isPagination": "true",
+        "pageHelp.pageSize": "10000",
+        "pageHelp.pageNo": "1",
+        "pageHelp.beginPage": "1",
+        "pageHelp.cacheSize": "1",
+        "pageHelp.endPage": "1",
+        "sqlId": SSE_ETF_SCALE_SQL_ID,
+        "STAT_DATE": stat_date,
+    }
+    headers = {
+        "Referer": "https://www.sse.com.cn/",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 Chrome/124 Safari/537.36"
+        ),
+    }
+    if plain_get is None:
+        import requests as plain_requests
+
+        plain_get = plain_requests.get
+    try:
+        response = plain_get(
+            SSE_ETF_SCALE_QUERY_URL,
+            params=params,
+            headers=headers,
+            timeout=timeout,
+            allow_redirects=True,
+        )
+        response.raise_for_status()
+        _validate_sse_query_response_url(response)
+        payload = response.json()
+    except Exception:
+        if browser_get is None:
+            try:
+                from curl_cffi import requests as curl_requests
+            except ImportError as exc:  # pragma: no cover - installed by data extra
+                raise RuntimeError(
+                    "curl_cffi is required for SSE ETF browser transport fallback"
+                ) from exc
+            browser_get = curl_requests.get
+        response = browser_get(
+            SSE_ETF_SCALE_QUERY_URL,
+            params=params,
+            headers=headers,
+            impersonate="chrome",
+            timeout=timeout,
+            allow_redirects=True,
+        )
+        response.raise_for_status()
+        _validate_sse_query_response_url(response)
+        payload = response.json()
+    return _sse_etf_scale_payload_frame(payload)
 
 def normalize_sse_etf_share_snapshot(
     frame: pd.DataFrame,
@@ -75,7 +183,7 @@ def normalize_sse_etf_share_snapshot(
     out["unit"] = "share"
     out["source_identity"] = SSE_ETF_SHARE_SOURCE_ID
     out["source_url"] = SSE_ETF_SHARE_SOURCE_URL
-    out["provider_interface"] = "akshare.fund_etf_scale_sse"
+    out["provider_interface"] = SSE_ETF_SCALE_QUERY_URL
     out["evidence_available_date"] = target
     return out[
         [
@@ -101,9 +209,7 @@ def fetch_sse_etf_share_history(
     retry_backoff_seconds: float = 0.5,
 ) -> EtfShareFetchResult:
     if fetcher is None:
-        import akshare as ak  # type: ignore
-
-        fetcher = lambda date: ak.fund_etf_scale_sse(date=date)
+        fetcher = _fetch_sse_etf_scale_direct
     data_parts: list[pd.DataFrame] = []
     errors: list[dict[str, str]] = []
     dates = pd.DatetimeIndex(
