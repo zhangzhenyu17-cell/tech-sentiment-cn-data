@@ -18,6 +18,13 @@ PROBES = (
         "expected_title_token": "2023年年度报告",
     },
     {
+        "market": "SSE",
+        "symbol": "688981",
+        "start_date": "2024-03-28",
+        "end_date": "2024-03-30",
+        "expected_title_token": "2023年年度报告",
+    },
+    {
         "market": "SZSE",
         "symbol": "000538",
         "start_date": "2024-03-29",
