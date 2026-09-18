@@ -290,3 +290,7 @@ Before accepting a new or refactored long-running pipeline, confirm:
 - [ ] triggers comply with workflow governance;
 - [ ] no research/evidence/production/trading boundary changed implicitly;
 - [ ] source-commit identity and retry semantics are explicit.
+
+## Optimization roadmap
+
+Further wall-clock optimization must follow the measured, quality-gated plan in [Parallel Execution Optimization Plan V2](parallel_execution_optimization_plan_v2.md). The current formal run is allowed to complete unchanged; additional sharding or producer decomposition is adopted only after critical-path profiling and contract-preserving tests.
