@@ -130,11 +130,49 @@ def _post_json(
     headers: dict[str, str],
     payload: dict[str, object],
     timeout: float,
+    expected_host: str | None = None,
 ) -> dict[str, object]:
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     request = Request(url, data=body, headers=headers, method="POST")
-    with urlopen(request, timeout=timeout) as response:  # nosec B310 - fixed official HTTPS endpoints
+    with urlopen(request, timeout=timeout) as response:  # nosec B310 - official HTTPS host checked by caller
+        if expected_host is not None:
+            final_url = response.geturl() if hasattr(response, "geturl") else url
+            _validate_https_host(final_url, expected_host=expected_host)
         return _decode_json_or_jsonp(response.read())
+
+
+def _szse_browser_session_factory():
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError as exc:  # pragma: no cover - installed by data extra
+        raise RuntimeError(
+            "curl_cffi is required for SZSE issuer browser transport fallback"
+        ) from exc
+    return curl_requests.Session()
+
+
+def _szse_browser_post_json(
+    session: object,
+    *,
+    url: str,
+    headers: dict[str, str],
+    payload: dict[str, object],
+    timeout: float,
+) -> dict[str, object]:
+    response = session.post(
+        url,
+        headers=headers,
+        json=payload,
+        impersonate="chrome",
+        timeout=timeout,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+    _validate_https_host(
+        getattr(response, "url", url),
+        expected_host="www.szse.cn",
+    )
+    return _decode_json_or_jsonp(bytes(getattr(response, "content", b"")))
 
 
 def _year_windows(start_date: object, end_date: object) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
@@ -334,77 +372,252 @@ def fetch_szse_announcements(
     start_date: object,
     end_date: object,
     timeout: float = 30.0,
+    browser_session_factory: Callable[[], object] | None = None,
 ) -> pd.DataFrame:
-    """Fetch an issuer's official SZSE announcement archive with explicit pagination."""
+    """Fetch an issuer's official SZSE announcement archive with total-bound pagination.
+
+    Ordinary urllib POST is primary. On transport failure, a browser-fingerprint
+    session is warmed on the official SZSE announcement page and reused for the
+    same canonical annList endpoint. Pagination completeness is proved against
+    announceCount rather than inferred from a short page.
+    """
 
     entity_id = _normalize_entity_id(symbol)
     if not entity_id.endswith(".SZ"):
         raise ValueError(f"SZSE archive only applies to Shenzhen symbols: {symbol}")
+
     headers = {
         "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
         "Content-Type": "application/json",
         "Origin": "https://www.szse.cn",
         "Referer": SZSE_REFERER,
         "User-Agent": _USER_AGENT,
         "X-Request-Type": "ajax",
         "X-Requested-With": "XMLHttpRequest",
+        "Pragma": "no-cache",
+        "Cache-Control": "no-cache",
     }
     rows: list[dict[str, object]] = []
-    for window_start, window_end in _year_windows(start_date, end_date):
-        page = 1
-        while True:
-            body: dict[str, object] = {
-                "seDate": [window_start.strftime("%Y-%m-%d"), window_end.strftime("%Y-%m-%d")],
-                "channelCode": ["listedNotice_disc"],
-                "stock": [str(symbol).zfill(6)],
-                "pageSize": 50,
-                "pageNum": page,
-            }
-            payload = _post_json(SZSE_QUERY_URL, headers=headers, payload=body, timeout=timeout)
-            data = payload.get("data")
-            if data is None:
-                raise ValueError("SZSE announcement payload lacks data")
-            if not isinstance(data, list):
-                raise ValueError("SZSE announcement data is not a list")
-            for item in data:
-                if not isinstance(item, dict):
-                    continue
-                raw_code = item.get("secCode") or item.get("securityCode") or symbol
-                if isinstance(raw_code, list):
-                    raw_code = raw_code[0] if raw_code else symbol
-                code = "".join(ch for ch in str(raw_code) if ch.isdigit()).zfill(6)
-                if code != str(symbol).zfill(6):
-                    continue
-                title = re.sub(r"<[^>]+>", "", str(item.get("title") or "")).strip()
-                published = str(item.get("publishTime") or item.get("publishDate") or "").strip()
-                native_id = str(item.get("id") or item.get("annId") or "").strip()
-                attach = str(item.get("attachPath") or item.get("url") or "").strip()
-                if not title or not published or not native_id or not attach:
-                    raise ValueError("SZSE announcement row lacks title/date/document/url identity")
-                source_url = (
-                    attach
-                    if attach.startswith(("http://", "https://"))
-                    else f"https://disc.static.szse.cn/download{attach if attach.startswith('/') else '/' + attach}"
+    browser_session: object | None = None
+    browser_warmed = False
+    if browser_session_factory is None:
+        browser_session_factory = _szse_browser_session_factory
+
+    try:
+        for window_start, window_end in _year_windows(start_date, end_date):
+            page = 1
+            expected_total: int | None = None
+            seen_documents: set[str] = set()
+            seen_urls: set[str] = set()
+
+            while True:
+                body: dict[str, object] = {
+                    "seDate": [
+                        window_start.strftime("%Y-%m-%d"),
+                        window_end.strftime("%Y-%m-%d"),
+                    ],
+                    "channelCode": ["listedNotice_disc"],
+                    "stock": [str(symbol).zfill(6)],
+                    "pageSize": 50,
+                    "pageNum": page,
+                }
+                try:
+                    payload = _post_json(
+                        SZSE_QUERY_URL,
+                        headers=headers,
+                        payload=body,
+                        timeout=timeout,
+                        expected_host="www.szse.cn",
+                    )
+                except Exception:
+                    if browser_session is None:
+                        browser_session = browser_session_factory()
+                    if not browser_warmed:
+                        try:
+                            bootstrap_headers = {
+                                "Accept": (
+                                    "text/html,application/xhtml+xml,application/xml;"
+                                    "q=0.9,*/*;q=0.8"
+                                ),
+                                "Accept-Language": headers["Accept-Language"],
+                                "User-Agent": headers["User-Agent"],
+                            }
+                            bootstrap = browser_session.get(
+                                SZSE_REFERER,
+                                headers=bootstrap_headers,
+                                impersonate="chrome",
+                                timeout=min(timeout, 10.0),
+                                allow_redirects=True,
+                            )
+                            _validate_https_host(
+                                getattr(bootstrap, "url", SZSE_REFERER),
+                                expected_host="www.szse.cn",
+                            )
+                        except Exception:
+                            pass
+                        browser_warmed = True
+                    payload = _szse_browser_post_json(
+                        browser_session,
+                        url=SZSE_QUERY_URL,
+                        headers=headers,
+                        payload=body,
+                        timeout=timeout,
+                    )
+
+                data = payload.get("data")
+                if not isinstance(data, list):
+                    raise ValueError("SZSE announcement payload data must be a list")
+                try:
+                    total = int(payload.get("announceCount"))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "SZSE announcement payload lacks valid announceCount"
+                    ) from exc
+                if total < 0:
+                    raise ValueError("SZSE announceCount cannot be negative")
+                if expected_total is None:
+                    expected_total = total
+                elif total != expected_total:
+                    raise ValueError(
+                        f"SZSE announceCount drifted within window: "
+                        f"{expected_total} -> {total}"
+                    )
+
+                if len(data) > 50:
+                    raise ValueError(
+                        "SZSE announcement page exceeds requested pageSize"
+                    )
+
+                for item in data:
+                    if not isinstance(item, dict):
+                        raise ValueError("SZSE announcement item must be an object")
+                    raw_code = item.get("secCode") or item.get("securityCode") or symbol
+                    target_code = str(symbol).zfill(6)
+                    if isinstance(raw_code, list):
+                        normalized_codes = {
+                            "".join(ch for ch in str(value) if ch.isdigit()).zfill(6)
+                            for value in raw_code
+                        }
+                        if target_code not in normalized_codes:
+                            raise ValueError(
+                                "SZSE announcement item security identity drifted"
+                            )
+                        code = target_code
+                    else:
+                        code = "".join(
+                            ch for ch in str(raw_code) if ch.isdigit()
+                        ).zfill(6)
+                        if code != target_code:
+                            raise ValueError(
+                                "SZSE announcement item security identity drifted"
+                            )
+
+                    title = re.sub(
+                        r"<[^>]+>", "", str(item.get("title") or "")
+                    ).strip()
+                    published = str(
+                        item.get("publishTime") or item.get("publishDate") or ""
+                    ).strip()
+                    native_id = str(
+                        item.get("id") or item.get("annId") or ""
+                    ).strip()
+                    attach = str(
+                        item.get("attachPath") or item.get("url") or ""
+                    ).strip()
+                    if not title or not published or not native_id or not attach:
+                        raise ValueError(
+                            "SZSE announcement row lacks title/date/document/url identity"
+                        )
+                    if native_id in seen_documents:
+                        raise ValueError(
+                            f"SZSE duplicate document across pages: {native_id}"
+                        )
+                    source_url = (
+                        attach
+                        if attach.startswith(("http://", "https://"))
+                        else (
+                            "https://disc.static.szse.cn/download"
+                            + (attach if attach.startswith("/") else "/" + attach)
+                        )
+                    )
+                    parsed_source = urlparse(source_url)
+                    if (
+                        parsed_source.scheme != "https"
+                        or (parsed_source.hostname or "").lower()
+                        != "disc.static.szse.cn"
+                    ):
+                        raise ValueError(
+                            "SZSE canonical document URL must use official HTTPS static host"
+                        )
+                    if source_url in seen_urls:
+                        raise ValueError(
+                            f"SZSE duplicate document URL across pages: {source_url}"
+                        )
+                    seen_documents.add(native_id)
+                    seen_urls.add(source_url)
+                    rows.append(
+                        {
+                            "symbol": target_code,
+                            "title": title,
+                            "publication_time": published,
+                            "document_id": native_id,
+                            "source_url": source_url,
+                        }
+                    )
+
+                if expected_total == 0:
+                    if data:
+                        raise ValueError(
+                            "SZSE returned records while announceCount is zero"
+                        )
+                    break
+                if len(seen_documents) > expected_total:
+                    raise ValueError(
+                        "SZSE fetched records exceed advertised announceCount"
+                    )
+                if len(seen_documents) == expected_total:
+                    break
+                if not data:
+                    raise ValueError(
+                        "SZSE pagination ended before advertised announceCount"
+                    )
+
+                page += 1
+                if page > 500:
+                    raise ValueError(
+                        "SZSE pagination exceeded defensive limit before announceCount"
+                    )
+
+            if expected_total is None:
+                raise ValueError("SZSE pagination returned no announceCount")
+            if len(seen_documents) != expected_total:
+                raise ValueError(
+                    "SZSE pagination incomplete for yearly window: "
+                    f"fetched={len(seen_documents)} total={expected_total}"
                 )
-                rows.append(
-                    {
-                        "symbol": str(symbol).zfill(6),
-                        "title": title,
-                        "publication_time": published,
-                        "document_id": native_id,
-                        "source_url": source_url,
-                    }
-                )
-            if len(data) < 50:
-                break
-            page += 1
-            if page > 500:
-                raise ValueError("SZSE pagination exceeded defensive limit")
+    finally:
+        if browser_session is not None:
+            close = getattr(browser_session, "close", None)
+            if callable(close):
+                close()
+
     if not rows:
-        return pd.DataFrame(columns=["symbol", "title", "publication_time", "document_id", "source_url"])
-    out = pd.DataFrame(rows).drop_duplicates(
-        subset=["symbol", "publication_time", "document_id", "source_url"], keep="first"
-    )
+        return pd.DataFrame(
+            columns=[
+                "symbol",
+                "title",
+                "publication_time",
+                "document_id",
+                "source_url",
+            ]
+        )
+    out = pd.DataFrame(rows)
+    if out.duplicated(
+        subset=["symbol", "publication_time", "document_id", "source_url"],
+        keep=False,
+    ).any():
+        raise ValueError("SZSE archive contains duplicate canonical identities")
     return out.sort_values(["publication_time", "document_id"]).reset_index(drop=True)
 
 

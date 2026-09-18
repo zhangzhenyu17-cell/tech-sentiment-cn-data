@@ -32,7 +32,7 @@ from tech_sentiment.pit_public_materialization import (
 from tech_sentiment.pit_replay_audit import audit_pit_replay
 
 
-ISSUER_PIT_CHECKPOINT_VERSION = "issuer-pit-exact-identity-v2"
+ISSUER_PIT_CHECKPOINT_VERSION = "issuer-pit-exact-identity-v3-success-only"
 
 
 def _symbols(value: str) -> list[str]:
@@ -196,6 +196,22 @@ def _run_source(
                 errors=loaded.frames["errors"],
                 summary=dict(loaded.receipt.get("metadata", {}).get("summary") or {}),
             )
+            expected_entity = f"{str(symbol).zfill(6)}{_entity_suffix(symbol)}"
+            cached_complete = (
+                len(result.coverage) == 1
+                and "query_status" in result.coverage.columns
+                and result.coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").all()
+                and "source_identity" in result.coverage.columns
+                and result.coverage["source_identity"].astype(str).eq(source).all()
+                and "entity_id" in result.coverage.columns
+                and result.coverage["entity_id"].astype(str).eq(expected_entity).all()
+                and len(result.errors) == 0
+            )
+            if not cached_complete:
+                raise ValueError(
+                    "issuer checkpoint must contain exactly one successful "
+                    "COMPLETE_WINDOW source/entity result"
+                )
             if len(result.records):
                 result = PitMaterializationResult(
                     records=validate_materialized_pit_records(result.records),
@@ -209,21 +225,33 @@ def _run_source(
             stable_summary = canonicalize_metadata(result.summary)
             if not isinstance(stable_summary, dict):
                 raise ValueError("issuer PIT checkpoint summary must be a mapping")
-            store.save(
-                identity,
-                frames={
-                    "records": canonicalize_frame(result.records),
-                    "coverage": canonicalize_frame(result.coverage),
-                    "errors": result.errors,
-                },
-                metadata={"summary": stable_summary},
-            )
             result = PitMaterializationResult(
                 records=canonicalize_frame(result.records),
                 coverage=canonicalize_frame(result.coverage),
                 errors=result.errors,
                 summary=stable_summary,
             )
+            expected_entity = f"{str(symbol).zfill(6)}{_entity_suffix(symbol)}"
+            checkpointable = (
+                len(result.coverage) == 1
+                and "query_status" in result.coverage.columns
+                and result.coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").all()
+                and "source_identity" in result.coverage.columns
+                and result.coverage["source_identity"].astype(str).eq(source).all()
+                and "entity_id" in result.coverage.columns
+                and result.coverage["entity_id"].astype(str).eq(expected_entity).all()
+                and len(result.errors) == 0
+            )
+            if checkpointable:
+                store.save(
+                    identity,
+                    frames={
+                        "records": result.records,
+                        "coverage": result.coverage,
+                        "errors": result.errors,
+                    },
+                    metadata={"summary": stable_summary},
+                )
             executed += 1
         tail_omitted += int(result.summary.get("tail_records_beyond_asof_not_materialized") or 0)
         if len(result.records):
