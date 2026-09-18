@@ -102,7 +102,12 @@ def test_all_expensive_jobs_are_blocked_by_unified_fast_fail_gate():
         "derived_aggregate",
         "finalize",
     ):
-        block = text.split(f"  {job}:", 1)[1].split("\n  ", 1)[0]
+        match = re.search(
+            rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [A-Za-z0-9_]+:\n|\\Z)",
+            text,
+        )
+        assert match is not None
+        block = match.group(1)
         assert "needs:" in block
         assert "preflight_gate" in block
     assert "needs.preflight.outputs.end_date" not in text
