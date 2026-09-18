@@ -5,6 +5,7 @@ from hashlib import sha256
 import io
 import json
 import re
+import unicodedata
 from typing import Callable, Iterable, Mapping
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlparse
@@ -23,7 +24,7 @@ from .pit_public_materialization import (
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v7-multi-text-engine-safe-units-revision-time"
+FILING_PARSER_VERSION = "official-filing-facts-v8-multi-text-engine-format-safe-units-revision-time"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -362,16 +363,7 @@ def _pdfplumber_text(content: bytes) -> str:
 
 
 def extract_pdf_text(content: bytes) -> str:
-    """Extract the embedded text layer through conservative parser fallbacks.
-
-    Order:
-    1. pypdf layout mode;
-    2. pypdf ordinary text mode, but only when it restores an explicit unit;
-    3. pdfplumber/pdfminer, but only when it restores an explicit unit.
-
-    All paths read the same immutable official PDF bytes. OCR, image inference,
-    unit inference and non-official substitute documents are deliberately absent.
-    """
+    """Extract the same immutable PDF text layer through independent engines."""
 
     try:
         from pypdf import PdfReader
@@ -379,6 +371,7 @@ def extract_pdf_text(content: bytes) -> str:
         raise RuntimeError("pypdf is required for official filing parsing") from exc
 
     reader = PdfReader(io.BytesIO(content), strict=False)
+    extraction_errors: list[str] = []
 
     def _collect(*, layout: bool) -> str:
         parts: list[str] = []
@@ -392,31 +385,41 @@ def extract_pdf_text(content: bytes) -> str:
                 parts.append(text)
         return "\n".join(parts).strip()
 
-    layout_text = _collect(layout=True)
+    try:
+        layout_text = _collect(layout=True)
+    except Exception as exc:
+        extraction_errors.append(f"pypdf_layout:{type(exc).__name__}:{exc}")
+        layout_text = ""
     if layout_text and _has_explicit_unit_declaration(
         _normalize_text_lines(layout_text)
     ):
         return layout_text
 
-    plain_text = _collect(layout=False)
+    try:
+        plain_text = _collect(layout=False)
+    except Exception as exc:
+        extraction_errors.append(f"pypdf_plain:{type(exc).__name__}:{exc}")
+        plain_text = ""
     if plain_text and _has_explicit_unit_declaration(
         _normalize_text_lines(plain_text)
     ):
         return plain_text
 
-    miner_text = _pdfplumber_text(content)
+    try:
+        miner_text = _pdfplumber_text(content)
+    except Exception as exc:
+        extraction_errors.append(f"pdfplumber:{type(exc).__name__}:{exc}")
+        miner_text = ""
     if miner_text and _has_explicit_unit_declaration(
         _normalize_text_lines(miner_text)
     ):
         return miner_text
 
-    if layout_text:
-        return layout_text
-    if plain_text:
-        return plain_text
-    if miner_text:
-        return miner_text
-    raise ValueError("official filing has no extractable text layer")
+    for candidate in (layout_text, plain_text, miner_text):
+        if candidate:
+            return candidate
+    detail = " | ".join(extraction_errors) if extraction_errors else "no text"
+    raise ValueError(f"official filing has no extractable text layer: {detail}")
 
 
 def filing_period_end_from_title(title: object) -> pd.Timestamp:
@@ -459,9 +462,14 @@ def _parse_numeric_token(token: str) -> float:
 
 
 def _explicit_unit_from_text(value: str) -> str | None:
-    """Read only an explicit 单位 declaration while ignoring PDF layout whitespace."""
+    """Read only an explicit 单位 declaration despite PDF format artifacts."""
 
-    compact = re.sub(r"\s+", "", str(value))
+    normalized = unicodedata.normalize("NFKC", str(value))
+    compact = "".join(
+        char
+        for char in normalized
+        if not char.isspace() and unicodedata.category(char) != "Cf"
+    )
     match = _UNIT_RE.search(compact)
     return str(match.group(1)) if match else None
 
