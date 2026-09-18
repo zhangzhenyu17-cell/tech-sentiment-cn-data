@@ -1,6 +1,9 @@
 import pandas as pd
 
 from tech_sentiment.capital_input_data import (
+    SSE_ETF_SCALE_QUERY_URL,
+    _fetch_sse_etf_scale_direct,
+    _sse_etf_scale_payload_frame,
     combine_sse_szse_a_share_turnover,
     fetch_sse_szse_a_share_turnover_history,
     normalize_sse_a_share_turnover,
@@ -35,6 +38,80 @@ def test_etf_normalization_and_coverage_does_not_fill_missing_days():
     assert bool(coverage.iloc[-1]["eligible"])
     assert int(coverage["observed"].sum()) == 48
 
+
+
+
+def test_sse_etf_scale_direct_normalizes_official_tot_vol_10k_shares():
+    payload = {
+        "result": [
+            {
+                "NUM": "1",
+                "SEC_CODE": "588000",
+                "SEC_NAME": "科创50ETF",
+                "ETF_TYPE": "股票型",
+                "STAT_DATE": "2026-09-17",
+                "TOT_VOL": "900001.23",
+            }
+        ]
+    }
+    frame = _sse_etf_scale_payload_frame(payload)
+    assert frame.loc[0, "基金代码"] == "588000"
+    assert str(frame.loc[0, "统计日期"]) == "2026-09-17"
+    assert frame.loc[0, "基金份额"] == 9_000_012_300.0
+
+
+def test_sse_etf_scale_direct_uses_same_official_https_browser_fallback():
+    calls: list[tuple[str, str]] = []
+
+    class FakeResponse:
+        def __init__(self, *, payload=None, json_error=None):
+            self.url = SSE_ETF_SCALE_QUERY_URL
+            self.status_code = 200
+            self._payload = payload
+            self._json_error = json_error
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            if self._json_error is not None:
+                raise self._json_error
+            return self._payload
+
+    def plain_get(url, **kwargs):
+        calls.append(("plain", url))
+        return FakeResponse(json_error=ValueError("not json"))
+
+    def browser_get(url, **kwargs):
+        calls.append(("browser", url))
+        assert kwargs["impersonate"] == "chrome"
+        return FakeResponse(
+            payload={
+                "result": [
+                    {
+                        "NUM": "1",
+                        "SEC_CODE": "588000",
+                        "SEC_NAME": "科创50ETF",
+                        "ETF_TYPE": "股票型",
+                        "STAT_DATE": "2026-09-17",
+                        "TOT_VOL": "900001.23",
+                    }
+                ]
+            }
+        )
+
+    frame = _fetch_sse_etf_scale_direct(
+        "20260917",
+        plain_get=plain_get,
+        browser_get=browser_get,
+    )
+
+    assert calls == [
+        ("plain", SSE_ETF_SCALE_QUERY_URL),
+        ("browser", SSE_ETF_SCALE_QUERY_URL),
+    ]
+    assert frame.loc[0, "基金代码"] == "588000"
+    assert frame.loc[0, "基金份额"] == 9_000_012_300.0
 
 def test_sse_szse_turnover_normalization_matches_frozen_d1_scope():
     sse_raw = pd.DataFrame({

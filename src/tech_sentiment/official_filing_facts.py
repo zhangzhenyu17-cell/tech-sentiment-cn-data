@@ -23,7 +23,7 @@ from .pit_public_materialization import (
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v3-layout-safe-units-revision-time"
+FILING_PARSER_VERSION = "official-filing-facts-v4-fragmented-label-safe-units-revision-time"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -453,16 +453,57 @@ def _wrapped_label_match(text: str, labels: Iterable[str]) -> re.Match[str] | No
     return None
 
 
+def _fragmented_label_value(
+    lines: list[str],
+    index: int,
+    labels: Iterable[str],
+    *,
+    max_lines: int = 3,
+) -> float | None:
+    """Recover a table row whose numeric cell splits the visual label itself.
+
+    Some annual-report PDFs place the first numeric cell before the final glyphs
+    of a wrapped Chinese label. Normal whitespace-tolerant matching cannot
+    recover that layout. This helper is deliberately narrow: the first physical
+    line must contain the beginning of the target label, only three physical
+    lines are considered, numeric tokens are removed only for label recognition,
+    and the original window is retained for value extraction.
+    """
+
+    first_line = _compact_row_text(lines[index])
+    candidates = [
+        label
+        for label in labels
+        if label[: min(4, len(label))] in first_line
+    ]
+    if not candidates:
+        return None
+    window = " ".join(lines[index : min(len(lines), index + max_lines)])
+    projection = _compact_row_text(_NUMERIC_TOKEN_RE.sub(" ", window))
+    if not any(label in projection for label in candidates):
+        return None
+    for token in _NUMERIC_TOKEN_RE.findall(window):
+        try:
+            value = _parse_numeric_token(token)
+        except ValueError:
+            continue
+        if pd.notna(value):
+            return float(value)
+    return None
+
 def _first_yuan_value_after_label(lines: list[str], labels: Iterable[str]) -> float | None:
     for index in range(len(lines)):
         logical_row = _logical_row_window(lines, index)
         label_match = _wrapped_label_match(logical_row, labels)
-        if label_match is None:
-            continue
         unit = _nearest_explicit_unit(lines, index)
         if unit != "元":
             # Missing/local non-yuan unit is not evidence for a canonical CNY
             # amount. Keep searching for another explicit yuan table occurrence.
+            continue
+        if label_match is None:
+            fragmented = _fragmented_label_value(lines, index, labels)
+            if fragmented is not None:
+                return fragmented
             continue
         # Preserve original whitespace after the label so adjacent numeric cells
         # can never be concatenated into one token.

@@ -92,42 +92,114 @@ def _validate_csrc_https_url(url: str) -> str:
     return text
 
 
-def _fetch_text(url: str, timeout: float = 30.0) -> str:
-    canonical = _validate_csrc_https_url(url)
-    request = Request(
+def _validate_csrc_response_url(url: object) -> str:
+    return _validate_csrc_https_url(str(url or ""))
+
+
+def _csrc_browser_bytes(
+    canonical: str,
+    *,
+    headers: Mapping[str, str],
+    timeout: float,
+    browser_get: Callable[..., object] | None = None,
+) -> bytes:
+    if browser_get is None:
+        try:
+            from curl_cffi import requests as curl_requests
+        except ImportError as exc:  # pragma: no cover - installed by the data extra
+            raise RuntimeError(
+                "curl_cffi is required for CSRC browser transport fallback"
+            ) from exc
+        browser_get = curl_requests.get
+
+    response = browser_get(
         canonical,
-        headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml",
-            "Referer": CSRC_OFFICIAL_ORIGIN + "/",
-        },
-        method="GET",
+        headers=dict(headers),
+        impersonate="chrome",
+        timeout=timeout,
+        allow_redirects=True,
     )
-    with urlopen(request, timeout=timeout) as response:  # nosec B310 - official HTTPS host checked above
-        raw = response.read()
+    response.raise_for_status()
+    _validate_csrc_response_url(getattr(response, "url", canonical))
+    raw = bytes(getattr(response, "content", b""))
     if not raw:
-        raise ValueError("CSRC archive returned an empty page")
+        raise ValueError("CSRC browser transport returned an empty response")
+    return raw
+
+
+def _fetch_text(
+    url: str,
+    timeout: float = 30.0,
+    *,
+    opener: Callable[..., object] = urlopen,
+    browser_get: Callable[..., object] | None = None,
+) -> str:
+    canonical = _validate_csrc_https_url(url)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Referer": CSRC_OFFICIAL_ORIGIN + "/",
+    }
+    request = Request(canonical, headers=headers, method="GET")
+    try:
+        with opener(request, timeout=timeout) as response:  # nosec B310 - official HTTPS host checked above
+            final_url = (
+                response.geturl()
+                if hasattr(response, "geturl")
+                else canonical
+            )
+            _validate_csrc_response_url(final_url)
+            raw = response.read()
+        if not raw:
+            raise ValueError("CSRC archive returned an empty page")
+    except Exception:
+        raw = _csrc_browser_bytes(
+            canonical,
+            headers=headers,
+            timeout=timeout,
+            browser_get=browser_get,
+        )
     return raw.decode("utf-8", errors="replace")
 
 
-def _fetch_json(url: str, timeout: float = 30.0) -> dict[str, object]:
+def _fetch_json(
+    url: str,
+    timeout: float = 30.0,
+    *,
+    opener: Callable[..., object] = urlopen,
+    browser_get: Callable[..., object] | None = None,
+) -> dict[str, object]:
     canonical = _validate_csrc_https_url(url)
-    request = Request(
-        canonical,
-        headers={
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
-            "Accept": "application/json,text/plain,*/*",
-            "Referer": CSRC_OFFICIAL_ORIGIN + "/",
-        },
-        method="GET",
-    )
-    with urlopen(request, timeout=timeout) as response:  # nosec B310 - official HTTPS host checked above
-        raw = response.read()
-    if not raw:
-        raise ValueError("CSRC JSON endpoint returned an empty response")
-    payload = json.loads(raw.decode("utf-8", errors="strict"))
-    if not isinstance(payload, dict):
-        raise ValueError("CSRC JSON endpoint must return an object")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+        "Accept": "application/json,text/plain,*/*",
+        "Referer": CSRC_OFFICIAL_ORIGIN + "/",
+    }
+    request = Request(canonical, headers=headers, method="GET")
+    try:
+        with opener(request, timeout=timeout) as response:  # nosec B310 - official HTTPS host checked above
+            final_url = (
+                response.geturl()
+                if hasattr(response, "geturl")
+                else canonical
+            )
+            _validate_csrc_response_url(final_url)
+            raw = response.read()
+        if not raw:
+            raise ValueError("CSRC JSON endpoint returned an empty response")
+        payload = json.loads(raw.decode("utf-8", errors="strict"))
+        if not isinstance(payload, dict):
+            raise ValueError("CSRC JSON endpoint must return an object")
+    except Exception:
+        raw = _csrc_browser_bytes(
+            canonical,
+            headers=headers,
+            timeout=timeout,
+            browser_get=browser_get,
+        )
+        payload = json.loads(raw.decode("utf-8", errors="strict"))
+        if not isinstance(payload, dict):
+            raise ValueError("CSRC JSON endpoint must return an object")
     return payload
 
 
