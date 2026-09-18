@@ -139,7 +139,10 @@ def verify_stage_receipt(
             raise ValueError(f"stage payload missing: {relative}")
         if file_sha256(file_path) != str(item.get("sha256") or ""):
             raise ValueError(f"stage payload hash mismatch: {relative}")
-        if int(item.get("bytes") or -1) != file_path.stat().st_size:
+        raw_bytes = item.get("bytes")
+        if raw_bytes is None:
+            raise ValueError(f"stage payload size missing: {relative}")
+        if int(raw_bytes) != file_path.stat().st_size:
             raise ValueError(f"stage payload size mismatch: {relative}")
     return payload
 
