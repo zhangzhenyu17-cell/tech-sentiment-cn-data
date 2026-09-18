@@ -34,7 +34,7 @@ from .pit_public_materialization import (
 )
 
 
-POLICY_CHECKPOINT_VERSION = "csrc-policy-json-page-document-v2"
+POLICY_CHECKPOINT_VERSION = "csrc-policy-json-page-document-v3-full-enumeration"
 
 
 def _channel_identity(
@@ -337,11 +337,9 @@ def materialize_csrc_policy_archive_resumable(
                 )
                 executed_channels += 1
             expected_total: int | None = None
-            previous_oldest_timestamp: pd.Timestamp | None = None
             pages_read = 0
             seen_manuscripts: set[str] = set()
             seen_urls: set[str] = set()
-            reached_start = False
 
             for page in range(1, max_pages_per_segment + 1):
                 url = _search_list_url(
@@ -393,21 +391,6 @@ def materialize_csrc_policy_archive_resumable(
                         f"{expected_total} -> {total}"
                     )
 
-                if entries:
-                    page_timestamps = [
-                        pd.Timestamp(entry.publication_timestamp) for entry in entries
-                    ]
-                    page_newest = max(page_timestamps)
-                    page_oldest = min(page_timestamps)
-                    if (
-                        previous_oldest_timestamp is not None
-                        and page_newest > previous_oldest_timestamp
-                    ):
-                        raise ValueError(
-                            f"CSRC cross-page publication order drift for {channel.channel_code}"
-                        )
-                    previous_oldest_timestamp = page_oldest
-
                 for entry in entries:
                     if entry.manuscript_id in seen_manuscripts:
                         raise ValueError(
@@ -427,27 +410,35 @@ def materialize_csrc_policy_archive_resumable(
                             )
                         all_entries[entry.url] = entry
 
-                if entries and min(item.publication_date for item in entries) <= start:
-                    reached_start = True
+                if expected_total == 0:
                     break
-                if expected_total == 0 or len(seen_manuscripts) >= expected_total:
-                    reached_start = True
+                if len(seen_manuscripts) > expected_total:
+                    raise ValueError(
+                        f"CSRC fetched records exceed advertised total for {channel.channel_code}"
+                    )
+                if len(seen_manuscripts) == expected_total:
                     break
                 if not entries:
                     raise ValueError(
                         f"CSRC searchList ended before advertised total for {channel.channel_code}"
                     )
 
-            if not reached_start:
+            if expected_total is None:
                 raise ValueError(
-                    f"CSRC pagination limit reached before start date for {channel.channel_code}"
+                    f"CSRC searchList returned no pagination metadata for {channel.channel_code}"
+                )
+            if len(seen_manuscripts) != expected_total:
+                raise ValueError(
+                    f"CSRC pagination limit reached before advertised total for {channel.channel_code}: "
+                    f"fetched={len(seen_manuscripts)} total={expected_total}"
                 )
             segment_meta[segment] = {
                 "pages_read": pages_read,
                 "channel_code": channel.channel_code,
                 "channel_id": channel.channel_id,
                 "channel_name": channel.channel_name,
-                "advertised_total": int(expected_total or 0),
+                "advertised_total": int(expected_total),
+                "enumeration_mode": "FULL_ADVERTISED_TOTAL",
             }
         except Exception as exc:
             segment_failed[segment] = True
@@ -528,7 +519,7 @@ def materialize_csrc_policy_archive_resumable(
     summary = {
         "source_identity": POLICY_SOURCE_ID,
         "provider": POLICY_PROVIDER,
-        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V2",
+        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V3_FULL_ENUMERATION",
         "start_date": str(start.date()),
         "end_date": str(end.date()),
         "coverage_segments": sorted(CSRC_CHANNELS),

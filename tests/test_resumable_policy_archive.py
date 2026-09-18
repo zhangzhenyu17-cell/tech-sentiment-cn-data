@@ -191,7 +191,7 @@ def test_policy_duplicate_across_pages_fails_closed(tmp_path):
     assert result.errors["error"].str.contains("duplicate", case=False).any()
 
 
-def test_policy_cross_page_order_drift_fails_closed(tmp_path):
+def test_policy_cross_page_order_drift_is_safe_under_full_enumeration(tmp_path):
     calls: list[str] = []
 
     def fetcher(url: str) -> dict[str, object]:
@@ -226,10 +226,11 @@ def test_policy_cross_page_order_drift_fails_closed(tmp_path):
         article_fetcher=lambda url: "official article",
         page_size=1,
     )
+
     orders = result.coverage[
         result.coverage["coverage_segment"].eq("CSRC_ORDERS")
     ].iloc[0]
-    assert orders["query_status"] == "FAILED"
-    assert result.errors["error"].str.contains(
-        "cross-page publication order drift", regex=False
-    ).any()
+    assert orders["query_status"] == "COMPLETE_WINDOW"
+    assert result.summary["source_coverage_complete"] is True
+    assert result.summary["readiness_state"] == "QUALIFIED_INPUT"
+    assert len(result.errors) == 0

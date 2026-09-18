@@ -303,7 +303,6 @@ def parse_csrc_search_page(
     entries: list[PolicyListEntry] = []
     seen_manuscripts: set[str] = set()
     seen_urls: set[str] = set()
-    timestamps: list[pd.Timestamp] = []
     for item in raw_results:
         if not isinstance(item, Mapping):
             raise ValueError("CSRC searchList item must be an object")
@@ -333,7 +332,6 @@ def parse_csrc_search_page(
             raise ValueError("CSRC publication timestamp is invalid") from exc
         if pd.isna(published):
             raise ValueError("CSRC publication timestamp is invalid")
-        timestamps.append(published)
         entries.append(
             PolicyListEntry(
                 segment=channel.segment,
@@ -347,13 +345,6 @@ def parse_csrc_search_page(
                 channel_id=channel.channel_id,
             )
         )
-
-    # The official endpoint is a newest-first channel archive. A changed order
-    # invalidates the stop-at-start pagination proof, so fail closed.
-    if timestamps and any(
-        later > earlier for earlier, later in zip(timestamps, timestamps[1:])
-    ):
-        raise ValueError("CSRC searchList page is not newest-first")
 
     return entries, {"page": page, "rows": rows, "total": total}
 
@@ -457,13 +448,19 @@ def _enumerate_channel(
     retry_attempts: int,
     retry_backoff_seconds: float,
 ) -> tuple[list[PolicyListEntry], dict[str, object]]:
+    """Enumerate the full advertised CSRC channel before date filtering.
+
+    The official searchList endpoint does not guarantee strict publication-time
+    ordering for every channel. Coverage therefore cannot rely on newest-first
+    early stopping. We instead prove completeness against the endpoint's stable
+    advertised total, while retaining strict identity and duplicate checks.
+    """
+
     entries: list[PolicyListEntry] = []
     seen_manuscripts: set[str] = set()
     seen_urls: set[str] = set()
     expected_total: int | None = None
-    previous_oldest_timestamp: pd.Timestamp | None = None
     pages_read = 0
-    reached_start = False
 
     for page in range(1, max_pages + 1):
         url = _search_list_url(channel.channel_id, page=page, page_size=page_size)
@@ -484,20 +481,6 @@ def _enumerate_channel(
                 f"CSRC total drift for {channel.channel_code}: "
                 f"{expected_total} -> {total}"
             )
-        if page_entries:
-            page_timestamps = [
-                pd.Timestamp(entry.publication_timestamp) for entry in page_entries
-            ]
-            page_newest = max(page_timestamps)
-            page_oldest = min(page_timestamps)
-            if (
-                previous_oldest_timestamp is not None
-                and page_newest > previous_oldest_timestamp
-            ):
-                raise ValueError(
-                    f"CSRC cross-page publication order drift for {channel.channel_code}"
-                )
-            previous_oldest_timestamp = page_oldest
 
         for entry in page_entries:
             if entry.manuscript_id in seen_manuscripts:
@@ -511,31 +494,34 @@ def _enumerate_channel(
             if start <= entry.publication_date <= end:
                 entries.append(entry)
 
-        if page_entries:
-            oldest = min(entry.publication_date for entry in page_entries)
-            if oldest <= start:
-                reached_start = True
-                break
-
-        fetched = len(seen_manuscripts)
-        if expected_total == 0 or fetched >= expected_total:
-            reached_start = True
+        if expected_total == 0:
+            break
+        if len(seen_manuscripts) > expected_total:
+            raise ValueError(
+                f"CSRC fetched records exceed advertised total for {channel.channel_code}"
+            )
+        if len(seen_manuscripts) == expected_total:
             break
         if not page_entries:
             raise ValueError(
                 f"CSRC searchList ended before advertised total for {channel.channel_code}"
             )
 
-    if not reached_start:
+    if expected_total is None:
+        raise ValueError(f"CSRC searchList returned no pagination metadata for {channel.channel_code}")
+    if len(seen_manuscripts) != expected_total:
         raise ValueError(
-            f"CSRC pagination limit reached before start date for {channel.channel_code}"
+            f"CSRC pagination limit reached before advertised total for {channel.channel_code}: "
+            f"fetched={len(seen_manuscripts)} total={expected_total}"
         )
+
     return entries, {
         "pages_read": pages_read,
         "channel_code": channel.channel_code,
         "channel_id": channel.channel_id,
         "channel_name": channel.channel_name,
-        "advertised_total": int(expected_total or 0),
+        "advertised_total": int(expected_total),
+        "enumeration_mode": "FULL_ADVERTISED_TOTAL",
     }
 
 
@@ -710,7 +696,7 @@ def materialize_csrc_policy_archive(
     summary = {
         "source_identity": POLICY_SOURCE_ID,
         "provider": POLICY_PROVIDER,
-        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V2",
+        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V3_FULL_ENUMERATION",
         "start_date": str(start.date()),
         "end_date": str(end.date()),
         "coverage_segments": sorted(CSRC_CHANNELS),
