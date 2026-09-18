@@ -7,6 +7,8 @@ from typing import Callable, Iterable
 import numpy as np
 import pandas as pd
 
+from .bounded_retry import call_with_bounded_network_retry
+
 SSE_ETF_SHARE_SOURCE_ID = "SSE_ETF_SCALE_DAILY"
 SSE_ETF_SHARE_SOURCE_URL = "https://www.sse.com.cn/assortment/fund/etf/list/scale/"
 SSE_TURNOVER_SOURCE_ID = "SSE_DAILY_STOCK_OVERVIEW"
@@ -95,6 +97,8 @@ def fetch_sse_etf_share_history(
     fund_codes: Iterable[str],
     sleep_seconds: float = 0.05,
     fetcher: Callable[[str], pd.DataFrame] | None = None,
+    retry_attempts: int = 3,
+    retry_backoff_seconds: float = 0.5,
 ) -> EtfShareFetchResult:
     if fetcher is None:
         import akshare as ak  # type: ignore
@@ -108,7 +112,11 @@ def fetch_sse_etf_share_history(
     for value in dates:
         date_arg = pd.Timestamp(value).strftime("%Y%m%d")
         try:
-            raw = fetcher(date_arg)
+            raw = call_with_bounded_network_retry(
+                lambda: fetcher(date_arg),
+                attempts=retry_attempts,
+                backoff_seconds=retry_backoff_seconds,
+            )
             normalized = normalize_sse_etf_share_snapshot(
                 raw, observation_date=value, fund_codes=fund_codes
             )
@@ -377,6 +385,8 @@ def fetch_sse_szse_a_share_turnover_history(
     sleep_seconds: float = 0.05,
     sse_fetcher: Callable[[str], pd.DataFrame] | None = None,
     szse_fetcher: Callable[[str], pd.DataFrame] | None = None,
+    retry_attempts: int = 3,
+    retry_backoff_seconds: float = 0.5,
 ) -> ExchangeTurnoverFetchResult:
     if sse_fetcher is None or szse_fetcher is None:
         import akshare as ak  # type: ignore
@@ -399,7 +409,12 @@ def fetch_sse_szse_a_share_turnover_history(
         try:
             sse_rows.append(
                 normalize_sse_a_share_turnover(
-                    sse_fetcher(date_arg), observation_date=value
+                    call_with_bounded_network_retry(
+                        lambda: sse_fetcher(date_arg),
+                        attempts=retry_attempts,
+                        backoff_seconds=retry_backoff_seconds,
+                    ),
+                    observation_date=value,
                 )
             )
         except Exception as exc:
@@ -413,7 +428,12 @@ def fetch_sse_szse_a_share_turnover_history(
         try:
             szse_rows.append(
                 normalize_szse_a_share_turnover(
-                    szse_fetcher(date_arg), observation_date=value
+                    call_with_bounded_network_retry(
+                        lambda: szse_fetcher(date_arg),
+                        attempts=retry_attempts,
+                        backoff_seconds=retry_backoff_seconds,
+                    ),
+                    observation_date=value,
                 )
             )
         except Exception as exc:
