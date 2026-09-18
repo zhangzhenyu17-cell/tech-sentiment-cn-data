@@ -16,6 +16,8 @@ dev = ["pytest>=8.0"]
 data = [
   "akshare>=1.18.94",
   "beautifulsoup4>=4.12,<5",
+  "curl_cffi>=0.13,<1",
+  "pdfminer.six>=20231228,<2027",
   "pypdf>=5.0,<7",
   "requests>=2.32,<3",
 ]
