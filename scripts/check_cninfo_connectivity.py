@@ -101,6 +101,36 @@ def _select_numeric_report_candidate(
             "no eligible numeric Chinese financial report with immutable HTTPS attachment"
         )
 
+    eligible["_document_id"] = eligible["公告链接"].map(_announcement_id)
+    duplicate_identity = eligible.duplicated("_document_id", keep=False)
+    if duplicate_identity.any():
+        conflicts = (
+            eligible.loc[duplicate_identity]
+            .groupby("_document_id", sort=False)
+            .agg(
+                titles=("公告标题", lambda values: tuple(sorted(set(map(str, values))))),
+                attachments=(
+                    "公告附件链接",
+                    lambda values: tuple(sorted(set(map(str, values)))),
+                ),
+                publications=(
+                    "公告时间",
+                    lambda values: tuple(sorted(set(map(str, values)))),
+                ),
+            )
+        )
+        for document_id, row in conflicts.iterrows():
+            if (
+                len(row["titles"]) != 1
+                or len(row["attachments"]) != 1
+                or len(row["publications"]) != 1
+            ):
+                raise ValueError(
+                    "conflicting duplicate immutable CNINFO document identity: "
+                    f"{document_id}"
+                )
+        eligible = eligible.drop_duplicates("_document_id", keep="first").copy()
+
     eligible["_publication_order"] = pd.to_datetime(
         eligible["公告时间"], errors="raise"
     )
@@ -125,7 +155,7 @@ def _select_numeric_report_candidate(
         )
 
     return (
-        latest.iloc[0].drop(labels=["_publication_order"]),
+        latest.iloc[0].drop(labels=["_publication_order", "_document_id"]),
         int(len(raw_matches)),
         int(len(eligible)),
     )
