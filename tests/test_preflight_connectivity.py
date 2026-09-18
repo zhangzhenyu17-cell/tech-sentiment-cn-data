@@ -4,6 +4,7 @@ import pandas as pd
 
 
 issuer_probe = runpy.run_path("scripts/check_issuer_archive_connectivity.py")
+policy_probe = runpy.run_path("scripts/check_csrc_policy_connectivity.py")
 
 
 def test_issuer_preflight_retries_transient_transport_reset(monkeypatch):
@@ -42,3 +43,23 @@ def test_issuer_preflight_retries_transient_transport_reset(monkeypatch):
     assert result["protocol_ok"] is True
     assert result["document_id_present"] is True
     assert result["official_https_url_present"] is True
+
+def test_policy_preflight_retries_transient_timeout_with_short_bound(monkeypatch):
+    calls = 0
+
+    def fetcher(url, timeout):
+        nonlocal calls
+        calls += 1
+        assert timeout == 10.0
+        if calls == 1:
+            raise TimeoutError("timed out")
+        return {"code": 200}
+
+    monkeypatch.setitem(policy_probe, "_fetch_json", fetcher)
+    policy_probe["_probe_fetch_json"].__globals__["_fetch_json"] = fetcher
+
+    result = policy_probe["_probe_fetch_json"]("https://www.csrc.gov.cn/getLocalList?channelCode=c101953")
+
+    assert calls == 2
+    assert result == {"code": 200}
+
