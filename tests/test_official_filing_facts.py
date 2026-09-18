@@ -197,3 +197,23 @@ def test_non_cninfo_or_non_403_download_failure_does_not_substitute_source():
     assert calls == [
         "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF"
     ]
+
+
+def test_cninfo_fallback_retries_transient_transport_failure_only():
+    calls: list[str] = []
+
+    def opener(request, timeout):
+        calls.append(request.full_url)
+        if len(calls) == 1:
+            raise HTTPError(request.full_url, 403, "Forbidden", hdrs=None, fp=None)
+        if len(calls) == 2:
+            raise ConnectionResetError(104, "reset")
+        return _FakeResponse(b"%PDF-1.7 retry success")
+
+    original = "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF"
+    downloaded = download_official_document(original, opener=opener)
+
+    assert downloaded.url == original
+    assert downloaded.retrieval_url == calls[-1]
+    assert len(calls) == 3
+    assert calls[1] == calls[2]
