@@ -48,6 +48,9 @@ jobs:
       - name: CNINFO protocol connectivity preflight
         run: python scripts/check_cninfo_connectivity.py
 
+      - name: CSRC policy protocol connectivity preflight
+        run: python scripts/check_csrc_policy_connectivity.py
+
       - name: Resolve end date
         id: dates
         shell: bash
@@ -68,6 +71,10 @@ jobs:
             --calendar-index-code "000688" \
             --source-commit "${{ github.sha }}" \
             --out-dir stage/shared
+
+      - name: Latest public-source freshness preflight
+        run: |
+          python scripts/check_v4a_source_freshness.py             --calendar-csv stage/shared/trading_calendar.csv
 
       - name: Build frozen Capital/PIT symbol scope
         run: |
