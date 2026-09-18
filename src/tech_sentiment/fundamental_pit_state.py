@@ -13,7 +13,11 @@ from .official_filing_facts import (
     FILING_PARSER_VERSION,
     latest_filing_fact_as_of,
 )
-from .pit_public_materialization import _stable_hash, validate_materialized_pit_records
+from .pit_public_materialization import (
+    REQUIRED_PIT_COLUMNS,
+    _stable_hash,
+    validate_materialized_pit_records,
+)
 
 
 CONTRACT_ID = "FUNDAMENTAL_PIT_STATE_CONTRACT_V1"
@@ -23,6 +27,20 @@ REQUIRED_FACTS = (
     "NET_PROFIT_PARENT",
     "OPERATING_CASH_FLOW_NET",
     "NET_PROFIT_MARGIN",
+)
+FUNDAMENTAL_STATE_EVIDENCE_COLUMNS = tuple(REQUIRED_PIT_COLUMNS) + (
+    "evidence_payload",
+    "source_url_identity",
+)
+FUNDAMENTAL_STATE_COVERAGE_COLUMNS = (
+    "source_identity",
+    "entity_id",
+    "period_end",
+    "evidence_available_date",
+    "state",
+    "complete_required_comparable_facts",
+    "missing_requirements",
+    "contract_id",
 )
 
 
@@ -183,8 +201,8 @@ def materialize_fundamental_state_evidence(
         raise ValueError(f"filing facts missing columns: {sorted(missing_columns)}")
     if facts.empty:
         return FundamentalStateMaterializationResult(
-            evidence=pd.DataFrame(),
-            coverage=pd.DataFrame(),
+            evidence=pd.DataFrame(columns=list(FUNDAMENTAL_STATE_EVIDENCE_COLUMNS)),
+            coverage=pd.DataFrame(columns=list(FUNDAMENTAL_STATE_COVERAGE_COLUMNS)),
             summary={
                 "contract_id": CONTRACT_ID,
                 "formula_version": FORMULA_VERSION,
@@ -324,11 +342,15 @@ def materialize_fundamental_state_evidence(
                 )
 
     evidence = (
-        validate_materialized_pit_records(pd.DataFrame(evidence_rows))
+        validate_materialized_pit_records(
+            pd.DataFrame(evidence_rows, columns=list(FUNDAMENTAL_STATE_EVIDENCE_COLUMNS))
+        )
         if evidence_rows
-        else pd.DataFrame()
+        else pd.DataFrame(columns=list(FUNDAMENTAL_STATE_EVIDENCE_COLUMNS))
     )
-    coverage = pd.DataFrame(coverage_rows)
+    coverage = pd.DataFrame(
+        coverage_rows, columns=list(FUNDAMENTAL_STATE_COVERAGE_COLUMNS)
+    )
     qualified = int(
         evidence["availability_state"].astype(str).eq("HISTORICAL_RECONSTRUCTABLE").sum()
     ) if len(evidence) else 0
@@ -373,6 +395,8 @@ __all__ = [
     "CONTRACT_ID",
     "FORMULA_VERSION",
     "REQUIRED_FACTS",
+    "FUNDAMENTAL_STATE_EVIDENCE_COLUMNS",
+    "FUNDAMENTAL_STATE_COVERAGE_COLUMNS",
     "FundamentalStateMaterializationResult",
     "classify_complete_accounting_state",
     "materialize_fundamental_state_evidence",
