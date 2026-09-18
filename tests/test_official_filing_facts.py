@@ -1,4 +1,6 @@
 import json
+import sys
+from types import SimpleNamespace
 from urllib.error import HTTPError
 
 import pandas as pd
@@ -9,6 +11,7 @@ from tech_sentiment.official_filing_facts import (
     download_official_document,
     build_filing_fact_rows,
     derive_fundamental_trend_evidence,
+    extract_pdf_text,
     extract_standard_filing_facts,
     filing_period_end_from_title,
 )
@@ -20,6 +23,65 @@ def test_filing_period_end_is_derived_from_the_versioned_report_title():
     assert filing_period_end_from_title("某公司2026年半年度报告（修订版）") == pd.Timestamp("2026-06-30")
     assert filing_period_end_from_title("某公司2026年第三季度报告") == pd.Timestamp("2026-09-30")
 
+
+
+
+def test_pdf_text_falls_back_to_plain_only_when_layout_loses_explicit_unit(monkeypatch):
+    calls: list[str] = []
+
+    class FakePage:
+        def extract_text(self, extraction_mode=None):
+            if extraction_mode == "layout":
+                calls.append("layout")
+                return (
+                    "主要会计数据\n"
+                    "营业收入 124,099,843,771.99 106,190,154,843.76\n"
+                    "归属于上市公司股东的净利润 62,716,443,738.27 52,460,144,378.16\n"
+                )
+            calls.append("plain")
+            return (
+                "主要会计数据\n"
+                "单位：元 币种：人民币\n"
+                "营业收入 124,099,843,771.99 106,190,154,843.76\n"
+                "归属于上市公司股东的净利润 62,716,443,738.27 52,460,144,378.16\n"
+            )
+
+    class FakeReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [FakePage()]
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=FakeReader))
+
+    text = extract_pdf_text(b"%PDF-fixture")
+    facts = extract_standard_filing_facts(text)
+
+    assert calls == ["layout", "plain"]
+    assert "单位：元" in text
+    assert facts["OPERATING_REVENUE"] == 124_099_843_771.99
+    assert facts["NET_PROFIT_PARENT"] == 62_716_443_738.27
+
+
+def test_pdf_text_keeps_layout_when_layout_already_has_explicit_unit(monkeypatch):
+    calls: list[str] = []
+
+    class FakePage:
+        def extract_text(self, extraction_mode=None):
+            if extraction_mode == "layout":
+                calls.append("layout")
+                return "单位：元 币种：人民币\n营业收入 120.00 100.00"
+            calls.append("plain")
+            return "plain should not be selected"
+
+    class FakeReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [FakePage()]
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=FakeReader))
+
+    text = extract_pdf_text(b"%PDF-fixture")
+
+    assert calls == ["layout"]
+    assert text.startswith("单位：元")
 
 def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
     text = """
