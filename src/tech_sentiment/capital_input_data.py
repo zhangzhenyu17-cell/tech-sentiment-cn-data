@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+import re
 import time
 from typing import Callable, Iterable
 from urllib.parse import urlparse
@@ -13,6 +15,7 @@ from .bounded_retry import call_with_bounded_network_retry
 SSE_ETF_SHARE_SOURCE_ID = "SSE_ETF_SCALE_DAILY"
 SSE_ETF_SHARE_SOURCE_URL = "https://www.sse.com.cn/assortment/fund/etf/list/scale/"
 SSE_ETF_SCALE_QUERY_URL = "https://query.sse.com.cn/commonQuery.do"
+SSE_ETF_SCALE_SOA_QUERY_URL = "https://query.sse.com.cn/commonSoaQuery.do"
 SSE_ETF_SCALE_SQL_ID = "COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L"
 SSE_TURNOVER_SOURCE_ID = "SSE_DAILY_STOCK_OVERVIEW"
 SSE_TURNOVER_SOURCE_URL = "https://www.sse.com.cn/market/stockdata/overview/day/"
@@ -82,6 +85,34 @@ def _validate_sse_query_response_url(response: object) -> None:
     )
 
 
+def _sse_payload_from_response(response: object) -> dict[str, object]:
+    """Decode strict SSE JSON, accepting JSONP only when it wraps one JSON object."""
+
+    try:
+        payload = response.json()
+    except Exception:
+        text = str(getattr(response, "text", "") or "").strip()
+        match = re.fullmatch(r"[A-Za-z_$][\w$]*\((.*)\)\s*;?", text, flags=re.S)
+        if match is None:
+            raise
+        payload = json.loads(match.group(1))
+    if not isinstance(payload, dict):
+        raise ValueError("SSE ETF scale response is not a JSON object")
+    return payload
+
+
+def _sse_frame_from_response(response: object, *, interface_url: str) -> pd.DataFrame:
+    response.raise_for_status()
+    _validate_sse_response_url(
+        response,
+        expected_host="query.sse.com.cn",
+        default_url=interface_url,
+    )
+    frame = _sse_etf_scale_payload_frame(_sse_payload_from_response(response))
+    frame.attrs["provider_interface"] = interface_url
+    return frame
+
+
 def _fetch_sse_etf_scale_direct(
     date: str,
     *,
@@ -90,18 +121,18 @@ def _fetch_sse_etf_scale_direct(
     browser_get: Callable[..., object] | None = None,
     browser_session_factory: Callable[[], object] | None = None,
 ) -> pd.DataFrame:
-    """Fetch the official SSE ETF scale endpoint with bounded same-source fallbacks.
+    """Fetch SSE ETF shares through bounded official-interface fallbacks.
 
-    Transport order is plain HTTPS, one-shot browser-fingerprint HTTPS, then a
-    browser-fingerprint session warmed on the official SSE ETF scale page. Every
-    accepted response remains on the same official SSE HTTPS hosts and uses the
-    same SQL identity and raw field semantics.
+    All variants use the same official query host, the same frozen SQL identity,
+    the same requested STAT_DATE, and the same raw TOT_VOL semantics. The final
+    fallback uses SSE's sibling commonSoaQuery endpoint rather than weakening the
+    evidence source or accepting a stale/alternate date.
     """
 
     if len(date) != 8 or not date.isdigit():
         raise ValueError("SSE ETF scale date must be YYYYMMDD")
     stat_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
-    params = {
+    paged_params = {
         "isPagination": "true",
         "pageHelp.pageSize": "10000",
         "pageHelp.pageNo": "1",
@@ -111,33 +142,42 @@ def _fetch_sse_etf_scale_direct(
         "sqlId": SSE_ETF_SCALE_SQL_ID,
         "STAT_DATE": stat_date,
     }
+    soa_params = {
+        "isPagination": "false",
+        "sqlId": SSE_ETF_SCALE_SQL_ID,
+        "STAT_DATE": stat_date,
+    }
     headers = {
         "Referer": SSE_ETF_SHARE_SOURCE_URL,
         "Accept": "application/json,text/plain,*/*",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
         "X-Requested-With": "XMLHttpRequest",
+        "Pragma": "no-cache",
+        "Cache-Control": "no-cache",
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 Chrome/124 Safari/537.36"
         ),
     }
+    errors: list[str] = []
+
     if plain_get is None:
         import requests as plain_requests
-
         plain_get = plain_requests.get
+
     try:
         response = plain_get(
             SSE_ETF_SCALE_QUERY_URL,
-            params=params,
+            params=paged_params,
             headers=headers,
             timeout=timeout,
             allow_redirects=True,
         )
-        response.raise_for_status()
-        _validate_sse_query_response_url(response)
-        return _sse_etf_scale_payload_frame(response.json())
-    except Exception:
-        pass
+        return _sse_frame_from_response(
+            response, interface_url=SSE_ETF_SCALE_QUERY_URL
+        )
+    except Exception as exc:
+        errors.append(f"plain-common:{type(exc).__name__}:{exc}")
 
     curl_requests = None
     if browser_get is None or browser_session_factory is None:
@@ -153,17 +193,17 @@ def _fetch_sse_etf_scale_direct(
     try:
         response = browser_get(
             SSE_ETF_SCALE_QUERY_URL,
-            params=params,
+            params=paged_params,
             headers=headers,
             impersonate="chrome",
             timeout=timeout,
             allow_redirects=True,
         )
-        response.raise_for_status()
-        _validate_sse_query_response_url(response)
-        return _sse_etf_scale_payload_frame(response.json())
-    except Exception:
-        pass
+        return _sse_frame_from_response(
+            response, interface_url=SSE_ETF_SCALE_QUERY_URL
+        )
+    except Exception as exc:
+        errors.append(f"browser-common:{type(exc).__name__}:{exc}")
 
     if browser_session_factory is None:
         browser_session_factory = curl_requests.Session
@@ -188,26 +228,65 @@ def _fetch_sse_etf_scale_direct(
                 expected_host="www.sse.com.cn",
                 default_url=SSE_ETF_SHARE_SOURCE_URL,
             )
-            # WAF challenge responses can set useful domain cookies even when
-            # they are not 2xx, so warm-up is intentionally best-effort.
-        except Exception:
-            pass
+        except Exception as exc:
+            errors.append(f"session-bootstrap:{type(exc).__name__}:{exc}")
 
-        response = session.get(
-            SSE_ETF_SCALE_QUERY_URL,
-            params=params,
-            headers=headers,
-            impersonate="chrome",
-            timeout=timeout,
-            allow_redirects=True,
-        )
-        response.raise_for_status()
-        _validate_sse_query_response_url(response)
-        return _sse_etf_scale_payload_frame(response.json())
+        try:
+            response = session.get(
+                SSE_ETF_SCALE_QUERY_URL,
+                params=paged_params,
+                headers=headers,
+                impersonate="chrome",
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            return _sse_frame_from_response(
+                response, interface_url=SSE_ETF_SCALE_QUERY_URL
+            )
+        except Exception as exc:
+            errors.append(f"session-common:{type(exc).__name__}:{exc}")
+
+        try:
+            response = session.get(
+                SSE_ETF_SCALE_SOA_QUERY_URL,
+                params=soa_params,
+                headers=headers,
+                impersonate="chrome",
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            return _sse_frame_from_response(
+                response, interface_url=SSE_ETF_SCALE_SOA_QUERY_URL
+            )
+        except Exception as exc:
+            errors.append(f"session-soa:{type(exc).__name__}:{exc}")
+
+        # The SSE page historically uses JSONP for this same SQL contract.
+        # Keep it as a final protocol variant on the canonical commonQuery URL.
+        jsonp_params = dict(paged_params)
+        jsonp_params["jsonCallBack"] = "jsonpCallbackETFScale"
+        try:
+            response = session.get(
+                SSE_ETF_SCALE_QUERY_URL,
+                params=jsonp_params,
+                headers={**headers, "Accept": "*/*"},
+                impersonate="chrome",
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            return _sse_frame_from_response(
+                response, interface_url=SSE_ETF_SCALE_QUERY_URL
+            )
+        except Exception as exc:
+            errors.append(f"session-jsonp:{type(exc).__name__}:{exc}")
     finally:
         close = getattr(session, "close", None)
         if callable(close):
             close()
+
+    raise RuntimeError(
+        "SSE ETF official HTTPS transports exhausted; " + " | ".join(errors)
+    )
 
 def normalize_sse_etf_share_snapshot(
     frame: pd.DataFrame,
@@ -220,6 +299,9 @@ def normalize_sse_etf_share_snapshot(
     if missing:
         raise ValueError(f"SSE ETF snapshot missing columns: {sorted(missing)}")
     wanted = {str(code).zfill(6) for code in fund_codes}
+    provider_interface = str(
+        frame.attrs.get("provider_interface", SSE_ETF_SCALE_QUERY_URL)
+    )
     out = frame[["基金代码", "统计日期", "基金份额"]].copy()
     out["fund_code"] = (
         out["基金代码"].astype(str).str.extract(r"(\d+)", expand=False).str.zfill(6)
@@ -250,7 +332,7 @@ def normalize_sse_etf_share_snapshot(
     out["unit"] = "share"
     out["source_identity"] = SSE_ETF_SHARE_SOURCE_ID
     out["source_url"] = SSE_ETF_SHARE_SOURCE_URL
-    out["provider_interface"] = SSE_ETF_SCALE_QUERY_URL
+    out["provider_interface"] = provider_interface
     out["evidence_available_date"] = target
     return out[
         [

@@ -23,7 +23,7 @@ from .pit_public_materialization import (
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v6-dual-text-extraction-safe-units-revision-time"
+FILING_PARSER_VERSION = "official-filing-facts-v7-multi-text-engine-safe-units-revision-time"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -342,14 +342,35 @@ def download_official_document(
     )
 
 
-def extract_pdf_text(content: bytes) -> str:
-    """Extract the embedded text layer; OCR is deliberately not used.
+def _pdfplumber_text(content: bytes) -> str:
+    """Extract only the existing PDF text layer with pdfminer/pdfplumber; no OCR."""
 
-    Layout mode remains primary because it preserves table geometry on most
-    filings. Some older official PDFs drop unit-label text in layout mode while
-    preserving it in ordinary text extraction. In that narrow case, plain text
-    is used only when it restores an explicit unit declaration. Both paths read
-    the same immutable PDF bytes and never invoke OCR.
+    try:
+        import pdfplumber
+    except ImportError as exc:  # pragma: no cover - installed by the data extra
+        raise RuntimeError(
+            "pdfplumber is required for secondary official filing text extraction"
+        ) from exc
+
+    parts: list[str] = []
+    with pdfplumber.open(io.BytesIO(content)) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text(x_tolerance=2, y_tolerance=3) or ""
+            if text.strip():
+                parts.append(text)
+    return "\n".join(parts).strip()
+
+
+def extract_pdf_text(content: bytes) -> str:
+    """Extract the embedded text layer through conservative parser fallbacks.
+
+    Order:
+    1. pypdf layout mode;
+    2. pypdf ordinary text mode, but only when it restores an explicit unit;
+    3. pdfplumber/pdfminer, but only when it restores an explicit unit.
+
+    All paths read the same immutable official PDF bytes. OCR, image inference,
+    unit inference and non-official substitute documents are deliberately absent.
     """
 
     try:
@@ -372,23 +393,30 @@ def extract_pdf_text(content: bytes) -> str:
         return "\n".join(parts).strip()
 
     layout_text = _collect(layout=True)
-    plain_text = ""
-
-    if not layout_text:
-        plain_text = _collect(layout=False)
-        if not plain_text:
-            raise ValueError("official filing has no extractable text layer")
-        return plain_text
-
-    layout_lines = _normalize_text_lines(layout_text)
-    if _has_explicit_unit_declaration(layout_lines):
+    if layout_text and _has_explicit_unit_declaration(
+        _normalize_text_lines(layout_text)
+    ):
         return layout_text
 
     plain_text = _collect(layout=False)
-    if plain_text and _has_explicit_unit_declaration(_normalize_text_lines(plain_text)):
+    if plain_text and _has_explicit_unit_declaration(
+        _normalize_text_lines(plain_text)
+    ):
         return plain_text
 
-    return layout_text
+    miner_text = _pdfplumber_text(content)
+    if miner_text and _has_explicit_unit_declaration(
+        _normalize_text_lines(miner_text)
+    ):
+        return miner_text
+
+    if layout_text:
+        return layout_text
+    if plain_text:
+        return plain_text
+    if miner_text:
+        return miner_text
+    raise ValueError("official filing has no extractable text layer")
 
 
 def filing_period_end_from_title(title: object) -> pd.Timestamp:
