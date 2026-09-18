@@ -168,3 +168,14 @@ def test_manual_pipeline_has_explicit_failure_isolation_order():
     )
     for path, expected in zip(STAGE_WORKFLOWS, expected_names):
         assert _text(path).startswith(f"name: {expected}\n")
+
+def test_release_publisher_recovers_partial_assets_without_overwrite():
+    text = _text(Path("scripts/publish_v4a_release_bundle.sh"))
+    assert 'missing_assets=()' in text
+    assert 'missing_assets+=("${DIR}/${name}")' in text
+    assert 'gh release upload "$TAG" "${missing_assets[@]}"' in text
+    assert 'persistent bundle asset exists with different bytes' in text
+    assert 'persistent bundle asset verification mismatch' in text
+    assert "--clobber" not in text
+    assert 'gh release view "$TAG" >/dev/null 2>&1 || {' in text
+
