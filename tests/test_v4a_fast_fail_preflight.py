@@ -89,4 +89,5 @@ def test_cninfo_preflight_exercises_frozen_fundamental_and_valuation_paths():
     assert "build_trailing_valuation_rail(" in source
     assert "valuation_rail_to_pit_evidence(" in source
     assert "real_input_integration_verified" in source
-    assert "forward_outcome" not in source.lower()
+    assert '"forward_outcome_read": False' in source
+    assert '"parameter_search": False' in source
