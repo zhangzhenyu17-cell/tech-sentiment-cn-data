@@ -1,9 +1,11 @@
 import json
+from urllib.error import HTTPError
 
 import pandas as pd
 import pytest
 
 from tech_sentiment.official_filing_facts import (
+    download_official_document,
     build_filing_fact_rows,
     derive_fundamental_trend_evidence,
     extract_standard_filing_facts,
@@ -135,3 +137,62 @@ def test_same_close_date_revision_uses_official_publication_order_not_document_i
     payload = json.loads(revenue["evidence_payload"])
     assert payload["prior_document_id"] == "a_revision"
     assert payload["yoy_change"] == pytest.approx(0.1)
+
+
+class _FakeResponse:
+    def __init__(self, content: bytes):
+        self._content = content
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self) -> bytes:
+        return self._content
+
+
+def test_cninfo_static_403_uses_only_official_https_download_fallback():
+    calls: list[str] = []
+
+    def opener(request, timeout):
+        calls.append(request.full_url)
+        if len(calls) == 1:
+            raise HTTPError(
+                request.full_url,
+                403,
+                "Forbidden",
+                hdrs=None,
+                fp=None,
+            )
+        return _FakeResponse(b"%PDF-1.7 exact bulletin bytes")
+
+    original = "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF"
+    downloaded = download_official_document(original, opener=opener)
+
+    assert calls[0] == original
+    assert calls[1] == (
+        "https://www.cninfo.com.cn/new/announcement/download"
+        "?bulletinId=1225568832&announceTime=2026-09-16"
+    )
+    assert downloaded.url == calls[1]
+    assert downloaded.content.startswith(b"%PDF-")
+    assert len(downloaded.sha256) == 64
+
+
+def test_non_cninfo_or_non_403_download_failure_does_not_substitute_source():
+    calls: list[str] = []
+
+    def opener(request, timeout):
+        calls.append(request.full_url)
+        raise HTTPError(request.full_url, 404, "Not Found", hdrs=None, fp=None)
+
+    with pytest.raises(HTTPError):
+        download_official_document(
+            "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF",
+            opener=opener,
+        )
+    assert calls == [
+        "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF"
+    ]
