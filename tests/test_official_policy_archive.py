@@ -5,6 +5,8 @@ import pytest
 
 from tech_sentiment.official_policy_archive import (
     CSRC_CHANNELS,
+    _fetch_json,
+    _fetch_text,
     POLICY_SOURCE_ID,
     PolicyChannel,
     materialize_csrc_policy_archive,
@@ -94,6 +96,60 @@ def _fixture_json_fetcher(url: str) -> dict[str, object]:
         )
     raise AssertionError(url)
 
+
+
+
+def test_csrc_json_timeout_uses_same_official_https_browser_fallback():
+    calls: list[tuple[str, str]] = []
+
+    def opener(request, timeout):
+        calls.append(("urllib", request.full_url))
+        raise TimeoutError("timed out")
+
+    class BrowserResponse:
+        url = "https://www.csrc.gov.cn/getLocalList?channelCode=c101953"
+        content = b'{"code":200,"results":{"channelLevel":[]}}'
+
+        def raise_for_status(self):
+            return None
+
+    def browser_get(url, **kwargs):
+        calls.append(("browser", url))
+        assert kwargs["impersonate"] == "chrome"
+        return BrowserResponse()
+
+    payload = _fetch_json(
+        "https://www.csrc.gov.cn/getLocalList?channelCode=c101953",
+        timeout=10.0,
+        opener=opener,
+        browser_get=browser_get,
+    )
+
+    assert payload["code"] == 200
+    assert calls == [
+        ("urllib", "https://www.csrc.gov.cn/getLocalList?channelCode=c101953"),
+        ("browser", "https://www.csrc.gov.cn/getLocalList?channelCode=c101953"),
+    ]
+
+
+def test_csrc_text_timeout_uses_same_official_https_browser_fallback():
+    def opener(request, timeout):
+        raise TimeoutError("timed out")
+
+    class BrowserResponse:
+        url = "https://www.csrc.gov.cn/csrc/c101954/example/content.shtml"
+        content = "官方正文".encode("utf-8")
+
+        def raise_for_status(self):
+            return None
+
+    text = _fetch_text(
+        "https://www.csrc.gov.cn/csrc/c101954/example/content.shtml",
+        timeout=10.0,
+        opener=opener,
+        browser_get=lambda url, **kwargs: BrowserResponse(),
+    )
+    assert text == "官方正文"
 
 def test_parse_csrc_list_page_requires_dated_official_content_links():
     html = """
