@@ -75,10 +75,15 @@ def test_csrc_preflight_checks_second_page_identity_and_capacity_contract():
     assert "duplicate manuscript across pages" in source
     assert "duplicate canonical URL across pages" in source
     assert "total drift across pages" in source
+    assert "page_size = 20" in source
     assert "first_page_capacity" in source
     assert "first_page_actual_rows" in source
     assert "second_page_capacity" in source
     assert "second_page_actual_rows" in source
+    assert "tail_page_capacity" in source
+    assert "tail_page_actual_rows" in source
+    assert "advertised tail page is empty" in source
+    assert "total drift on tail page" in source
     assert "cross-page order drift" not in source
     assert "total drift across pages" in source
 
