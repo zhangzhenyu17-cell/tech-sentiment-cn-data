@@ -159,11 +159,18 @@ def fetch_sse_announcements(
     timeout: float = 30.0,
     browser_session_factory: Callable[[], object] | None = None,
 ) -> pd.DataFrame:
-    """Fetch an issuer's official SSE announcement archive in bounded yearly windows."""
+    """Fetch an issuer's official SSE announcement archive in bounded yearly windows.
+
+    Transport remains on the canonical SSE query endpoint. Ordinary urllib is
+    primary. If a hosted runner is blocked by SSE WAF, a browser-fingerprint
+    session is warmed on the official SSE announcement page and reused for the
+    same query.sse.com.cn endpoint. No alternate evidence source is introduced.
+    """
 
     entity_id = _normalize_entity_id(symbol)
     if not entity_id.endswith(".SH"):
         raise ValueError(f"SSE archive only applies to Shanghai symbols: {symbol}")
+
     rows: list[dict[str, object]] = []
     headers = {
         "Accept": "application/json, text/javascript, */*; q=0.01",
@@ -181,16 +188,16 @@ def fetch_sse_announcements(
 
     try:
         for window_start, window_end in _year_windows(start_date, end_date):
-        params = {
-            "isPagination": "false",
-            "productId": str(symbol).zfill(6),
-            "keyWord": "",
-            "securityType": "0101,120100,020100,020200,120200",
-            "reportType2": "",
-            "reportType": "ALL",
-            "beginDate": window_start.strftime("%Y-%m-%d"),
-            "endDate": window_end.strftime("%Y-%m-%d"),
-        }
+            params = {
+                "isPagination": "false",
+                "productId": str(symbol).zfill(6),
+                "keyWord": "",
+                "securityType": "0101,120100,020100,020200,120200",
+                "reportType2": "",
+                "reportType": "ALL",
+                "beginDate": window_start.strftime("%Y-%m-%d"),
+                "endDate": window_end.strftime("%Y-%m-%d"),
+            }
             query_url = f"{SSE_QUERY_URL}?{urlencode(params)}"
             try:
                 payload = _get_json(
@@ -205,7 +212,10 @@ def fetch_sse_announcements(
                 if not browser_warmed:
                     try:
                         bootstrap_headers = {
-                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                            "Accept": (
+                                "text/html,application/xhtml+xml,application/xml;"
+                                "q=0.9,*/*;q=0.8"
+                            ),
                             "Accept-Language": headers["Accept-Language"],
                             "User-Agent": headers["User-Agent"],
                         }
@@ -221,6 +231,9 @@ def fetch_sse_announcements(
                             expected_host="www.sse.com.cn",
                         )
                     except Exception:
+                        # A challenge response can still establish useful
+                        # same-provider cookies; the query itself remains the
+                        # authoritative success/failure point.
                         pass
                     browser_warmed = True
                 payload = _sse_browser_get_json(
@@ -229,6 +242,7 @@ def fetch_sse_announcements(
                     headers=headers,
                     timeout=timeout,
                 )
+
             data = payload.get("result")
             if not isinstance(data, list):
                 page_help = payload.get("pageHelp")
@@ -237,22 +251,40 @@ def fetch_sse_announcements(
                 raise ValueError("SSE announcement payload lacks result/pageHelp.data")
             if not isinstance(data, list):
                 raise ValueError("SSE announcement result is not a list")
+
             for item in data:
                 if not isinstance(item, dict):
                     continue
-                code = str(item.get("SECURITY_CODE") or item.get("securityCode") or symbol)
+                code = str(
+                    item.get("SECURITY_CODE")
+                    or item.get("securityCode")
+                    or symbol
+                )
                 code = "".join(ch for ch in code if ch.isdigit()).zfill(6)
                 if code != str(symbol).zfill(6):
                     continue
                 title = str(item.get("TITLE") or item.get("title") or "").strip()
-                published = str(item.get("SSEDATE") or item.get("publishDate") or "").strip()
-                relative_url = str(item.get("URL") or item.get("url") or "").strip()
+                published = str(
+                    item.get("SSEDATE") or item.get("publishDate") or ""
+                ).strip()
+                relative_url = str(
+                    item.get("URL") or item.get("url") or ""
+                ).strip()
                 if not title or not published or not relative_url:
-                    raise ValueError("SSE announcement row lacks title/date/url identity")
+                    raise ValueError(
+                        "SSE announcement row lacks title/date/url identity"
+                    )
                 source_url = (
                     relative_url
                     if relative_url.startswith(("http://", "https://"))
-                    else f"https://www.sse.com.cn{relative_url if relative_url.startswith('/') else '/' + relative_url}"
+                    else (
+                        "https://www.sse.com.cn"
+                        + (
+                            relative_url
+                            if relative_url.startswith("/")
+                            else "/" + relative_url
+                        )
+                    )
                 )
                 native_id = str(
                     item.get("BULLETIN_ID")
@@ -280,9 +312,18 @@ def fetch_sse_announcements(
                 close()
 
     if not rows:
-        return pd.DataFrame(columns=["symbol", "title", "publication_time", "document_id", "source_url"])
+        return pd.DataFrame(
+            columns=[
+                "symbol",
+                "title",
+                "publication_time",
+                "document_id",
+                "source_url",
+            ]
+        )
     out = pd.DataFrame(rows).drop_duplicates(
-        subset=["symbol", "publication_time", "document_id", "source_url"], keep="first"
+        subset=["symbol", "publication_time", "document_id", "source_url"],
+        keep="first",
     )
     return out.sort_values(["publication_time", "document_id"]).reset_index(drop=True)
 
