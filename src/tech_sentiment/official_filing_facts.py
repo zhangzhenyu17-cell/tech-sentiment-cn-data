@@ -77,10 +77,11 @@ _NUMERIC_TOKEN_RE = re.compile(
 class DownloadedOfficialDocument:
     # Canonical immutable source identity requested by the materializer.
     url: str
-    # Actual same-provider HTTPS transport endpoint used to retrieve bytes.
-    retrieval_url: str
     sha256: str
     content: bytes
+    # Actual same-provider HTTPS transport endpoint used to retrieve bytes.
+    # Optional keeps existing injected test doubles/backward-compatible callers valid.
+    retrieval_url: str | None = None
 
 
 def _canonical_host(url: str) -> str:
