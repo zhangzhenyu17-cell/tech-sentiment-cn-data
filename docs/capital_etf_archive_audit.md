@@ -39,6 +39,16 @@
 - 从 `TOT_VOL` 读取总份额（万份）；
 - 按基金代码筛选目标 ETF。
 
+正式物化以该按日期全市场查询为首选，并允许在同一官方来源内使用 `commonSoaQuery.do` / JSONP 协议变体。若这些 interface-family transport 全部失败，还可使用同一 `query.sse.com.cn/commonQuery.do` 的精确查询：
+
+- `sqlId=COMMON_SSE_ZQPZ_ETFZL_ETFJBXX_JJGM_SEARCH_L`；
+- `SEC_CODE=<目标 ETF>`；
+- `STAT_DATE=YYYY-MM-DD`；
+- 仍只接受 `TOT_VOL`（万份）；
+- 必须恰好匹配目标代码和目标日期，禁止用“最近可用日”代替。
+
+这些路径只改变官方接口的 transport/query shape，不产生新的 source identity，也不改变 point-in-time、coverage 或 canonical qualification 规则。
+
 但当前 Git 版本没有可直接版本固定并复核的 588000 历史数据文件。因此它只登记为 `METHOD_REFERENCE_ONLY`，用于交叉证明采集方法和字段语义，不作为历史 archive 数据源。
 
 ## 审计实现
