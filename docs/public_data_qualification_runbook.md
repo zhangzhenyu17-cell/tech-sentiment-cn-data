@@ -301,6 +301,35 @@ Do not start full materialization until the failure class is repaired or explici
 
 Preserve successful stage artifacts/checkpoints. Prefer failed-stage-only recovery where exact identity permits. Do not rerun completed one-off evidence/research tasks merely to make the workflow green.
 
+## Representative-scope rule
+
+A provider preflight must cover the symbol/entity families that dominate the full run, not merely one convenient example.
+
+Examples:
+
+- if production contains both main-board and STAR Market SSE issuers, probe both;
+- if a provider has multiple pagination regimes, probe a representative nontrivial page and the advertised tail page;
+- if production uses multiple document variants or exchanges, preflight each distinct eligibility/transport class.
+
+A green probe for one family does not establish transport parity for a materially different family.
+
+## Pagination-contract rule
+
+Do not infer pagination field semantics from names alone.
+
+Before relying on a provider's pagination metadata, verify the contract against real first/middle/tail pages. Distinguish:
+
+- requested page size;
+- returned page capacity/limit;
+- actual result count;
+- advertised total;
+- returned page number;
+- immutable result identities.
+
+Coverage should be proven from stable total plus complete unique identity enumeration, not from assumptions such as newest-first ordering or `rows == len(results)` unless the provider contract actually guarantees them.
+
+A short final page is normally expected when `total` is not divisible by page capacity and must be included in preflight regression coverage.
+
 ## Regression rule
 
 Every non-transient production-like failure that leads to a code change should leave behind at least one regression test or contract assertion.

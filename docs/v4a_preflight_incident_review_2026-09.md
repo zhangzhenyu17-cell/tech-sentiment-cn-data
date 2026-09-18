@@ -101,6 +101,35 @@ That additional identity exposed the English-version selection immediately.
 
 Lesson: diagnostic identity is part of pipeline quality, not optional logging.
 
+### Full-run SSE issuer exposed a representative-scope gap
+
+The issuer preflight initially exercised a main-board SSE symbol, while the formal SSE issuer stage contained a large STAR Market population. The full run then produced 102/102 SSE issuer HTTP 403 failures, concentrated in the 688xxx path.
+
+The repair preserved the exact SSE canonical query endpoint and added same-provider browser/session transport fallback. The preflight was expanded to include a STAR Market representative symbol.
+
+Lesson:
+
+> Representative preflight coverage is defined by production execution classes, not by the number of exchanges nominally present.
+
+### CSRC pagination metadata was misinterpreted twice
+
+The first implementation assumed newest-first ordering and used that assumption for early stopping. Real pages disproved the ordering guarantee.
+
+After switching to full advertised-total enumeration, the next full run exposed a second assumption: `data.rows` was treated as the actual result count. Checkpoint evidence showed that CSRC returns an effective page capacity of 20 and valid short tail pages:
+
+- announcements: total 766, tail 6;
+- orders: total 234, tail 14;
+- daily regulatory: total 93, tail 13;
+- policy interpretation: total 358, tail 18.
+
+The corrected contract separates page capacity from actual rows and proves completeness using stable advertised total plus unique manuscript/document identities.
+
+The live policy preflight now probes the advertised tail page directly.
+
+Lesson:
+
+> Provider pagination fields need empirical semantic binding against first/middle/tail pages; field names are not a contract.
+
 ## Failure progression
 
 The important progression was:

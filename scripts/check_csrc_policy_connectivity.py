@@ -46,7 +46,7 @@ def main() -> None:
             default_evidence_type=default_type,
             payload=metadata,
         )
-        page_size = 2
+        page_size = 20
         page_url = _search_list_url(channel.channel_id, page=1, page_size=page_size)
         payload = _probe_fetch_json(page_url)
         entries, meta = parse_csrc_search_page(
@@ -94,6 +94,54 @@ def main() -> None:
                 raise SystemExit(
                     f"CSRC protocol probe failed: {channel_code} duplicate canonical URL across pages"
                 )
+        total = int(meta["total"])
+        last_page = (
+            max(1, (total + first_page_capacity - 1) // first_page_capacity)
+            if first_page_capacity > 0
+            else 1
+        )
+        tail_page_capacity = first_page_capacity
+        tail_page_actual_rows = first_page_actual_rows
+        tail_page_entries = entries
+        if last_page == 2:
+            tail_page_capacity = second_page_capacity
+            tail_page_actual_rows = second_page_actual_rows
+            tail_page_entries = page2_entries
+        elif last_page > 2:
+            tail_url = _search_list_url(
+                channel.channel_id,
+                page=last_page,
+                page_size=page_size,
+            )
+            tail_payload = _probe_fetch_json(tail_url)
+            tail_page_entries, tail_meta = parse_csrc_search_page(
+                tail_payload,
+                channel=channel,
+                requested_page=last_page,
+            )
+            tail_page_capacity = int(tail_meta["rows"])
+            tail_page_actual_rows = int(tail_meta["actual_rows"])
+            if int(tail_meta["total"]) != total:
+                raise SystemExit(
+                    f"CSRC protocol probe failed: {channel_code} total drift on tail page"
+                )
+            if total > 0 and not tail_page_entries:
+                raise SystemExit(
+                    f"CSRC protocol probe failed: {channel_code} advertised tail page is empty"
+                )
+            first_ids = {entry.manuscript_id for entry in entries}
+            tail_ids = {entry.manuscript_id for entry in tail_page_entries}
+            if first_ids.intersection(tail_ids):
+                raise SystemExit(
+                    f"CSRC protocol probe failed: {channel_code} duplicate manuscript on tail page"
+                )
+            first_urls = {entry.url for entry in entries}
+            tail_urls = {entry.url for entry in tail_page_entries}
+            if first_urls.intersection(tail_urls):
+                raise SystemExit(
+                    f"CSRC protocol probe failed: {channel_code} duplicate canonical URL on tail page"
+                )
+
         channels.append(
             {
                 "segment": segment,
@@ -106,6 +154,10 @@ def main() -> None:
                 "total": meta["total"],
                 "second_page_capacity": second_page_capacity,
                 "second_page_actual_rows": second_page_actual_rows,
+                "tail_page": last_page,
+                "tail_page_capacity": tail_page_capacity,
+                "tail_page_actual_rows": tail_page_actual_rows,
+                "tail_page_is_short": tail_page_actual_rows < tail_page_capacity,
                 "pagination_verified": pagination_verified,
                 "protocol_ok": True,
             }
