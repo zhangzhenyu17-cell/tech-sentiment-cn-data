@@ -13,6 +13,11 @@ on:
         required: false
         default: ""
         type: string
+      preflight_only:
+        description: "Run fast-fail preflights only; skip expensive materialization"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -150,6 +155,7 @@ jobs:
           echo "end_date=${{ needs.preflight_shared.outputs.end_date }}" >> "$GITHUB_OUTPUT"
 
   capital:
+    if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -217,6 +223,7 @@ jobs:
           retention-days: 7
 
   financing:
+    if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -284,6 +291,7 @@ jobs:
           retention-days: 7
 
   issuer_cninfo:
+    if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -360,6 +368,7 @@ jobs:
           retention-days: 7
 
   issuer_sse:
+    if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -430,6 +439,7 @@ jobs:
           retention-days: 7
 
   issuer_szse:
+    if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -500,6 +510,7 @@ jobs:
           retention-days: 7
 
   issuer_aggregate:
+    if: ${{ inputs.preflight_only != true }}
     needs: [preflight_gate, issuer_cninfo, issuer_sse, issuer_szse]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -553,6 +564,7 @@ jobs:
           retention-days: 7
 
   fundamental_earnings:
+    if: ${{ inputs.preflight_only != true }}
     needs: [preflight_gate, issuer_cninfo]
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -628,6 +640,7 @@ jobs:
           retention-days: 7
 
   prices:
+    if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -702,6 +715,7 @@ jobs:
           retention-days: 7
 
   policy:
+    if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -769,6 +783,7 @@ jobs:
           retention-days: 7
 
   derived_aggregate:
+    if: ${{ inputs.preflight_only != true }}
     needs: [preflight_gate, issuer_aggregate, fundamental_earnings, prices, policy]
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -839,6 +854,7 @@ jobs:
           retention-days: 7
 
   finalize:
+    if: ${{ inputs.preflight_only != true }}
     needs: [preflight_gate, capital, financing, derived_aggregate]
     runs-on: ubuntu-latest
     timeout-minutes: 45
