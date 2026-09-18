@@ -59,9 +59,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/financing
-          key: v4a-financing-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-financing-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-financing-${{ env.STAGE_COMPAT }}-
+            v4a-financing-${{ env.STAGE_COMPAT }}-${{ github.sha }}-
       - name: Materialize bilateral financing history
         id: materialize
         run: |
@@ -77,7 +77,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/financing
-          key: v4a-financing-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-financing-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal financing stage
         if: ${{ success() }}
         run: |
