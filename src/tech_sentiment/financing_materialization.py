@@ -9,6 +9,7 @@ from typing import Callable, Iterable
 import pandas as pd
 
 from .bounded_retry import call_with_bounded_network_retry
+from .official_exchange_transport import fetch_official_json
 from .capital_input_data import (
     SSE_MARGIN_SOURCE_ID,
     SSE_MARGIN_SOURCE_URL,
@@ -38,6 +39,129 @@ def _sha256_payload(payload: dict[str, object]) -> str:
         payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+
+SSE_MARGIN_QUERY_URL = "https://query.sse.com.cn/marketdata/tradedata/queryMargin.do"
+SZSE_MARGIN_QUERY_URL = "https://www.szse.cn/api/report/ShowReport/data"
+
+
+def _sse_margin_payload_frame(payload: object) -> pd.DataFrame:
+    if not isinstance(payload, dict):
+        raise ValueError("SSE margin response must be a JSON object")
+    page_help = payload.get("pageHelp")
+    if isinstance(page_help, dict) and isinstance(page_help.get("data"), list):
+        rows = [
+            row for row in page_help["data"]
+            if isinstance(row, dict)
+            and row.get("opDate") is not None
+            and row.get("rzye") is not None
+        ]
+        if rows:
+            return pd.DataFrame(
+                {
+                    "信用交易日期": [str(row["opDate"]) for row in rows],
+                    "融资余额": [row["rzye"] for row in rows],
+                }
+            )
+    result = payload.get("result")
+    if not isinstance(result, list) or not result:
+        raise ValueError("SSE margin response lacks result rows")
+    if all(isinstance(row, dict) for row in result):
+        named = [
+            row for row in result
+            if row.get("opDate") is not None and row.get("rzye") is not None
+        ]
+        if named:
+            return pd.DataFrame(
+                {
+                    "信用交易日期": [str(row["opDate"]) for row in named],
+                    "融资余额": [row["rzye"] for row in named],
+                }
+            )
+    frame = pd.DataFrame(result)
+    if len(frame.columns) != 13:
+        raise ValueError(
+            f"SSE margin positional response expected 13 columns, got {len(frame.columns)}"
+        )
+    frame.columns = [
+        "_0", "信用交易日期", "_2", "融券卖出量", "融券余量",
+        "融券余量金额", "_6", "_7", "融资买入额", "融资融券余额",
+        "融资余额", "_11", "_12",
+    ]
+    return frame[["信用交易日期", "融资余额"]].copy()
+
+
+def _fetch_sse_financing_official(
+    start_date: str,
+    end_date: str,
+    *,
+    timeout: float = 30.0,
+) -> pd.DataFrame:
+    payload = fetch_official_json(
+        url=SSE_MARGIN_QUERY_URL,
+        params={
+            "isPagination": "true",
+            "beginDate": start_date,
+            "endDate": end_date,
+            "tabType": "",
+            "stockCode": "",
+            "pageHelp.pageSize": "5000",
+            "pageHelp.pageNo": "1",
+            "pageHelp.beginPage": "1",
+            "pageHelp.cacheSize": "1",
+            "pageHelp.endPage": "5",
+        },
+        referer=SSE_MARGIN_SOURCE_URL,
+        allowed_query_hosts=("query.sse.com.cn",),
+        warmup_url=SSE_MARGIN_SOURCE_URL,
+        allowed_warmup_hosts=("www.sse.com.cn",),
+        timeout=timeout,
+    )
+    return _sse_margin_payload_frame(payload)
+
+
+def _szse_margin_payload_frame(payload: object) -> pd.DataFrame:
+    if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
+        raise ValueError("SZSE margin response must be a non-empty JSON array")
+    rows = payload[0].get("data")
+    if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
+        raise ValueError("SZSE margin response requires exactly one summary row")
+    row = rows[0]
+    value = row.get("jrrzye", row.get("融资余额"))
+    if value is None:
+        raise ValueError("SZSE margin response lacks financing balance")
+    numeric = pd.to_numeric(
+        pd.Series([str(value).replace(",", "")]), errors="coerce"
+    ).iloc[0]
+    if pd.isna(numeric) or float(numeric) <= 0:
+        raise ValueError("SZSE margin response contains invalid financing balance")
+    return pd.DataFrame({"融资余额": [float(numeric)]})
+
+
+def _fetch_szse_financing_official(
+    date: str,
+    *,
+    timeout: float = 20.0,
+) -> pd.DataFrame:
+    if len(date) != 8 or not date.isdigit():
+        raise ValueError("SZSE financing date must be YYYYMMDD")
+    payload = fetch_official_json(
+        url=SZSE_MARGIN_QUERY_URL,
+        params={
+            "SHOWTYPE": "JSON",
+            "CATALOGID": "1837_xxpl",
+            "txtDate": f"{date[:4]}-{date[4:6]}-{date[6:]}",
+            "tab1PAGENO": "1",
+            "random": "0.7425245522795993",
+        },
+        referer=SZSE_MARGIN_SOURCE_URL,
+        allowed_query_hosts=("www.szse.cn",),
+        warmup_url=SZSE_MARGIN_SOURCE_URL,
+        allowed_warmup_hosts=("www.szse.cn",),
+        timeout=timeout,
+    )
+    return _szse_margin_payload_frame(payload)
 
 
 def normalize_sse_financing_history(frame: pd.DataFrame) -> pd.DataFrame:
@@ -99,15 +223,10 @@ def materialize_financing_history(
     """
 
     cal = _calendar(trading_dates)
-    if sse_fetcher is None or szse_fetcher is None:
-        import akshare as ak  # type: ignore
-
-        if sse_fetcher is None:
-            sse_fetcher = lambda start, end: ak.stock_margin_sse(
-                start_date=start, end_date=end
-            )
-        if szse_fetcher is None:
-            szse_fetcher = lambda date: ak.stock_margin_szse(date=date)
+    if sse_fetcher is None:
+        sse_fetcher = _fetch_sse_financing_official
+    if szse_fetcher is None:
+        szse_fetcher = _fetch_szse_financing_official
 
     errors: list[dict[str, str]] = []
     start_arg = cal.min().strftime("%Y%m%d")
