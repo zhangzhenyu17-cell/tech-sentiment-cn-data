@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--start-date", default="2022-01-04")
     parser.add_argument("--end-date", required=True)
     parser.add_argument("--calendar-index-code", default="000906")
+    parser.add_argument("--calendar-csv", default="")
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--checkpoint-dir", default=".cache/capital_pit_v4a/financing")
     parser.add_argument("--out-dir", default="output/financing_materialization")
@@ -25,11 +26,16 @@ def main() -> None:
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    calendar = fetch_index_history(
-        args.calendar_index_code,
-        start_date=args.start_date,
-        end_date=args.end_date,
-    )
+    if args.calendar_csv:
+        calendar = pd.read_csv(args.calendar_csv)
+        if "date" not in calendar.columns:
+            raise SystemExit("calendar CSV missing date column")
+    else:
+        calendar = fetch_index_history(
+            args.calendar_index_code,
+            start_date=args.start_date,
+            end_date=args.end_date,
+        )
     if calendar.empty:
         raise SystemExit("trading calendar source returned no rows")
     dates = pd.DatetimeIndex(
