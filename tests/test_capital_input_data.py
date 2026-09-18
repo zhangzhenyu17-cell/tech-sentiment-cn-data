@@ -1,8 +1,13 @@
 import pandas as pd
+import pytest
 
+import tech_sentiment.capital_input_data as capital_module
 from tech_sentiment.capital_input_data import (
     SSE_ETF_SCALE_QUERY_URL,
     SSE_ETF_SHARE_SOURCE_URL,
+    _sse_etf_exact_payload_frame,
+    _sse_turnover_payload_frame,
+    _szse_turnover_payload_frame,
     _fetch_sse_etf_scale_direct,
     _sse_etf_scale_payload_frame,
     combine_sse_szse_a_share_turnover,
@@ -183,6 +188,118 @@ def test_sse_etf_scale_direct_warms_same_official_browser_session_after_403():
     ]
     assert frame.loc[0, "基金代码"] == "588000"
     assert frame.loc[0, "基金份额"] == 9_000_012_300.0
+
+
+
+def test_sse_exact_etf_payload_requires_target_code_date_and_preserves_share_unit():
+    frame = _sse_etf_exact_payload_frame(
+        {
+            "result": [
+                {
+                    "SEC_CODE": "588000",
+                    "STAT_DATE": "2026-09-17",
+                    "TOT_VOL": "900001.23",
+                }
+            ]
+        },
+        date="20260917",
+        fund_code="588000",
+    )
+    assert frame.loc[0, "基金代码"] == "588000"
+    assert str(frame.loc[0, "统计日期"]) == "2026-09-17"
+    assert frame.loc[0, "基金份额"] == 9_000_012_300.0
+
+    with pytest.raises(ValueError, match="exactly one target code/date"):
+        _sse_etf_exact_payload_frame(
+            {
+                "result": [
+                    {
+                        "SEC_CODE": "510300",
+                        "STAT_DATE": "2026-09-17",
+                        "TOT_VOL": "1",
+                    }
+                ]
+            },
+            date="20260917",
+            fund_code="588000",
+        )
+
+
+def test_etf_history_uses_exact_official_query_only_after_bulk_transport_exhaustion(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        capital_module,
+        "_fetch_sse_etf_scale_direct",
+        lambda date: (_ for _ in ()).throw(
+            RuntimeError("official HTTPS transports exhausted: bulk fixture")
+        ),
+    )
+
+    calls: list[tuple[str, str]] = []
+
+    def exact(date: str, code: str):
+        calls.append((date, code))
+        return pd.DataFrame(
+            {
+                "序号": [1],
+                "基金代码": [code],
+                "基金简称": ["科创50ETF"],
+                "ETF类型": ["股票型"],
+                "统计日期": [pd.Timestamp("2026-09-17").date()],
+                "基金份额": [9_000_012_300.0],
+            }
+        )
+
+    monkeypatch.setattr(capital_module, "_fetch_sse_etf_scale_exact", exact)
+
+    result = capital_module.fetch_sse_etf_share_history(
+        trading_dates=[pd.Timestamp("2026-09-17")],
+        fund_codes=(code for code in ["588000"]),
+        sleep_seconds=0,
+    )
+
+    assert calls == [("20260917", "588000")]
+    assert result.errors.empty
+    assert result.data.loc[0, "fund_code"] == "588000"
+    assert result.data.loc[0, "fund_shares"] == 9_000_012_300.0
+
+
+def test_sse_turnover_official_payload_keeps_existing_100m_yuan_contract():
+    result_rows = []
+    for product_base in (1000.0, 1.0, 200.0):
+        result_rows.append(
+            {f"k{i}": product_base + i for i in range(11)}
+        )
+    frame = _sse_turnover_payload_frame({"result": result_rows})
+    row = normalize_sse_a_share_turnover(
+        frame, observation_date="2026-09-17"
+    )
+    # Metric index 4 is 成交金额 under the existing SSE table contract.
+    assert row["sse_a_share_turnover_yuan"] == pytest.approx(
+        ((1000.0 + 4) + (200.0 + 4)) * 100_000_000.0
+    )
+    assert row["source_unit"] == "100_million_yuan"
+
+
+def test_szse_json_turnover_converts_official_100m_yuan_to_canonical_yuan():
+    frame = _szse_turnover_payload_frame(
+        [
+            {
+                "data": [
+                    {"zqlb": "股票", "cjje": "5,001.00"},
+                    {"zqlb": "主板B股", "cjje": "1.00"},
+                ]
+            }
+        ]
+    )
+    row = normalize_szse_a_share_turnover(
+        frame, observation_date="2026-09-17"
+    )
+    assert row["szse_a_share_turnover_yuan"] == pytest.approx(
+        5000.0 * 100_000_000.0
+    )
+    assert row["source_unit"] == "yuan"
 
 def test_sse_szse_turnover_normalization_matches_frozen_d1_scope():
     sse_raw = pd.DataFrame({
