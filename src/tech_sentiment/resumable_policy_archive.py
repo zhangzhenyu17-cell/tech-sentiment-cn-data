@@ -37,6 +37,63 @@ from .pit_public_materialization import (
 POLICY_CHECKPOINT_VERSION = "csrc-policy-json-page-document-v2"
 
 
+def _channel_identity(
+    *,
+    source_commit: str,
+    segment: str,
+    channel_code: str,
+    url: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> CheckpointIdentity:
+    return CheckpointIdentity(
+        producer="csrc-policy-channel-metadata",
+        producer_version=POLICY_CHECKPOINT_VERSION,
+        source_commit=source_commit,
+        source_identities=(POLICY_SOURCE_ID,),
+        query_identity={
+            "segment": segment,
+            "channel_code": channel_code,
+            "url": url,
+        },
+        scope={"start_date": str(start.date()), "end_date": str(end.date())},
+    )
+
+
+def _channel_frame(channel: PolicyChannel) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "segment": channel.segment,
+                "channel_code": channel.channel_code,
+                "channel_id": channel.channel_id,
+                "channel_name": channel.channel_name,
+                "default_evidence_type": channel.default_evidence_type,
+            }
+        ]
+    )
+
+
+def _frame_channel(frame: pd.DataFrame) -> PolicyChannel:
+    required = {
+        "segment",
+        "channel_code",
+        "channel_id",
+        "channel_name",
+        "default_evidence_type",
+    }
+    if len(frame) != 1 or required - set(frame.columns):
+        raise ValueError("cached CSRC channel metadata is invalid")
+    row = frame.iloc[0]
+    return PolicyChannel(
+        segment=str(row["segment"]),
+        channel_code=str(row["channel_code"]),
+        channel_id=str(row["channel_id"]),
+        channel_name=str(row["channel_name"]),
+        default_evidence_type=str(row["default_evidence_type"]),
+    )
+
+
 def _page_identity(
     *,
     source_commit: str,
@@ -230,6 +287,8 @@ def materialize_csrc_policy_archive_resumable(
     segment_meta: dict[str, dict[str, object]] = {}
     segment_failed: dict[str, bool] = {segment: False for segment in CSRC_CHANNELS}
     errors: list[dict[str, str]] = []
+    resumed_channels = 0
+    executed_channels = 0
     resumed_pages = 0
     executed_pages = 0
     resumed_documents = 0
@@ -237,17 +296,46 @@ def materialize_csrc_policy_archive_resumable(
 
     for segment, (channel_code, default_type) in CSRC_CHANNELS.items():
         try:
-            metadata_payload = call_with_bounded_network_retry(
-                lambda: json_fetcher(_channel_metadata_url(channel_code)),
-                attempts=retry_attempts,
-                backoff_seconds=retry_backoff_seconds,
-            )
-            channel = resolve_csrc_channel(
+            metadata_url = _channel_metadata_url(channel_code)
+            channel_identity = _channel_identity(
+                source_commit=source_commit,
                 segment=segment,
                 channel_code=channel_code,
-                default_evidence_type=default_type,
-                payload=metadata_payload,
+                url=metadata_url,
+                start=start,
+                end=end,
             )
+            loaded_channel = store.load(channel_identity)
+            if loaded_channel is not None:
+                channel = _frame_channel(loaded_channel.frames["channel"])
+                if (
+                    channel.segment != segment
+                    or channel.channel_code != channel_code
+                    or channel.default_evidence_type != default_type
+                ):
+                    raise ValueError("cached CSRC channel identity drifted")
+                resumed_channels += 1
+            else:
+                metadata_payload = call_with_bounded_network_retry(
+                    lambda: json_fetcher(metadata_url),
+                    attempts=retry_attempts,
+                    backoff_seconds=retry_backoff_seconds,
+                )
+                channel = resolve_csrc_channel(
+                    segment=segment,
+                    channel_code=channel_code,
+                    default_evidence_type=default_type,
+                    payload=metadata_payload,
+                )
+                store.save(
+                    channel_identity,
+                    frames={"channel": _channel_frame(channel)},
+                    metadata={
+                        "channel_id": channel.channel_id,
+                        "channel_name": channel.channel_name,
+                    },
+                )
+                executed_channels += 1
             expected_total: int | None = None
             pages_read = 0
             seen_manuscripts: set[str] = set()
@@ -437,6 +525,8 @@ def materialize_csrc_policy_archive_resumable(
             else "PARTIAL_COVERAGE" if len(records) else "DATA_INSUFFICIENT"
         ),
         "checkpoint_schema": POLICY_CHECKPOINT_VERSION,
+        "resumed_channels": resumed_channels,
+        "executed_channels": executed_channels,
         "resumed_pages": resumed_pages,
         "executed_pages": executed_pages,
         "resumed_documents": resumed_documents,
