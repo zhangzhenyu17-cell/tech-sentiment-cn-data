@@ -108,6 +108,42 @@ def main() -> None:
             f"for {latest.date()}; errors={price_errors}"
         )
 
+    historical_price = pd.DataFrame()
+    historical_price_symbol = ""
+    historical_price_provider = ""
+    historical_price_errors: list[str] = []
+    for symbol in ("600519", "000001"):
+        for provider in ("tencent", "eastmoney"):
+            try:
+                candidate = call_with_bounded_network_retry(
+                    lambda s=symbol, p=provider: fetch_stock_history(
+                        s,
+                        start_date=str(earliest.date()),
+                        end_date=str(earliest.date()),
+                        adjust="",
+                        provider=p,
+                    ),
+                    attempts=3,
+                    backoff_seconds=0.5,
+                )
+                if candidate is not None and len(candidate):
+                    historical_price = candidate
+                    historical_price_symbol = symbol
+                    historical_price_provider = provider
+                    break
+                historical_price_errors.append(f"{symbol}:{provider}:empty")
+            except Exception as exc:
+                historical_price_errors.append(
+                    f"{symbol}:{provider}:{type(exc).__name__}:{exc}"
+                )
+        if not historical_price.empty:
+            break
+    if historical_price.empty:
+        raise SystemExit(
+            "V4-A source boundary preflight failed: representative historical close "
+            f"unavailable for {earliest.date()}; errors={historical_price_errors}"
+        )
+
     # Exercise the actual frozen-universe code families that historically caused
     # provider/parser edge cases. Use a short trailing trading window rather than
     # an exact single day so a one-day suspension does not create a false failure.
@@ -170,6 +206,9 @@ def main() -> None:
                 "financing_rows": int(len(financing.canonical)),
                 "representative_price_symbol": price_symbol,
                 "representative_price_rows": int(len(price)),
+                "historical_price_symbol": historical_price_symbol,
+                "historical_price_provider": historical_price_provider,
+                "historical_price_rows": int(len(historical_price)),
                 "frozen_universe_price_probes": edge_price_probes,
                 "diagnostic_only": True,
                 "canonical_evidence_output": False,
