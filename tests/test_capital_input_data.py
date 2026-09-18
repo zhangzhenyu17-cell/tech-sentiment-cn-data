@@ -1,11 +1,16 @@
 import pandas as pd
+import pytest
 
+import tech_sentiment.capital_input_data as capital_module
 from tech_sentiment.capital_input_data import (
     SSE_ETF_SCALE_QUERY_URL,
     SSE_ETF_SCALE_SOA_QUERY_URL,
     SSE_ETF_SHARE_SOURCE_URL,
     _fetch_sse_etf_scale_direct,
+    _sse_etf_exact_payload_frame,
     _sse_etf_scale_payload_frame,
+    _sse_turnover_payload_frame,
+    _szse_turnover_payload_frame,
     combine_sse_szse_a_share_turnover,
     fetch_sse_szse_a_share_turnover_history,
     normalize_sse_a_share_turnover,
@@ -305,6 +310,68 @@ def test_sse_etf_scale_accepts_strict_jsonp_only_on_official_query_interface():
     )
     assert frame.loc[0, "基金代码"] == "588000"
     assert frame.attrs["provider_interface"] == SSE_ETF_SCALE_QUERY_URL
+
+
+
+def test_exact_etf_fallback_requires_exact_code_date_and_preserves_units():
+    frame = _sse_etf_exact_payload_frame(
+        {"result": [{"SEC_CODE": "588000", "STAT_DATE": "2026-09-17", "TOT_VOL": "900001.23"}]},
+        date="20260917",
+        fund_code="588000",
+    )
+    assert frame.loc[0, "基金份额"] == 9_000_012_300.0
+    with pytest.raises(ValueError, match="exactly one target code/date"):
+        _sse_etf_exact_payload_frame(
+            {"result": [{"SEC_CODE": "510300", "STAT_DATE": "2026-09-17", "TOT_VOL": "1"}]},
+            date="20260917",
+            fund_code="588000",
+        )
+
+
+def test_etf_history_uses_exact_query_only_after_interface_family_exhaustion(monkeypatch):
+    monkeypatch.setattr(
+        capital_module,
+        "_fetch_sse_etf_scale_direct",
+        lambda date: (_ for _ in ()).throw(RuntimeError("bulk blocked")),
+    )
+    monkeypatch.setattr(
+        capital_module,
+        "_fetch_sse_etf_scale_exact",
+        lambda date, code: pd.DataFrame(
+            {
+                "基金代码": [code],
+                "统计日期": [pd.Timestamp("2026-09-17").date()],
+                "基金份额": [9_000_012_300.0],
+            }
+        ),
+    )
+    result = capital_module.fetch_sse_etf_share_history(
+        trading_dates=["2026-09-17"],
+        fund_codes=(code for code in ["588000"]),
+        sleep_seconds=0,
+    )
+    assert result.errors.empty
+    assert result.data.loc[0, "fund_shares"] == 9_000_012_300.0
+
+
+def test_official_turnover_payloads_preserve_canonical_yuan_contract():
+    sse_rows = [
+        {f"k{i}": base + i for i in range(11)}
+        for base in (1000.0, 1.0, 200.0)
+    ]
+    sse_frame = _sse_turnover_payload_frame({"result": sse_rows})
+    sse = normalize_sse_a_share_turnover(sse_frame, observation_date="2026-09-17")
+    assert sse["sse_a_share_turnover_yuan"] == pytest.approx(
+        (1004.0 + 204.0) * 100_000_000.0
+    )
+
+    szse_frame = _szse_turnover_payload_frame(
+        [{"data": [{"zqlb": "股票", "cjje": "5,001.00"}, {"zqlb": "主板B股", "cjje": "1.00"}]}]
+    )
+    szse = normalize_szse_a_share_turnover(szse_frame, observation_date="2026-09-17")
+    assert szse["szse_a_share_turnover_yuan"] == pytest.approx(
+        5000.0 * 100_000_000.0
+    )
 
 def test_sse_szse_turnover_normalization_matches_frozen_d1_scope():
     sse_raw = pd.DataFrame({
