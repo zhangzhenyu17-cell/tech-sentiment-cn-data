@@ -69,26 +69,33 @@ def main() -> None:
         )
 
     price = pd.DataFrame()
+    price_symbol = ""
     price_errors: list[str] = []
-    for provider in ("tencent", "eastmoney"):
-        try:
-            candidate = call_with_bounded_network_retry(
-                lambda p=provider: fetch_stock_history(
-                    "600519",
-                    start_date=str(latest.date()),
-                    end_date=str(latest.date()),
-                    adjust="",
-                    provider=p,
-                ),
-                attempts=3,
-                backoff_seconds=0.5,
-            )
-            if candidate is not None and len(candidate):
-                price = candidate
-                break
-            price_errors.append(f"{provider}:empty")
-        except Exception as exc:
-            price_errors.append(f"{provider}:{type(exc).__name__}:{exc}")
+    for symbol in ("600519", "000001"):
+        for provider in ("tencent", "eastmoney"):
+            try:
+                candidate = call_with_bounded_network_retry(
+                    lambda s=symbol, p=provider: fetch_stock_history(
+                        s,
+                        start_date=str(latest.date()),
+                        end_date=str(latest.date()),
+                        adjust="",
+                        provider=p,
+                    ),
+                    attempts=3,
+                    backoff_seconds=0.5,
+                )
+                if candidate is not None and len(candidate):
+                    price = candidate
+                    price_symbol = symbol
+                    break
+                price_errors.append(f"{symbol}:{provider}:empty")
+            except Exception as exc:
+                price_errors.append(
+                    f"{symbol}:{provider}:{type(exc).__name__}:{exc}"
+                )
+        if not price.empty:
+            break
     if price.empty:
         raise SystemExit(
             "V4-A source freshness preflight failed: representative latest close unavailable "
@@ -103,7 +110,7 @@ def main() -> None:
                 "etf_588000_rows": int(len(etf.data)),
                 "turnover_rows": int(len(turnover.combined)),
                 "financing_rows": int(len(financing.canonical)),
-                "representative_price_symbol": "600519",
+                "representative_price_symbol": price_symbol,
                 "representative_price_rows": int(len(price)),
                 "diagnostic_only": True,
                 "canonical_evidence_output": False,
