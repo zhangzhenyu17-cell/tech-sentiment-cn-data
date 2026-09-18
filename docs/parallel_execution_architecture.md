@@ -51,6 +51,41 @@ A compliant long-running pipeline should normally have five layers:
    - keep runtime/upload identity outside canonical content where required for deterministic hashing;
    - downstream private verification remains independent from public materialization success.
 
+## Preflight-production contract parity
+
+Preflight may narrow scope, but it must reuse production eligibility, identity, availability, and parsing contracts wherever possible.
+
+A representative smoke test must not maintain a looser parallel selector simply because it processes fewer records. This includes:
+
+- document/report eligibility;
+- immutable document identity;
+- publication/evidence-available ordering;
+- source/host allowlists;
+- fact/unit parsing semantics;
+- freshness and exact-date rules.
+
+If a preflight needs a narrower representative subset, narrow after applying the production contract.
+
+This rule exists because row-order-dependent or independently reimplemented smoke logic can validate the wrong object even while production code is correct.
+
+## Diagnostic artifact contract
+
+Every long-running workflow should preserve enough diagnostics to explain a failure without rerunning it.
+
+For representative preflights, persist a small diagnostic artifact on both success and failure where practical. The diagnostic should expose the failure class and the relevant identity envelope rather than only raw stack traces.
+
+For document-driven probes, the preferred envelope includes:
+
+- role/entity/query window;
+- raw and eligible candidate counts;
+- selected title/document id;
+- canonical and retrieval URLs;
+- content hash;
+- parser/version identity;
+- exact failed invariant.
+
+GitHub job summaries should expose a quick preflight status table, while detailed diagnostic artifacts remain available for postmortem inspection.
+
 ## Artifact and checkpoint contract
 
 ### Checkpoints
@@ -291,6 +326,12 @@ Before accepting a new or refactored long-running pipeline, confirm:
 - [ ] no research/evidence/production/trading boundary changed implicitly;
 - [ ] source-commit identity and retry semantics are explicit.
 
+## Operating runbook
+
+Operational execution, failure classification, rerun decisions, and minimum diagnostics are defined in [Public Data Qualification Runbook](public_data_qualification_runbook.md).
+
+The September 2026 stabilization lessons are recorded in [V4-A Preflight Incident Review](v4a_preflight_incident_review_2026-09.md).
+
 ## Optimization roadmap
 
-Further wall-clock optimization must follow the measured, quality-gated plan in [Parallel Execution Optimization Plan V2](parallel_execution_optimization_plan_v2.md). The current formal run is allowed to complete unchanged; additional sharding or producer decomposition is adopted only after critical-path profiling and contract-preserving tests.
+Further wall-clock optimization must follow the measured, quality-gated plan in [Parallel Execution Optimization Plan V2](parallel_execution_optimization_plan_v2.md). Additional sharding or producer decomposition is adopted only after critical-path profiling and contract-preserving tests.
