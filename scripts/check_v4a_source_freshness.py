@@ -34,38 +34,44 @@ def main() -> None:
     args = parser.parse_args()
 
     calendar = _calendar(args.calendar_csv)
+    earliest = pd.Timestamp(calendar.min()).normalize()
     latest = pd.Timestamp(calendar.max()).normalize()
+    boundary_dates = pd.DatetimeIndex([earliest, latest]).unique().sort_values()
+    expected_boundary_rows = int(len(boundary_dates))
 
     etf = fetch_sse_etf_share_history(
-        trading_dates=[latest],
+        trading_dates=boundary_dates,
         fund_codes=["588000"],
         sleep_seconds=0,
     )
-    if len(etf.data) != 1 or len(etf.errors):
+    if len(etf.data) != expected_boundary_rows or len(etf.errors):
         raise SystemExit(
-            "V4-A source freshness preflight failed: latest 588000 share data unavailable "
-            f"for {latest.date()}; errors={etf.errors.to_dict('records')}"
+            "V4-A source boundary preflight failed: 588000 share data unavailable "
+            f"for {[str(value.date()) for value in boundary_dates]}; "
+            f"errors={etf.errors.to_dict('records')}"
         )
 
     turnover = fetch_sse_szse_a_share_turnover_history(
-        trading_dates=[latest],
+        trading_dates=boundary_dates,
         sleep_seconds=0,
     )
-    if len(turnover.combined) != 1 or len(turnover.errors):
+    if len(turnover.combined) != expected_boundary_rows or len(turnover.errors):
         raise SystemExit(
-            "V4-A source freshness preflight failed: latest bilateral turnover unavailable "
-            f"for {latest.date()}; errors={turnover.errors.to_dict('records')}"
+            "V4-A source boundary preflight failed: bilateral turnover unavailable "
+            f"for {[str(value.date()) for value in boundary_dates]}; "
+            f"errors={turnover.errors.to_dict('records')}"
         )
 
-    financing = materialize_financing_history([latest])
+    financing = materialize_financing_history(boundary_dates)
     if (
-        len(financing.canonical) != 1
+        len(financing.canonical) != expected_boundary_rows
         or len(financing.errors)
         or float(financing.summary.get("bilateral_coverage") or 0.0) != 1.0
     ):
         raise SystemExit(
-            "V4-A source freshness preflight failed: latest bilateral financing unavailable "
-            f"for {latest.date()}; errors={financing.errors.to_dict('records')}"
+            "V4-A source boundary preflight failed: bilateral financing unavailable "
+            f"for {[str(value.date()) for value in boundary_dates]}; "
+            f"errors={financing.errors.to_dict('records')}"
         )
 
     price = pd.DataFrame()
@@ -155,8 +161,10 @@ def main() -> None:
     print(
         json.dumps(
             {
-                "status": "V4A_LATEST_SOURCE_FRESHNESS_OK",
+                "status": "V4A_SOURCE_BOUNDARIES_OK",
+                "earliest_trading_date": str(earliest.date()),
                 "latest_trading_date": str(latest.date()),
+                "boundary_dates": [str(value.date()) for value in boundary_dates],
                 "etf_588000_rows": int(len(etf.data)),
                 "turnover_rows": int(len(turnover.combined)),
                 "financing_rows": int(len(financing.canonical)),
