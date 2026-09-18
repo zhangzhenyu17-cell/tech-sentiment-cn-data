@@ -23,7 +23,7 @@ from .pit_public_materialization import (
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v5-whitespace-safe-units-revision-time"
+FILING_PARSER_VERSION = "official-filing-facts-v6-dual-text-extraction-safe-units-revision-time"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -343,22 +343,52 @@ def download_official_document(
 
 
 def extract_pdf_text(content: bytes) -> str:
-    """Extract the embedded text layer; OCR is deliberately not used."""
+    """Extract the embedded text layer; OCR is deliberately not used.
+
+    Layout mode remains primary because it preserves table geometry on most
+    filings. Some older official PDFs drop unit-label text in layout mode while
+    preserving it in ordinary text extraction. In that narrow case, plain text
+    is used only when it restores an explicit unit declaration. Both paths read
+    the same immutable PDF bytes and never invoke OCR.
+    """
 
     try:
         from pypdf import PdfReader
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("pypdf is required for official filing parsing") from exc
+
     reader = PdfReader(io.BytesIO(content), strict=False)
-    parts: list[str] = []
-    for page in reader.pages:
-        text = page.extract_text(extraction_mode="layout") or ""
-        if text.strip():
-            parts.append(text)
-    result = "\n".join(parts).strip()
-    if not result:
-        raise ValueError("official filing has no extractable text layer")
-    return result
+
+    def _collect(*, layout: bool) -> str:
+        parts: list[str] = []
+        for page in reader.pages:
+            text = (
+                page.extract_text(extraction_mode="layout")
+                if layout
+                else page.extract_text()
+            ) or ""
+            if text.strip():
+                parts.append(text)
+        return "\n".join(parts).strip()
+
+    layout_text = _collect(layout=True)
+    plain_text = ""
+
+    if not layout_text:
+        plain_text = _collect(layout=False)
+        if not plain_text:
+            raise ValueError("official filing has no extractable text layer")
+        return plain_text
+
+    layout_lines = _normalize_text_lines(layout_text)
+    if _has_explicit_unit_declaration(layout_lines):
+        return layout_text
+
+    plain_text = _collect(layout=False)
+    if plain_text and _has_explicit_unit_declaration(_normalize_text_lines(plain_text)):
+        return plain_text
+
+    return layout_text
 
 
 def filing_period_end_from_title(title: object) -> pd.Timestamp:
