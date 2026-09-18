@@ -236,7 +236,7 @@ def test_policy_materializer_uses_official_json_archive_and_pins_article_hashes(
     )
     assert result.summary["source_coverage_complete"] is True
     assert result.summary["readiness_state"] == "QUALIFIED_INPUT"
-    assert result.summary["archive_protocol"] == "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V2"
+    assert result.summary["archive_protocol"] == "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V3_FULL_ENUMERATION"
     assert set(result.records["source_identity"]) == {POLICY_SOURCE_ID}
     assert result.coverage["query_status"].eq("COMPLETE_WINDOW").all()
     assert len(result.records) == len(CSRC_CHANNELS)
@@ -267,3 +267,80 @@ def test_policy_document_failure_invalidates_its_segment_coverage():
     assert result.summary["source_coverage_complete"] is False
     assert result.summary["readiness_state"] == "PARTIAL_COVERAGE"
     assert result.summary["document_failure_invalidates_segment_coverage"] is True
+
+
+
+def test_search_page_accepts_unordered_publication_times_when_identity_is_valid():
+    channel = PolicyChannel(
+        segment="CSRC_ORDERS",
+        channel_code="c101953",
+        channel_id="a" * 32,
+        channel_name="orders",
+        default_evidence_type="REGULATORY_EVENT",
+    )
+    payload = _page_payload(
+        "c101953",
+        page=1,
+        total=3,
+        items=[
+            _item("c101953", manuscript="new", when="2026-01-20 10:00:00"),
+            _item("c101953", manuscript="old", when="2023-01-01 10:00:00"),
+            _item("c101953", manuscript="middle", when="2025-06-01 10:00:00"),
+        ],
+    )
+
+    entries, meta = parse_csrc_search_page(
+        payload, channel=channel, requested_page=1
+    )
+
+    assert meta["total"] == 3
+    assert [entry.manuscript_id for entry in entries] == ["new", "old", "middle"]
+
+
+def test_policy_materializer_enumerates_full_advertised_total_before_date_filter():
+    page_calls: list[tuple[str, int]] = []
+
+    def fetcher(url: str) -> dict[str, object]:
+        parsed = urlparse(url)
+        if parsed.path == "/getLocalList":
+            code = parse_qs(parsed.query)["channelCode"][0]
+            return _metadata_payload(code)
+        channel_id = parsed.path.rsplit("/", 1)[-1]
+        code = next(code for code, value in _CHANNEL_IDS.items() if value == channel_id)
+        page = int(parse_qs(parsed.query)["page"][0])
+        page_calls.append((code, page))
+        if page == 1:
+            return _page_payload(
+                code,
+                page=1,
+                total=4,
+                items=[
+                    _item(code, manuscript=f"{code}-new", when="2026-01-20 10:00:00"),
+                    _item(code, manuscript=f"{code}-prewindow", when="2021-12-31 10:00:00"),
+                ],
+            )
+        if page == 2:
+            return _page_payload(
+                code,
+                page=2,
+                total=4,
+                items=[
+                    _item(code, manuscript=f"{code}-middle", when="2025-06-01 10:00:00"),
+                    _item(code, manuscript=f"{code}-older", when="2023-05-01 10:00:00"),
+                ],
+            )
+        raise AssertionError(url)
+
+    result = materialize_csrc_policy_archive(
+        start_date="2022-01-04",
+        end_date="2026-01-30",
+        trading_dates=pd.bdate_range("2021-12-30", "2026-02-03"),
+        json_fetcher=fetcher,
+        article_fetcher=lambda url: "official article",
+        page_size=2,
+    )
+
+    assert result.summary["readiness_state"] == "QUALIFIED_INPUT"
+    assert result.summary["source_coverage_complete"] is True
+    assert len(result.records) == len(CSRC_CHANNELS) * 3
+    assert all((code, 2) in page_calls for code in _CHANNEL_IDS)
