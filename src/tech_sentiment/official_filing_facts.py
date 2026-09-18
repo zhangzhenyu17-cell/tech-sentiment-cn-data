@@ -91,7 +91,7 @@ def _canonical_host(url: str) -> str:
 
 
 _CNINFO_STATIC_ATTACHMENT_RE = re.compile(
-    r"^/finalpage/(?P<date>20\\d{2}-\\d{2}-\\d{2})/(?P<document_id>\\d+)\\.PDF$",
+    r"^/finalpage/(?P<date>20\d{2}-\d{2}-\d{2})/(?P<document_id>\d+)\.PDF$",
     re.IGNORECASE,
 )
 
