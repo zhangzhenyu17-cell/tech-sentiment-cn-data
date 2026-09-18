@@ -1,0 +1,124 @@
+name: v4a-02-capital
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Qualification start date"
+        required: true
+        default: "2022-01-04"
+        type: string
+      end_date:
+        description: "Qualification end date"
+        required: true
+        default: "2026-09-17"
+        type: string
+
+concurrency:
+  group: v4a-capital-${{ inputs.start_date }}-${{ inputs.end_date }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  capital:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: Download compatible shared bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/shared bundle-meta stage/shared
+          python scripts/v4a_persistent_stage_bundle.py key \
+            --family shared --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out bundle-meta/shared-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/shared-key.json"))["asset_base"])' )"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/shared
+          cp "bundle/shared/${BASE}.manifest.json" bundle-meta/shared.json
+          python scripts/v4a_persistent_stage_bundle.py verify \
+            --family shared --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --archive "bundle/shared/${BASE}.tar.gz" \
+            --manifest bundle-meta/shared.json \
+            --extract-to stage/shared
+      - name: Resolve Capital compatibility identity
+        run: |
+          python scripts/v4a_persistent_stage_bundle.py key \
+            --family capital --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json \
+            --out bundle-meta/capital-key.json
+          echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/capital-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+      - name: Restore Capital checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/capital
+          key: v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            v4a-capital-${{ env.STAGE_COMPAT }}-
+      - name: Materialize ETF-share and SSE+SZSE turnover
+        id: materialize
+        run: |
+          mkdir -p stage/capital/capital_input_qualification .cache/capital_pit_v4a/capital
+          python scripts/qualify_capital_inputs.py \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ inputs.end_date }}" \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --source-commit "${{ github.sha }}" \
+            --checkpoint-dir .cache/capital_pit_v4a/capital \
+            --out-dir stage/capital/capital_input_qualification
+      - name: Save Capital checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/capital
+          key: v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal Capital stage
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root stage/capital --stage-kind capital --stage-id capital \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out stage/capital/receipt.json
+      - name: Preserve stage diagnostics before qualification gate
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-capital-stage-${{ github.run_id }}
+          path: stage/capital
+          if-no-files-found: error
+          retention-days: 30
+      - name: Qualification gate
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py \
+            --kind capital --root stage/capital/capital_input_qualification
+      - name: Package persistent Capital bundle
+        run: |
+          mkdir -p dist
+          python scripts/v4a_persistent_stage_bundle.py package \
+            --family capital --stage-root stage/capital \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json \
+            --out-dir dist --out dist/package.json
+      - name: Publish immutable Capital bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BASE="$(python -c 'import json; print(json.load(open("dist/package.json"))["asset_base"])' )"
+          bash scripts/publish_v4a_release_bundle.sh v4a-stage-bundles-v1 dist "$BASE"
+      - name: Upload convenient 90-day bundle copy
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-persistent-capital-${{ github.run_id }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 90
