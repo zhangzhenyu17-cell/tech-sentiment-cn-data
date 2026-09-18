@@ -67,11 +67,19 @@ def _sse_etf_scale_payload_frame(payload: object) -> pd.DataFrame:
     return frame
 
 
-def _validate_sse_query_response_url(response: object) -> None:
-    final_url = str(getattr(response, "url", SSE_ETF_SCALE_QUERY_URL) or SSE_ETF_SCALE_QUERY_URL)
+def _validate_sse_response_url(response: object, *, expected_host: str, default_url: str) -> None:
+    final_url = str(getattr(response, "url", default_url) or default_url)
     parsed = urlparse(final_url)
-    if parsed.scheme != "https" or (parsed.hostname or "").lower() != "query.sse.com.cn":
+    if parsed.scheme != "https" or (parsed.hostname or "").lower() != expected_host:
         raise ValueError("SSE ETF scale transport redirected outside official HTTPS host")
+
+
+def _validate_sse_query_response_url(response: object) -> None:
+    _validate_sse_response_url(
+        response,
+        expected_host="query.sse.com.cn",
+        default_url=SSE_ETF_SCALE_QUERY_URL,
+    )
 
 
 def _fetch_sse_etf_scale_direct(
@@ -80,8 +88,15 @@ def _fetch_sse_etf_scale_direct(
     timeout: float = 20.0,
     plain_get: Callable[..., object] | None = None,
     browser_get: Callable[..., object] | None = None,
+    browser_session_factory: Callable[[], object] | None = None,
 ) -> pd.DataFrame:
-    """Fetch the official SSE ETF scale endpoint with browser transport fallback."""
+    """Fetch the official SSE ETF scale endpoint with bounded same-source fallbacks.
+
+    Transport order is plain HTTPS, one-shot browser-fingerprint HTTPS, then a
+    browser-fingerprint session warmed on the official SSE ETF scale page. Every
+    accepted response remains on the same official SSE HTTPS hosts and uses the
+    same SQL identity and raw field semantics.
+    """
 
     if len(date) != 8 or not date.isdigit():
         raise ValueError("SSE ETF scale date must be YYYYMMDD")
@@ -97,9 +112,10 @@ def _fetch_sse_etf_scale_direct(
         "STAT_DATE": stat_date,
     }
     headers = {
-        "Referer": "https://www.sse.com.cn/",
+        "Referer": SSE_ETF_SHARE_SOURCE_URL,
         "Accept": "application/json,text/plain,*/*",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+        "X-Requested-With": "XMLHttpRequest",
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 Chrome/124 Safari/537.36"
@@ -119,16 +135,22 @@ def _fetch_sse_etf_scale_direct(
         )
         response.raise_for_status()
         _validate_sse_query_response_url(response)
-        payload = response.json()
+        return _sse_etf_scale_payload_frame(response.json())
     except Exception:
-        if browser_get is None:
-            try:
-                from curl_cffi import requests as curl_requests
-            except ImportError as exc:  # pragma: no cover - installed by data extra
-                raise RuntimeError(
-                    "curl_cffi is required for SSE ETF browser transport fallback"
-                ) from exc
-            browser_get = curl_requests.get
+        pass
+
+    curl_requests = None
+    if browser_get is None or browser_session_factory is None:
+        try:
+            from curl_cffi import requests as curl_requests
+        except ImportError as exc:  # pragma: no cover - installed by data extra
+            raise RuntimeError(
+                "curl_cffi is required for SSE ETF browser transport fallback"
+            ) from exc
+    if browser_get is None:
+        browser_get = curl_requests.get
+
+    try:
         response = browser_get(
             SSE_ETF_SCALE_QUERY_URL,
             params=params,
@@ -139,8 +161,53 @@ def _fetch_sse_etf_scale_direct(
         )
         response.raise_for_status()
         _validate_sse_query_response_url(response)
-        payload = response.json()
-    return _sse_etf_scale_payload_frame(payload)
+        return _sse_etf_scale_payload_frame(response.json())
+    except Exception:
+        pass
+
+    if browser_session_factory is None:
+        browser_session_factory = curl_requests.Session
+
+    session = browser_session_factory()
+    try:
+        bootstrap_headers = {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": headers["Accept-Language"],
+            "User-Agent": headers["User-Agent"],
+        }
+        try:
+            bootstrap = session.get(
+                SSE_ETF_SHARE_SOURCE_URL,
+                headers=bootstrap_headers,
+                impersonate="chrome",
+                timeout=min(timeout, 10.0),
+                allow_redirects=True,
+            )
+            _validate_sse_response_url(
+                bootstrap,
+                expected_host="www.sse.com.cn",
+                default_url=SSE_ETF_SHARE_SOURCE_URL,
+            )
+            # WAF challenge responses can set useful domain cookies even when
+            # they are not 2xx, so warm-up is intentionally best-effort.
+        except Exception:
+            pass
+
+        response = session.get(
+            SSE_ETF_SCALE_QUERY_URL,
+            params=params,
+            headers=headers,
+            impersonate="chrome",
+            timeout=timeout,
+            allow_redirects=True,
+        )
+        response.raise_for_status()
+        _validate_sse_query_response_url(response)
+        return _sse_etf_scale_payload_frame(response.json())
+    finally:
+        close = getattr(session, "close", None)
+        if callable(close):
+            close()
 
 def normalize_sse_etf_share_snapshot(
     frame: pd.DataFrame,
