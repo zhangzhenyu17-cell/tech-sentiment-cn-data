@@ -442,19 +442,31 @@ def _compact_row_text(value: str) -> str:
     return re.sub(r"\s+", "", str(value))
 
 
+def _wrapped_label_match(text: str, labels: Iterable[str]) -> re.Match[str] | None:
+    """Match a label even when PDF layout extraction inserts whitespace inside it."""
+
+    for label in labels:
+        pattern = re.compile(r"\s*".join(re.escape(char) for char in label))
+        match = pattern.search(text)
+        if match is not None:
+            return match
+    return None
+
+
 def _first_yuan_value_after_label(lines: list[str], labels: Iterable[str]) -> float | None:
     for index in range(len(lines)):
         logical_row = _logical_row_window(lines, index)
-        compact = _compact_row_text(logical_row)
-        label = next((candidate for candidate in labels if candidate in compact), None)
-        if label is None:
+        label_match = _wrapped_label_match(logical_row, labels)
+        if label_match is None:
             continue
         unit = _nearest_explicit_unit(lines, index)
         if unit != "元":
             # Missing/local non-yuan unit is not evidence for a canonical CNY
             # amount. Keep searching for another explicit yuan table occurrence.
             continue
-        suffix = compact.split(label, 1)[1]
+        # Preserve original whitespace after the label so adjacent numeric cells
+        # can never be concatenated into one token.
+        suffix = logical_row[label_match.end() :]
         for token in _NUMERIC_TOKEN_RE.findall(suffix):
             try:
                 value = _parse_numeric_token(token)
@@ -470,15 +482,14 @@ def _first_basic_eps_value(lines: list[str], labels: Iterable[str]) -> float | N
 
     for index in range(len(lines)):
         logical_row = _logical_row_window(lines, index)
-        compact = _compact_row_text(logical_row)
-        label = next((candidate for candidate in labels if candidate in compact), None)
-        if label is None:
+        label_match = _wrapped_label_match(logical_row, labels)
+        if label_match is None:
             continue
-        suffix = compact.split(label, 1)[1]
+        suffix = logical_row[label_match.end() :]
         first_number = _NUMERIC_TOKEN_RE.search(suffix)
         if first_number is None:
             continue
-        unit_region = suffix[: first_number.start()]
+        unit_region = _compact_row_text(suffix[: first_number.start()])
         if "元/股" not in unit_region:
             continue
         try:
