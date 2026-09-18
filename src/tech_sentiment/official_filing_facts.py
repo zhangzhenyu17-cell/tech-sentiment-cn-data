@@ -218,6 +218,66 @@ def _download_cninfo_with_https_session(
         fp=None,
     )
 
+
+def _download_cninfo_with_browser_transport(
+    canonical_url: str,
+    fallback_url: str,
+    *,
+    timeout: float,
+) -> tuple[bytes, str]:
+    """Use browser-fingerprint HTTPS transport against the same CNINFO bulletin.
+
+    This is a final transport-only fallback for hosted-runner WAF decisions.
+    Canonical evidence identity remains the immutable CNINFO attachment URL.
+    Both candidate URLs stay on the existing official HTTPS allowlist, and any
+    redirect outside that allowlist is rejected before bytes are accepted.
+    """
+
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError as exc:  # pragma: no cover - installed by the data extra via akshare
+        raise RuntimeError(
+            "curl_cffi is required for CNINFO browser transport fallback"
+        ) from exc
+
+    headers = {
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Referer": "https://www.cninfo.com.cn/",
+    }
+    last_error: Exception | None = None
+    for candidate in (canonical_url, fallback_url):
+        try:
+            response = curl_requests.get(
+                candidate,
+                headers=headers,
+                impersonate="chrome",
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            status = int(getattr(response, "status_code", 0) or 0)
+            if status == 403:
+                last_error = HTTPError(
+                    candidate, 403, "Forbidden", hdrs=None, fp=None
+                )
+                continue
+            response.raise_for_status()
+            retrieval_url = str(getattr(response, "url", candidate) or candidate)
+            _canonical_host(retrieval_url)
+            content = bytes(response.content)
+            if not content:
+                raise ValueError("official filing attachment is empty")
+            return content, retrieval_url
+        except Exception as exc:
+            last_error = exc
+
+    if last_error is not None:
+        raise RuntimeError(
+            "CNINFO browser HTTPS transport exhausted without official PDF bytes"
+        ) from last_error
+    raise RuntimeError("CNINFO browser HTTPS transport produced no attempt")
+
+
 def download_official_document(
     url: str,
     *,
@@ -257,11 +317,20 @@ def download_official_document(
         except HTTPError as fallback_exc:
             if fallback_exc.code != 403:
                 raise
-            content, retrieval_url = _download_cninfo_with_https_session(
-                url,
-                fallback,
-                timeout=timeout,
-            )
+            try:
+                content, retrieval_url = _download_cninfo_with_https_session(
+                    url,
+                    fallback,
+                    timeout=timeout,
+                )
+            except HTTPError as session_exc:
+                if session_exc.code != 403:
+                    raise
+                content, retrieval_url = _download_cninfo_with_browser_transport(
+                    url,
+                    fallback,
+                    timeout=timeout,
+                )
 
     if not content:
         raise ValueError("official filing attachment is empty")
