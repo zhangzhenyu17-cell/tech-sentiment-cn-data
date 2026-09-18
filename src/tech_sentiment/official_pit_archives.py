@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 
+from .bounded_retry import call_with_bounded_network_retry
 from .pit_public_materialization import (
     REQUIRED_PIT_COLUMNS,
     PitMaterializationResult,
@@ -366,6 +367,8 @@ def materialize_official_archive(
     end_date: object,
     trading_dates: Iterable[object],
     fetcher: Callable[..., pd.DataFrame],
+    retry_attempts: int = 3,
+    retry_backoff_seconds: float = 0.5,
 ) -> PitMaterializationResult:
     start = pd.Timestamp(start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
@@ -386,7 +389,11 @@ def materialize_official_archive(
     for symbol in applicable:
         entity_id = _normalize_entity_id(symbol)
         try:
-            raw = fetcher(symbol=symbol, start_date=start, end_date=end)
+            raw = call_with_bounded_network_retry(
+                lambda: fetcher(symbol=symbol, start_date=start, end_date=end),
+                attempts=retry_attempts,
+                backoff_seconds=retry_backoff_seconds,
+            )
             normalized = normalize_official_announcements(
                 raw,
                 spec=spec,
