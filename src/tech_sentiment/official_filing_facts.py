@@ -11,12 +11,37 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 
-from .pit_public_materialization import _stable_hash, validate_materialized_pit_records
+from .pit_public_materialization import (
+    REQUIRED_PIT_COLUMNS,
+    _stable_hash,
+    validate_materialized_pit_records,
+)
 
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
 FILING_PARSER_VERSION = "official-filing-facts-v2-scoped-units-revision-time"
+
+FILING_FACT_COLUMNS = (
+    "entity_id",
+    "period_end",
+    "fact_type",
+    "value",
+    "unit",
+    "evidence_available_date",
+    "publication_timestamp",
+    "source_identity",
+    "provider",
+    "document_id",
+    "revision_id",
+    "document_url",
+    "document_sha256",
+    "parser_version",
+)
+DERIVED_FUNDAMENTAL_EVIDENCE_COLUMNS = tuple(REQUIRED_PIT_COLUMNS) + (
+    "evidence_payload",
+    "source_url_identity",
+)
 
 _OFFICIAL_ATTACHMENT_HOSTS = {
     "static.cninfo.com.cn",
@@ -269,7 +294,7 @@ def build_filing_fact_rows(
                 "parser_version": FILING_PARSER_VERSION,
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=list(FILING_FACT_COLUMNS))
 
 
 def latest_filing_fact_as_of(
@@ -338,7 +363,7 @@ def derive_fundamental_trend_evidence(facts: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"filing facts missing columns: {sorted(missing)}")
     if facts.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=list(DERIVED_FUNDAMENTAL_EVIDENCE_COLUMNS))
 
     x = facts.copy()
     x["period_end"] = pd.to_datetime(x["period_end"], errors="raise").dt.normalize()
@@ -444,14 +469,18 @@ def derive_fundamental_trend_evidence(facts: pd.DataFrame) -> pd.DataFrame:
             }
         )
     if not evidence_rows:
-        return pd.DataFrame()
-    return validate_materialized_pit_records(pd.DataFrame(evidence_rows))
+        return pd.DataFrame(columns=list(DERIVED_FUNDAMENTAL_EVIDENCE_COLUMNS))
+    return validate_materialized_pit_records(
+        pd.DataFrame(evidence_rows, columns=list(DERIVED_FUNDAMENTAL_EVIDENCE_COLUMNS))
+    )
 
 
 __all__ = [
     "DERIVED_FUNDAMENTAL_SOURCE_ID",
     "DERIVED_FUNDAMENTAL_PROVIDER",
     "FILING_PARSER_VERSION",
+    "FILING_FACT_COLUMNS",
+    "DERIVED_FUNDAMENTAL_EVIDENCE_COLUMNS",
     "DownloadedOfficialDocument",
     "download_official_document",
     "extract_pdf_text",
