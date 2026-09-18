@@ -196,8 +196,9 @@ def test_input_manifest_identity_participates_in_compatibility_key(
         "stage_id": "shared",
         "compatibility_key": "shared-key",
         "archive_sha256": "a" * 64,
-        "bundle_identity": "bundle-a",
+        "original_source_commit": "source-a",
     }
+    base["bundle_identity"] = persistent._manifest_identity(base)
     input_manifest.write_text(json.dumps(base), encoding="utf-8")
     first = persistent.compatibility_descriptor(
         repo_root=root,
@@ -206,7 +207,8 @@ def test_input_manifest_identity_participates_in_compatibility_key(
         end_date="2026-09-17",
         input_manifests={"shared": input_manifest},
     )
-    base["bundle_identity"] = "bundle-b"
+    base["original_source_commit"] = "source-b"
+    base["bundle_identity"] = persistent._manifest_identity(base)
     input_manifest.write_text(json.dumps(base), encoding="utf-8")
     second = persistent.compatibility_descriptor(
         repo_root=root,
