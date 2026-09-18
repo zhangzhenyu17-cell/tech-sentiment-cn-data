@@ -13,44 +13,90 @@ on:
         required: false
         default: ""
         type: string
+      preflight_only:
+        description: "Run fast-fail preflights only; skip expensive materialization"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
-  preflight:
+  preflight_static:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    outputs:
-      end_date: ${{ steps.dates.outputs.end_date }}
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - name: Install
         run: python -m pip install -e ".[data,dev]"
-
       - name: Audit public tree and run tests
-        run: |
-          python scripts/audit_public_tree.py
-          pytest -q
-
+        run: timeout 8m bash -c 'python scripts/audit_public_tree.py && pytest -q'
       - name: Qualification reachability preflight
         run: |
-          python scripts/check_v4a_reachability.py \
+          timeout 2m python scripts/check_v4a_reachability.py \
             --out output/v4a_reachability.json \
             --require-reachable
 
-      - name: CNINFO protocol connectivity preflight
-        run: python scripts/check_cninfo_connectivity.py
+  preflight_cninfo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: CNINFO protocol, PDF, facts and earnings smoke
+        run: timeout 9m python scripts/check_cninfo_connectivity.py
 
-      - name: CSRC policy protocol connectivity preflight
-        run: python scripts/check_csrc_policy_connectivity.py
+  preflight_policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: CSRC policy protocol smoke
+        run: timeout 7m python scripts/check_csrc_policy_connectivity.py
 
+  preflight_issuer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: SSE and SZSE issuer archive protocol smoke
+        run: timeout 7m python scripts/check_issuer_archive_connectivity.py
+
+  preflight_shared:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      end_date: ${{ steps.dates.outputs.end_date }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
       - name: Resolve end date
         id: dates
         shell: bash
@@ -61,26 +107,23 @@ jobs:
             END_DATE="$(TZ=Asia/Shanghai date +%F)"
           fi
           echo "end_date=${END_DATE}" >> "$GITHUB_OUTPUT"
-
       - name: Build shared real trading calendar
         run: |
           mkdir -p stage/shared
-          python scripts/build_v4a_shared_calendar.py \
+          timeout 6m python scripts/build_v4a_shared_calendar.py \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --calendar-index-code "000688" \
             --source-commit "${{ github.sha }}" \
             --out-dir stage/shared
-
       - name: Latest public-source freshness preflight
         run: |
-          python scripts/check_v4a_source_freshness.py             --calendar-csv stage/shared/trading_calendar.csv
-
+          timeout 10m python scripts/check_v4a_source_freshness.py \
+            --calendar-csv stage/shared/trading_calendar.csv
       - name: Build frozen Capital/PIT symbol scope
         run: |
           python scripts/build_capital_pit_symbol_scope.py \
             --out-dir stage/shared/pit_symbol_scope
-
       - name: Seal shared-input stage
         run: |
           python scripts/write_v4a_stage_receipt.py \
@@ -91,7 +134,6 @@ jobs:
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --out stage/shared/receipt.json
-
       - name: Upload shared-input stage
         uses: actions/upload-artifact@v4
         with:
@@ -100,8 +142,21 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  preflight_gate:
+    needs: [preflight_static, preflight_cninfo, preflight_policy, preflight_issuer, preflight_shared]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      end_date: ${{ steps.pass.outputs.end_date }}
+    steps:
+      - name: Open expensive-materialization gate
+        id: pass
+        run: |
+          echo "end_date=${{ needs.preflight_shared.outputs.end_date }}" >> "$GITHUB_OUTPUT"
+
   capital:
-    needs: preflight
+    if: ${{ inputs.preflight_only != true }}
+    needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -122,21 +177,21 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - name: Restore Capital checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/capital
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-capital-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-capital-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-capital-
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-capital-
       - name: Materialize ETF-share and SSE+SZSE turnover
         id: materialize
         run: |
           mkdir -p stage/capital/capital_input_qualification .cache/capital_pit_v4a/capital
           python scripts/qualify_capital_inputs.py \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
             --source-commit "${{ github.sha }}" \
             --checkpoint-dir .cache/capital_pit_v4a/capital \
@@ -146,7 +201,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/capital
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-capital-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-capital-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal Capital stage
         if: ${{ success() }}
         run: |
@@ -154,7 +209,7 @@ jobs:
             --root stage/capital --stage-kind capital --stage-id capital \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out stage/capital/receipt.json
       - name: Upload Capital stage and checkpoints
         if: ${{ success() }}
@@ -168,7 +223,8 @@ jobs:
           retention-days: 7
 
   financing:
-    needs: preflight
+    if: ${{ inputs.preflight_only != true }}
+    needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -189,21 +245,21 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - name: Restore financing checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/financing
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-financing-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-financing-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-financing-
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-financing-
       - name: Materialize bilateral financing history
         id: materialize
         run: |
           mkdir -p stage/financing/financing_materialization .cache/capital_pit_v4a/financing
           python scripts/materialize_financing_history.py \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
             --source-commit "${{ github.sha }}" \
             --checkpoint-dir .cache/capital_pit_v4a/financing \
@@ -213,7 +269,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/financing
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-financing-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-financing-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal financing stage
         if: ${{ success() }}
         run: |
@@ -221,7 +277,7 @@ jobs:
             --root stage/financing --stage-kind financing --stage-id financing \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out stage/financing/receipt.json
       - name: Upload financing stage and checkpoints
         if: ${{ success() }}
@@ -235,7 +291,8 @@ jobs:
           retention-days: 7
 
   issuer_cninfo:
-    needs: preflight
+    if: ${{ inputs.preflight_only != true }}
+    needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -261,14 +318,14 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - name: Restore CNINFO issuer checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-cninfo-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-issuer-cninfo-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-cninfo-${{ matrix.shard }}-
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-issuer-cninfo-${{ matrix.shard }}-
       - name: Materialize CNINFO issuer shard
         id: materialize
         run: |
@@ -276,7 +333,7 @@ jobs:
           python scripts/materialize_pit_evidence.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
             --source-commit "${{ github.sha }}" \
             --source CNINFO_ANNOUNCEMENT_ARCHIVE \
@@ -288,7 +345,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-cninfo-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-issuer-cninfo-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal CNINFO issuer shard
         if: ${{ success() }}
         run: |
@@ -297,7 +354,7 @@ jobs:
             --stage-kind issuer --stage-id "cninfo-${{ matrix.shard }}-of-4" \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out "stage/issuer/cninfo-${{ matrix.shard }}/receipt.json"
       - name: Upload CNINFO issuer shard
         if: ${{ success() }}
@@ -311,7 +368,8 @@ jobs:
           retention-days: 7
 
   issuer_sse:
-    needs: preflight
+    if: ${{ inputs.preflight_only != true }}
+    needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -332,14 +390,14 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - name: Restore SSE issuer checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-sse-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-issuer-sse-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-sse-
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-issuer-sse-
       - name: Materialize SSE issuer archive
         id: materialize
         run: |
@@ -347,7 +405,7 @@ jobs:
           python scripts/materialize_pit_evidence.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
             --source-commit "${{ github.sha }}" \
             --source SSE_ANNOUNCEMENT_ARCHIVE \
@@ -359,7 +417,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-sse-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-issuer-sse-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal SSE issuer stage
         if: ${{ success() }}
         run: |
@@ -367,7 +425,7 @@ jobs:
             --root stage/issuer/sse --stage-kind issuer --stage-id sse-0-of-1 \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out stage/issuer/sse/receipt.json
       - name: Upload SSE issuer stage
         if: ${{ success() }}
@@ -381,7 +439,8 @@ jobs:
           retention-days: 7
 
   issuer_szse:
-    needs: preflight
+    if: ${{ inputs.preflight_only != true }}
+    needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -402,14 +461,14 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - name: Restore SZSE issuer checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-szse-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-issuer-szse-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-szse-
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-issuer-szse-
       - name: Materialize SZSE issuer archive
         id: materialize
         run: |
@@ -417,7 +476,7 @@ jobs:
           python scripts/materialize_pit_evidence.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
             --source-commit "${{ github.sha }}" \
             --source SZSE_ANNOUNCEMENT_ARCHIVE \
@@ -429,7 +488,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-issuer-szse-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-issuer-szse-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal SZSE issuer stage
         if: ${{ success() }}
         run: |
@@ -437,7 +496,7 @@ jobs:
             --root stage/issuer/szse --stage-kind issuer --stage-id szse-0-of-1 \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out stage/issuer/szse/receipt.json
       - name: Upload SZSE issuer stage
         if: ${{ success() }}
@@ -451,7 +510,8 @@ jobs:
           retention-days: 7
 
   issuer_aggregate:
-    needs: [preflight, issuer_cninfo, issuer_sse, issuer_szse]
+    if: ${{ inputs.preflight_only != true }}
+    needs: [preflight_gate, issuer_cninfo, issuer_sse, issuer_szse]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -472,7 +532,7 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - uses: actions/download-artifact@v4
         with:
           pattern: v4a-stage-issuer-*
@@ -486,7 +546,7 @@ jobs:
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out-dir stage/issuer_aggregate
       - name: Seal issuer aggregate
         run: |
@@ -494,7 +554,7 @@ jobs:
             --root stage/issuer_aggregate --stage-kind issuer_aggregate --stage-id issuer_aggregate \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out stage/issuer_aggregate/receipt.json
       - uses: actions/upload-artifact@v4
         with:
@@ -504,7 +564,8 @@ jobs:
           retention-days: 7
 
   fundamental_earnings:
-    needs: [preflight, issuer_cninfo]
+    if: ${{ inputs.preflight_only != true }}
+    needs: [preflight_gate, issuer_cninfo]
     runs-on: ubuntu-latest
     timeout-minutes: 180
     strategy:
@@ -530,14 +591,14 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - name: Restore filing checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/filings
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-filings-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-filings-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-filings-${{ matrix.shard }}-
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-filings-${{ matrix.shard }}-
       - name: Materialize filing/fundamental/earnings shard
         id: materialize
         run: |
@@ -546,7 +607,7 @@ jobs:
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --calendar-csv stage/shared/trading_calendar.csv \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --source-commit "${{ github.sha }}" \
             --shard-index "${{ matrix.shard }}" --shard-count 4 \
             --checkpoint-dir .cache/capital_pit_v4a/derived/filings \
@@ -556,7 +617,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/derived/filings
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-filings-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-filings-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal fundamental/earnings shard
         if: ${{ success() }}
         run: |
@@ -565,7 +626,7 @@ jobs:
             --stage-kind fundamental_earnings --stage-id "fundamental-${{ matrix.shard }}-of-4" \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out "stage/fundamental/${{ matrix.shard }}/receipt.json"
       - name: Upload fundamental/earnings shard
         if: ${{ success() }}
@@ -579,7 +640,8 @@ jobs:
           retention-days: 7
 
   prices:
-    needs: preflight
+    if: ${{ inputs.preflight_only != true }}
+    needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -605,14 +667,14 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - name: Restore price checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/prices
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-prices-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-prices-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-prices-${{ matrix.shard }}-
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-prices-${{ matrix.shard }}-
       - name: Materialize PIT price shard
         id: materialize
         run: |
@@ -620,7 +682,7 @@ jobs:
           python scripts/materialize_v4a_price_shard.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --source-commit "${{ github.sha }}" \
             --shard-index "${{ matrix.shard }}" --shard-count 4 \
             --checkpoint-dir .cache/capital_pit_v4a/derived/prices \
@@ -630,7 +692,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/derived/prices
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-prices-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-prices-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal price shard
         if: ${{ success() }}
         run: |
@@ -639,7 +701,7 @@ jobs:
             --stage-kind prices --stage-id "prices-${{ matrix.shard }}-of-4" \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out "stage/prices/${{ matrix.shard }}/receipt.json"
       - name: Upload price shard
         if: ${{ success() }}
@@ -653,7 +715,8 @@ jobs:
           retention-days: 7
 
   policy:
-    needs: preflight
+    if: ${{ inputs.preflight_only != true }}
+    needs: preflight_gate
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -674,14 +737,14 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - name: Restore policy checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/policy
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-policy-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-policy-
+            capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-policy-
       - name: Materialize policy/regulatory archive
         id: materialize
         run: |
@@ -689,7 +752,7 @@ jobs:
           python scripts/materialize_v4a_policy_stage.py \
             --calendar-csv stage/shared/trading_calendar.csv \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --source-commit "${{ github.sha }}" \
             --checkpoint-dir .cache/capital_pit_v4a/derived/policy \
             --out-dir stage/policy
@@ -698,7 +761,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/derived/policy
-          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight.outputs.end_date }}-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          key: capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-${{ needs.preflight_gate.outputs.end_date }}-policy-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal policy stage
         if: ${{ success() }}
         run: |
@@ -706,7 +769,7 @@ jobs:
             --root stage/policy --stage-kind policy --stage-id policy \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out stage/policy/receipt.json
       - name: Upload policy stage
         if: ${{ success() }}
@@ -720,7 +783,8 @@ jobs:
           retention-days: 7
 
   derived_aggregate:
-    needs: [preflight, issuer_aggregate, fundamental_earnings, prices, policy]
+    if: ${{ inputs.preflight_only != true }}
+    needs: [preflight_gate, issuer_aggregate, fundamental_earnings, prices, policy]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -741,7 +805,7 @@ jobs:
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - uses: actions/download-artifact@v4
         with:
           name: v4a-stage-issuer-aggregate
@@ -771,7 +835,7 @@ jobs:
             --price-root stage/prices \
             --policy-dir stage/policy \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --source-commit "${{ github.sha }}" \
             --out-dir stage/derived/pit_evidence_materialization
       - name: Seal derived aggregate
@@ -780,7 +844,7 @@ jobs:
             --root stage/derived --stage-kind derived --stage-id derived \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}" \
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}" \
             --out stage/derived/receipt.json
       - uses: actions/upload-artifact@v4
         with:
@@ -790,7 +854,8 @@ jobs:
           retention-days: 7
 
   finalize:
-    needs: [preflight, capital, financing, derived_aggregate]
+    if: ${{ inputs.preflight_only != true }}
+    needs: [preflight_gate, capital, financing, derived_aggregate]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -849,19 +914,19 @@ jobs:
           python scripts/verify_v4a_stage_receipt.py \
             --root stage/shared --stage-kind shared --stage-id shared \
             --source-commit "${{ github.sha }}" --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
           python scripts/verify_v4a_stage_receipt.py \
             --root stage/capital --stage-kind capital --stage-id capital \
             --source-commit "${{ github.sha }}" --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
           python scripts/verify_v4a_stage_receipt.py \
             --root stage/financing --stage-kind financing --stage-id financing \
             --source-commit "${{ github.sha }}" --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
           python scripts/verify_v4a_stage_receipt.py \
             --root stage/derived --stage-kind derived --stage-id derived \
             --source-commit "${{ github.sha }}" --start-date "${{ inputs.start_date }}" \
-            --end-date "${{ needs.preflight.outputs.end_date }}"
+            --end-date "${{ needs.preflight_gate.outputs.end_date }}"
       - name: Assemble canonical output tree
         run: |
           mkdir -p output

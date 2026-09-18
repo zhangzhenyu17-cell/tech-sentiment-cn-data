@@ -102,6 +102,56 @@ def main() -> None:
             f"for {latest.date()}; errors={price_errors}"
         )
 
+    # Exercise the actual frozen-universe code families that historically caused
+    # provider/parser edge cases. Use a short trailing trading window rather than
+    # an exact single day so a one-day suspension does not create a false failure.
+    edge_window = calendar[-5:] if len(calendar) >= 5 else calendar
+    edge_start = pd.Timestamp(edge_window.min()).normalize()
+    edge_price_probes: list[dict[str, object]] = []
+    for label, symbol in (
+        ("STAR", "688981"),
+        ("CHINEXT", "300750"),
+        ("CODE_MIGRATION_CURRENT", "302132"),
+    ):
+        probe = pd.DataFrame()
+        probe_errors: list[str] = []
+        provider_used = ""
+        for provider in ("tencent", "eastmoney"):
+            try:
+                candidate = call_with_bounded_network_retry(
+                    lambda s=symbol, p=provider: fetch_stock_history(
+                        s,
+                        start_date=str(edge_start.date()),
+                        end_date=str(latest.date()),
+                        adjust="",
+                        provider=p,
+                    ),
+                    attempts=3,
+                    backoff_seconds=0.5,
+                )
+                if candidate is not None and len(candidate):
+                    probe = candidate
+                    provider_used = provider
+                    break
+                probe_errors.append(f"{provider}:empty")
+            except Exception as exc:
+                probe_errors.append(f"{provider}:{type(exc).__name__}:{exc}")
+        if probe.empty:
+            raise SystemExit(
+                "V4-A source freshness preflight failed: frozen-universe price "
+                f"protocol probe {label}/{symbol} returned no rows over "
+                f"{edge_start.date()}..{latest.date()}; errors={probe_errors}"
+            )
+        edge_price_probes.append(
+            {
+                "label": label,
+                "symbol": symbol,
+                "provider": provider_used,
+                "rows": int(len(probe)),
+                "window": [str(edge_start.date()), str(latest.date())],
+            }
+        )
+
     print(
         json.dumps(
             {
@@ -112,6 +162,7 @@ def main() -> None:
                 "financing_rows": int(len(financing.canonical)),
                 "representative_price_symbol": price_symbol,
                 "representative_price_rows": int(len(price)),
+                "frozen_universe_price_probes": edge_price_probes,
                 "diagnostic_only": True,
                 "canonical_evidence_output": False,
                 "forward_outcome_read": False,
