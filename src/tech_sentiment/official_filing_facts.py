@@ -11,6 +11,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import pandas as pd
+import requests
 
 from .bounded_retry import call_with_bounded_network_retry
 from .pit_public_materialization import (
@@ -137,6 +138,86 @@ def _download_once(
         return response.read()
 
 
+
+_CNINFO_SESSION_BOOTSTRAP_URL = "https://www.cninfo.com.cn/"
+
+
+def _download_cninfo_with_https_session(
+    canonical_url: str,
+    fallback_url: str,
+    *,
+    timeout: float,
+) -> tuple[bytes, str]:
+    """Retry the same CNINFO bulletin over browser-like HTTPS session transport.
+
+    This transport fallback is used only after both urllib HTTPS paths returned
+    403.  It never changes the canonical source identity, never downgrades to
+    HTTP, and rejects redirects outside the existing official HTTPS allowlist.
+    """
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Referer": "https://www.cninfo.com.cn/",
+    }
+    bootstrap_headers = {
+        "User-Agent": headers["User-Agent"],
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": headers["Accept-Language"],
+    }
+    session = requests.Session()
+    try:
+        try:
+            bootstrap = call_with_bounded_network_retry(
+                lambda: session.get(
+                    _CNINFO_SESSION_BOOTSTRAP_URL,
+                    headers=bootstrap_headers,
+                    timeout=min(timeout, 10.0),
+                    allow_redirects=True,
+                ),
+                attempts=2,
+                backoff_seconds=0.5,
+            )
+            if int(getattr(bootstrap, "status_code", 0) or 0) >= 500:
+                bootstrap.raise_for_status()
+        except (requests.RequestException, ValueError):
+            # Cookie warm-up is best-effort only; the exact bulletin request
+            # below remains authoritative and fail-closed.
+            pass
+
+        for candidate in (canonical_url, fallback_url):
+            response = call_with_bounded_network_retry(
+                lambda candidate=candidate: session.get(
+                    candidate,
+                    headers=headers,
+                    timeout=timeout,
+                    allow_redirects=True,
+                ),
+                attempts=3,
+                backoff_seconds=0.5,
+            )
+            status = int(getattr(response, "status_code", 0) or 0)
+            if status == 403:
+                continue
+            response.raise_for_status()
+            retrieval_url = str(getattr(response, "url", candidate) or candidate)
+            _canonical_host(retrieval_url)
+            content = bytes(response.content)
+            if not content:
+                raise ValueError("official filing attachment is empty")
+            return content, retrieval_url
+    finally:
+        session.close()
+
+    raise HTTPError(
+        fallback_url,
+        403,
+        "Forbidden after CNINFO HTTPS session transport",
+        hdrs=None,
+        fp=None,
+    )
+
 def download_official_document(
     url: str,
     *,
@@ -167,11 +248,20 @@ def download_official_document(
         if exc.code != 403 or fallback is None:
             raise
         retrieval_url = fallback
-        content = call_with_bounded_network_retry(
-            lambda: _download_once(fallback, timeout=timeout, opener=opener),
-            attempts=3,
-            backoff_seconds=0.5,
-        )
+        try:
+            content = call_with_bounded_network_retry(
+                lambda: _download_once(fallback, timeout=timeout, opener=opener),
+                attempts=3,
+                backoff_seconds=0.5,
+            )
+        except HTTPError as fallback_exc:
+            if fallback_exc.code != 403:
+                raise
+            content, retrieval_url = _download_cninfo_with_https_session(
+                url,
+                fallback,
+                timeout=timeout,
+            )
 
     if not content:
         raise ValueError("official filing attachment is empty")
