@@ -15,10 +15,12 @@
     "grant HISTORICAL_DATA_QUALIFIED only inside the private repository after every required verification passes",
     "open V4-C Context gate only after private HISTORICAL_DATA_QUALIFIED"
   ],
-  "private_verifier_merge_sha": null,
-  "activation_state": "PENDING_PRIVATE_MERGE",
+  "private_verifier_merge_sha": "b953b9c302467f40dbdb51d421b06ed1f78904b1",
+  "activation_state": "ACTIVE",
   "formal_public_long_run_allowed_before_activation": false,
   "forward_outcome_read_required": false,
   "parameter_search_required": false,
-  "production_or_trading_change_required": false
+  "production_or_trading_change_required": false,
+  "private_verifier_contract_id": "v4a_artifact_intake_contract_v2",
+  "formal_public_long_run_allowed_after_activation": true
 }
