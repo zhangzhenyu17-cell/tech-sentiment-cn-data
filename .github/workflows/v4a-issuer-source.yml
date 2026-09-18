@@ -1,0 +1,334 @@
+name: v4a-04-issuer-source
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Issuer source to materialize"
+        required: true
+        default: "cninfo"
+        type: choice
+        options:
+          - cninfo
+          - sse
+          - szse
+      start_date:
+        description: "Qualification start date"
+        required: true
+        default: "2022-01-04"
+        type: string
+      end_date:
+        description: "Qualification end date"
+        required: true
+        default: "2026-09-17"
+        type: string
+
+concurrency:
+  group: v4a-issuer-${{ inputs.source }}-${{ inputs.start_date }}-${{ inputs.end_date }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  cninfo:
+    if: ${{ inputs.source == 'cninfo' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: Download compatible shared bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/shared bundle-meta stage/shared
+          python scripts/v4a_persistent_stage_bundle.py key --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out bundle-meta/shared-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/shared-key.json"))["asset_base"])' )"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/shared
+          cp "bundle/shared/${BASE}.manifest.json" bundle-meta/shared.json
+          python scripts/v4a_persistent_stage_bundle.py verify --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --archive "bundle/shared/${BASE}.tar.gz" --manifest bundle-meta/shared.json \
+            --extract-to stage/shared
+      - name: Resolve source compatibility identity
+        run: |
+          python scripts/v4a_persistent_stage_bundle.py key --family issuer_cninfo \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-key.json
+          echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/source-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+      - name: Restore CNINFO checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-
+      - name: Materialize CNINFO issuer shard
+        id: materialize
+        run: |
+          mkdir -p "stage-source/cninfo-${{ matrix.shard }}" .cache/capital_pit_v4a/issuer
+          python scripts/materialize_pit_evidence.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --source-commit "${{ github.sha }}" --source CNINFO_ANNOUNCEMENT_ARCHIVE \
+            --shard-index "${{ matrix.shard }}" --shard-count 4 \
+            --checkpoint-dir .cache/capital_pit_v4a/issuer \
+            --out-dir "stage-source/cninfo-${{ matrix.shard }}"
+      - name: Save CNINFO checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal CNINFO shard
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py \
+            --root "stage-source/cninfo-${{ matrix.shard }}" --stage-kind issuer \
+            --stage-id "cninfo-${{ matrix.shard }}-of-4" --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out "stage-source/cninfo-${{ matrix.shard }}/receipt.json"
+      - name: Preserve CNINFO shard diagnostics
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-issuer-cninfo-shard-${{ matrix.shard }}-${{ github.run_id }}
+          path: stage-source/cninfo-${{ matrix.shard }}
+          if-no-files-found: error
+          retention-days: 30
+      - name: Qualification gate
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py --kind issuer \
+            --root "stage-source/cninfo-${{ matrix.shard }}"
+
+  sse:
+    if: ${{ inputs.source == 'sse' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: Download compatible shared bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/shared bundle-meta stage/shared
+          python scripts/v4a_persistent_stage_bundle.py key --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out bundle-meta/shared-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/shared-key.json"))["asset_base"])' )"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/shared
+          cp "bundle/shared/${BASE}.manifest.json" bundle-meta/shared.json
+          python scripts/v4a_persistent_stage_bundle.py verify --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --archive "bundle/shared/${BASE}.tar.gz" --manifest bundle-meta/shared.json \
+            --extract-to stage/shared
+      - name: Resolve source compatibility identity
+        run: |
+          python scripts/v4a_persistent_stage_bundle.py key --family issuer_sse \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-key.json
+          echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/source-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+      - name: Restore SSE checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            v4a-issuer-sse-${{ env.STAGE_COMPAT }}-
+      - name: Materialize SSE issuer archive
+        id: materialize
+        run: |
+          mkdir -p stage-source/sse .cache/capital_pit_v4a/issuer
+          python scripts/materialize_pit_evidence.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --source-commit "${{ github.sha }}" --source SSE_ANNOUNCEMENT_ARCHIVE \
+            --shard-index 0 --shard-count 1 \
+            --checkpoint-dir .cache/capital_pit_v4a/issuer --out-dir stage-source/sse
+      - name: Save SSE checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal SSE shard
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py --root stage-source/sse --stage-kind issuer \
+            --stage-id sse-0-of-1 --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out stage-source/sse/receipt.json
+      - name: Preserve SSE diagnostics
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-issuer-sse-${{ github.run_id }}
+          path: stage-source/sse
+          if-no-files-found: error
+          retention-days: 30
+      - name: Qualification gate
+        run: python scripts/assert_v4a_stage_qualifiable.py --kind issuer --root stage-source/sse
+
+  szse:
+    if: ${{ inputs.source == 'szse' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: Download compatible shared bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/shared bundle-meta stage/shared
+          python scripts/v4a_persistent_stage_bundle.py key --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" --out bundle-meta/shared-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/shared-key.json"))["asset_base"])' )"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/shared
+          cp "bundle/shared/${BASE}.manifest.json" bundle-meta/shared.json
+          python scripts/v4a_persistent_stage_bundle.py verify --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --archive "bundle/shared/${BASE}.tar.gz" --manifest bundle-meta/shared.json --extract-to stage/shared
+      - name: Resolve source compatibility identity
+        run: |
+          python scripts/v4a_persistent_stage_bundle.py key --family issuer_szse \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-key.json
+          echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/source-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+      - name: Restore SZSE checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            v4a-issuer-szse-${{ env.STAGE_COMPAT }}-
+      - name: Materialize SZSE issuer archive
+        id: materialize
+        run: |
+          mkdir -p stage-source/szse .cache/capital_pit_v4a/issuer
+          python scripts/materialize_pit_evidence.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --source-commit "${{ github.sha }}" --source SZSE_ANNOUNCEMENT_ARCHIVE \
+            --shard-index 0 --shard-count 1 \
+            --checkpoint-dir .cache/capital_pit_v4a/issuer --out-dir stage-source/szse
+      - name: Save SZSE checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/issuer
+          key: v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal SZSE shard
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py --root stage-source/szse --stage-kind issuer \
+            --stage-id szse-0-of-1 --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out stage-source/szse/receipt.json
+      - name: Preserve SZSE diagnostics
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-issuer-szse-${{ github.run_id }}
+          path: stage-source/szse
+          if-no-files-found: error
+          retention-days: 30
+      - name: Qualification gate
+        run: python scripts/assert_v4a_stage_qualifiable.py --kind issuer --root stage-source/szse
+
+  package:
+    if: ${{ always() && ((inputs.source == 'cninfo' && needs.cninfo.result == 'success') || (inputs.source == 'sse' && needs.sse.result == 'success') || (inputs.source == 'szse' && needs.szse.result == 'success')) }}
+    needs: [cninfo, sse, szse]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: Download selected source artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: v4a-issuer-${{ inputs.source }}-*-${{ github.run_id }}
+          path: downloads
+          merge-multiple: false
+      - name: Build source-group stage
+        run: |
+          mkdir -p persistent-stage/shards
+          for d in downloads/*; do
+            name="$(basename "$d")"
+            if [[ "${{ inputs.source }}" == "cninfo" ]]; then
+              shard="${name#v4a-issuer-cninfo-shard-}"
+              shard="${shard%-${{ github.run_id }}}"
+              target="cninfo-${shard}"
+            else
+              target="${{ inputs.source }}"
+            fi
+            mkdir -p "persistent-stage/shards/${target}"
+            cp -a "$d"/. "persistent-stage/shards/${target}/"
+          done
+          python scripts/write_v4a_stage_receipt.py \
+            --root persistent-stage --stage-kind issuer_source_group \
+            --stage-id "issuer-${{ inputs.source }}-all" \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out persistent-stage/receipt.json
+      - name: Download shared manifest for lineage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/shared bundle-meta stage/shared
+          python scripts/v4a_persistent_stage_bundle.py key --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" --out bundle-meta/shared-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/shared-key.json"))["asset_base"])' )"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/shared
+          cp "bundle/shared/${BASE}.manifest.json" bundle-meta/shared.json
+      - name: Package and publish source bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FAMILY="issuer_${{ inputs.source }}"
+          mkdir -p dist
+          python scripts/v4a_persistent_stage_bundle.py package --family "$FAMILY" \
+            --stage-root persistent-stage --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out-dir dist --out dist/package.json
+          BASE="$(python -c 'import json; print(json.load(open("dist/package.json"))["asset_base"])' )"
+          bash scripts/publish_v4a_release_bundle.sh v4a-stage-bundles-v1 dist "$BASE"
+      - name: Upload convenient 90-day bundle copy
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-persistent-issuer-${{ inputs.source }}-${{ github.run_id }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 90
