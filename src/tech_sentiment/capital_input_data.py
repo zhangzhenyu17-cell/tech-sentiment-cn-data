@@ -571,6 +571,133 @@ def qualify_trailing_etf_coverage(
     ]
 
 
+
+def _sse_turnover_payload_frame(payload: object) -> pd.DataFrame:
+    if not isinstance(payload, dict) or not isinstance(payload.get("result"), list):
+        raise ValueError("SSE daily overview response lacks result rows")
+    temp = pd.DataFrame(payload["result"]).T
+    temp.reset_index(inplace=True)
+    if len(temp) != 11:
+        raise ValueError(
+            f"SSE daily overview expected 11 metric rows, got {len(temp)}"
+        )
+    if len(temp.columns) == 5:
+        temp.columns = ["单日情况", "主板A", "主板B", "科创板", "股票"]
+        temp["股票回购"] = pd.NA
+    elif len(temp.columns) == 4:
+        temp.columns = ["单日情况", "主板A", "主板B", "科创板"]
+        temp["股票"] = pd.NA
+        temp["股票回购"] = pd.NA
+    elif len(temp.columns) == 6:
+        temp.columns = ["单日情况", "主板A", "主板B", "科创板", "股票回购", "股票"]
+    else:
+        raise ValueError(
+            "SSE daily overview has unexpected product-column count "
+            f"{len(temp.columns)}"
+        )
+    temp["单日情况"] = [
+        "市价总值",
+        "成交量",
+        "平均市盈率",
+        "换手率",
+        "成交金额",
+        "-",
+        "流通市值",
+        "流通换手率",
+        "报告日期",
+        "挂牌数",
+        "-",
+    ]
+    temp = temp[~temp["单日情况"].isin(["-", "报告日期"])].copy()
+    for column in ("股票", "主板A", "主板B", "科创板", "股票回购"):
+        temp[column] = pd.to_numeric(temp[column], errors="coerce")
+    return temp[
+        ["单日情况", "股票", "主板A", "主板B", "科创板", "股票回购"]
+    ].reset_index(drop=True)
+
+
+def _fetch_sse_turnover_official(
+    date: str,
+    *,
+    timeout: float = 20.0,
+) -> pd.DataFrame:
+    if len(date) != 8 or not date.isdigit():
+        raise ValueError("SSE turnover date must be YYYYMMDD")
+    payload = fetch_official_json(
+        url=SSE_TURNOVER_QUERY_URL,
+        params={
+            "sqlId": SSE_TURNOVER_SQL_ID,
+            "PRODUCT_CODE": "01,02,03,11,17",
+            "type": "inParams",
+            "SEARCH_DATE": f"{date[:4]}-{date[4:6]}-{date[6:]}",
+        },
+        referer=SSE_TURNOVER_SOURCE_URL,
+        allowed_query_hosts=("query.sse.com.cn",),
+        warmup_url=SSE_TURNOVER_SOURCE_URL,
+        allowed_warmup_hosts=("www.sse.com.cn",),
+        timeout=timeout,
+    )
+    return _sse_turnover_payload_frame(payload)
+
+
+def _szse_turnover_payload_frame(payload: object) -> pd.DataFrame:
+    if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
+        raise ValueError("SZSE market overview response must be a non-empty JSON array")
+    rows = payload[0].get("data")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("SZSE market overview response lacks data rows")
+    parsed: list[dict[str, object]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        category = row.get("zqlb", row.get("lbmc"))
+        amount = row.get("cjje")
+        if category is None or amount is None:
+            continue
+        numeric = pd.to_numeric(
+            str(amount).replace(",", ""), errors="coerce"
+        )
+        parsed.append(
+            {
+                "证券类别": str(category).strip(),
+                # Official 1803_sczm JSON publishes cjje in 亿元. Downstream
+                # canonical turnover remains yuan, matching the prior contract.
+                "成交金额": numeric * 100_000_000.0,
+            }
+        )
+    frame = pd.DataFrame(parsed)
+    categories = set(frame["证券类别"]) if not frame.empty else set()
+    if "股票" not in categories or not ({"主板B股", "B股"} & categories):
+        raise ValueError("SZSE market overview lacks 股票/B股 rows")
+    return frame
+
+
+def _fetch_szse_turnover_official(
+    date: str,
+    *,
+    timeout: float = 20.0,
+) -> pd.DataFrame:
+    if len(date) != 8 or not date.isdigit():
+        raise ValueError("SZSE turnover date must be YYYYMMDD")
+    payload = fetch_official_json(
+        url=SZSE_TURNOVER_QUERY_URL,
+        params={
+            "SHOWTYPE": "JSON",
+            "CATALOGID": "1803_sczm",
+            "TABKEY": "tab1",
+            "txtQueryDate": f"{date[:4]}-{date[4:6]}-{date[6:]}",
+            "PAGENO": "1",
+            "PAGESIZE": "50",
+            "random": "0.39339437497296137",
+        },
+        referer=SZSE_TURNOVER_SOURCE_URL,
+        allowed_query_hosts=("www.szse.cn",),
+        warmup_url=SZSE_TURNOVER_SOURCE_URL,
+        allowed_warmup_hosts=("www.szse.cn",),
+        timeout=timeout,
+    )
+    return _szse_turnover_payload_frame(payload)
+
 def normalize_sse_a_share_turnover(
     frame: pd.DataFrame, *, observation_date: object
 ) -> dict[str, object]:
@@ -755,13 +882,10 @@ def fetch_sse_szse_a_share_turnover_history(
     retry_attempts: int = 3,
     retry_backoff_seconds: float = 0.5,
 ) -> ExchangeTurnoverFetchResult:
-    if sse_fetcher is None or szse_fetcher is None:
-        import akshare as ak  # type: ignore
-
-        if sse_fetcher is None:
-            sse_fetcher = lambda date: ak.stock_sse_deal_daily(date=date)
-        if szse_fetcher is None:
-            szse_fetcher = lambda date: ak.stock_szse_summary(date=date)
+    if sse_fetcher is None:
+        sse_fetcher = _fetch_sse_turnover_official
+    if szse_fetcher is None:
+        szse_fetcher = _fetch_szse_turnover_official
     sse_rows: list[dict[str, object]] = []
     szse_rows: list[dict[str, object]] = []
     errors: list[dict[str, str]] = []
