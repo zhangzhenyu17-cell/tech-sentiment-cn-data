@@ -38,6 +38,7 @@ def main() -> None:
     latest = pd.Timestamp(calendar.max()).normalize()
     boundary_dates = pd.DatetimeIndex([earliest, latest]).unique().sort_values()
     expected_boundary_rows = int(len(boundary_dates))
+    failures: list[dict[str, object]] = []
 
     etf = fetch_sse_etf_share_history(
         trading_dates=boundary_dates,
@@ -45,10 +46,13 @@ def main() -> None:
         sleep_seconds=0,
     )
     if len(etf.data) != expected_boundary_rows or len(etf.errors):
-        raise SystemExit(
-            "V4-A source boundary preflight failed: 588000 share data unavailable "
-            f"for {[str(value.date()) for value in boundary_dates]}; "
-            f"errors={etf.errors.to_dict('records')}"
+        failures.append(
+            {
+                "probe": "ETF_588000",
+                "dates": [str(value.date()) for value in boundary_dates],
+                "errors": etf.errors.to_dict("records"),
+                "rows": int(len(etf.data)),
+            }
         )
 
     turnover = fetch_sse_szse_a_share_turnover_history(
@@ -56,10 +60,13 @@ def main() -> None:
         sleep_seconds=0,
     )
     if len(turnover.combined) != expected_boundary_rows or len(turnover.errors):
-        raise SystemExit(
-            "V4-A source boundary preflight failed: bilateral turnover unavailable "
-            f"for {[str(value.date()) for value in boundary_dates]}; "
-            f"errors={turnover.errors.to_dict('records')}"
+        failures.append(
+            {
+                "probe": "BILATERAL_TURNOVER",
+                "dates": [str(value.date()) for value in boundary_dates],
+                "errors": turnover.errors.to_dict("records"),
+                "rows": int(len(turnover.combined)),
+            }
         )
 
     financing = materialize_financing_history(boundary_dates)
@@ -68,10 +75,16 @@ def main() -> None:
         or len(financing.errors)
         or float(financing.summary.get("bilateral_coverage") or 0.0) != 1.0
     ):
-        raise SystemExit(
-            "V4-A source boundary preflight failed: bilateral financing unavailable "
-            f"for {[str(value.date()) for value in boundary_dates]}; "
-            f"errors={financing.errors.to_dict('records')}"
+        failures.append(
+            {
+                "probe": "BILATERAL_FINANCING",
+                "dates": [str(value.date()) for value in boundary_dates],
+                "errors": financing.errors.to_dict("records"),
+                "rows": int(len(financing.canonical)),
+                "bilateral_coverage": float(
+                    financing.summary.get("bilateral_coverage") or 0.0
+                ),
+            }
         )
 
     price = pd.DataFrame()
@@ -103,9 +116,12 @@ def main() -> None:
         if not price.empty:
             break
     if price.empty:
-        raise SystemExit(
-            "V4-A source freshness preflight failed: representative latest close unavailable "
-            f"for {latest.date()}; errors={price_errors}"
+        failures.append(
+            {
+                "probe": "LATEST_REPRESENTATIVE_PRICE",
+                "date": str(latest.date()),
+                "errors": price_errors,
+            }
         )
 
     historical_price = pd.DataFrame()
@@ -139,9 +155,12 @@ def main() -> None:
         if not historical_price.empty:
             break
     if historical_price.empty:
-        raise SystemExit(
-            "V4-A source boundary preflight failed: representative historical close "
-            f"unavailable for {earliest.date()}; errors={historical_price_errors}"
+        failures.append(
+            {
+                "probe": "HISTORICAL_REPRESENTATIVE_PRICE",
+                "date": str(earliest.date()),
+                "errors": historical_price_errors,
+            }
         )
 
     # Exercise the actual frozen-universe code families that historically caused
@@ -179,11 +198,16 @@ def main() -> None:
             except Exception as exc:
                 probe_errors.append(f"{provider}:{type(exc).__name__}:{exc}")
         if probe.empty:
-            raise SystemExit(
-                "V4-A source freshness preflight failed: frozen-universe price "
-                f"protocol probe {label}/{symbol} returned no rows over "
-                f"{edge_start.date()}..{latest.date()}; errors={probe_errors}"
+            failures.append(
+                {
+                    "probe": "FROZEN_UNIVERSE_PRICE",
+                    "label": label,
+                    "symbol": symbol,
+                    "window": [str(edge_start.date()), str(latest.date())],
+                    "errors": probe_errors,
+                }
             )
+            continue
         edge_price_probes.append(
             {
                 "label": label,
@@ -192,6 +216,16 @@ def main() -> None:
                 "rows": int(len(probe)),
                 "window": [str(edge_start.date()), str(latest.date())],
             }
+        )
+
+    if failures:
+        raise SystemExit(
+            "V4-A source boundary preflight failed with aggregated diagnostics: "
+            + json.dumps(
+                failures,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
         )
 
     print(
