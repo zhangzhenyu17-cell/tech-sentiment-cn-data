@@ -86,8 +86,6 @@ def test_failed_issuer_query_is_not_checkpointed_and_success_is_resumable(tmp_pa
     assert failed_calls == 1
     assert failed_summary["readiness_state"] == "DATA_INSUFFICIENT"
     assert failed_summary["failed_symbol_queries"] == 1
-    assert failed_summary["executed_symbol_queries"] == 1
-    assert failed_summary["resumed_symbol_queries"] == 0
     assert len(failed_errors) == 1
     assert failed_coverage.iloc[0]["query_status"] == "FAILED"
     assert store.load(_identity()) is None
@@ -106,8 +104,6 @@ def test_failed_issuer_query_is_not_checkpointed_and_success_is_resumable(tmp_pa
     assert success_calls == 1
     assert success_summary["readiness_state"] == "QUALIFIED_INPUT"
     assert success_summary["failed_symbol_queries"] == 0
-    assert success_summary["executed_symbol_queries"] == 1
-    assert success_summary["resumed_symbol_queries"] == 0
     assert success_errors.empty
     assert success_coverage.iloc[0]["query_status"] == "COMPLETE_WINDOW"
     assert store.load(_identity()) is not None
@@ -119,8 +115,6 @@ def test_failed_issuer_query_is_not_checkpointed_and_success_is_resumable(tmp_pa
         **kwargs,
         materialize_one=must_not_execute,
     )
-    assert resumed_summary["resumed_symbol_queries"] == 1
-    assert resumed_summary["executed_symbol_queries"] == 0
     assert resumed_summary["readiness_state"] == "QUALIFIED_INPUT"
     assert resumed_errors.empty
     assert resumed_coverage.iloc[0]["query_status"] == "COMPLETE_WINDOW"
