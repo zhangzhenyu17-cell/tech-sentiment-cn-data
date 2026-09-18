@@ -276,12 +276,25 @@ jobs:
           cache: pip
       - name: Install
         run: python -m pip install -e ".[data]"
-      - name: Download selected source artifacts
+      - name: Download CNINFO source artifacts
+        if: ${{ inputs.source == 'cninfo' }}
         uses: actions/download-artifact@v4
         with:
-          pattern: v4a-issuer-${{ inputs.source }}-*-${{ github.run_id }}
+          pattern: v4a-issuer-cninfo-shard-*-${{ github.run_id }}
           path: downloads
           merge-multiple: false
+      - name: Download SSE source artifact
+        if: ${{ inputs.source == 'sse' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: v4a-issuer-sse-${{ github.run_id }}
+          path: downloads/v4a-issuer-sse-${{ github.run_id }}
+      - name: Download SZSE source artifact
+        if: ${{ inputs.source == 'szse' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: v4a-issuer-szse-${{ github.run_id }}
+          path: downloads/v4a-issuer-szse-${{ github.run_id }}
       - name: Build source-group stage
         run: |
           mkdir -p persistent-stage/shards
