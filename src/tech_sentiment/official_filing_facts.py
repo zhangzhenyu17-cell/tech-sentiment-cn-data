@@ -372,6 +372,7 @@ def extract_pdf_text(content: bytes) -> str:
         raise RuntimeError("pypdf is required for official filing parsing") from exc
 
     reader = PdfReader(io.BytesIO(content), strict=False)
+    extraction_errors: list[str] = []
 
     def _collect(*, layout: bool) -> str:
         parts: list[str] = []
@@ -385,19 +386,31 @@ def extract_pdf_text(content: bytes) -> str:
                 parts.append(text)
         return "\n".join(parts).strip()
 
-    layout_text = _collect(layout=True)
+    try:
+        layout_text = _collect(layout=True)
+    except Exception as exc:
+        extraction_errors.append(f"pypdf_layout:{type(exc).__name__}:{exc}")
+        layout_text = ""
     if layout_text and _has_explicit_unit_declaration(
         _normalize_text_lines(layout_text)
     ):
         return layout_text
 
-    plain_text = _collect(layout=False)
+    try:
+        plain_text = _collect(layout=False)
+    except Exception as exc:
+        extraction_errors.append(f"pypdf_plain:{type(exc).__name__}:{exc}")
+        plain_text = ""
     if plain_text and _has_explicit_unit_declaration(
         _normalize_text_lines(plain_text)
     ):
         return plain_text
 
-    pdfminer_text = _extract_pdfminer_text(content)
+    try:
+        pdfminer_text = _extract_pdfminer_text(content)
+    except Exception as exc:
+        extraction_errors.append(f"pdfminer:{type(exc).__name__}:{exc}")
+        pdfminer_text = ""
     if pdfminer_text and _has_explicit_unit_declaration(
         _normalize_text_lines(pdfminer_text)
     ):
@@ -409,7 +422,8 @@ def extract_pdf_text(content: bytes) -> str:
     for candidate in (layout_text, plain_text, pdfminer_text):
         if candidate:
             return candidate
-    raise ValueError("official filing has no extractable text layer")
+    detail = " | ".join(extraction_errors) if extraction_errors else "no text"
+    raise ValueError(f"official filing has no extractable text layer: {detail}")
 
 
 def filing_period_end_from_title(title: object) -> pd.Timestamp:
