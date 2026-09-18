@@ -337,6 +337,7 @@ def materialize_csrc_policy_archive_resumable(
                 )
                 executed_channels += 1
             expected_total: int | None = None
+            previous_oldest_timestamp: pd.Timestamp | None = None
             pages_read = 0
             seen_manuscripts: set[str] = set()
             seen_urls: set[str] = set()
@@ -391,6 +392,21 @@ def materialize_csrc_policy_archive_resumable(
                         f"CSRC total drift for {channel.channel_code}: "
                         f"{expected_total} -> {total}"
                     )
+
+                if entries:
+                    page_timestamps = [
+                        pd.Timestamp(entry.publication_timestamp) for entry in entries
+                    ]
+                    page_newest = max(page_timestamps)
+                    page_oldest = min(page_timestamps)
+                    if (
+                        previous_oldest_timestamp is not None
+                        and page_newest > previous_oldest_timestamp
+                    ):
+                        raise ValueError(
+                            f"CSRC cross-page publication order drift for {channel.channel_code}"
+                        )
+                    previous_oldest_timestamp = page_oldest
 
                 for entry in entries:
                     if entry.manuscript_id in seen_manuscripts:
