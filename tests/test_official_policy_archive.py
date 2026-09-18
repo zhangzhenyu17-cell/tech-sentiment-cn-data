@@ -63,11 +63,12 @@ def _page_payload(
     page: int,
     items: list[dict[str, object]],
     total: int | None = None,
+    rows: int | None = None,
 ) -> dict[str, object]:
     return {
         "data": {
             "page": page,
-            "rows": len(items),
+            "rows": len(items) if rows is None else rows,
             "total": len(items) if total is None else total,
             "channelId": _CHANNEL_IDS[code],
             "results": items,
@@ -188,8 +189,13 @@ def test_official_channel_metadata_and_search_page_are_identity_bound():
             _item("c101953", manuscript="1", when="2025-12-31 19:00:00"),
         ],
     )
-    entries, meta = parse_csrc_search_page(payload, channel=channel, requested_page=1)
-    assert meta == {"page": 1, "rows": 2, "total": 2}
+    entries, meta = parse_csrc_search_page(
+        payload,
+        channel=channel,
+        requested_page=1,
+        requested_page_size=2,
+    )
+    assert meta == {"page": 1, "rows": 2, "returned": 2, "total": 2}
     assert [entry.manuscript_id for entry in entries] == ["2", "1"]
     assert entries[0].url.startswith("https://www.csrc.gov.cn/")
 
@@ -208,7 +214,12 @@ def test_search_page_rejects_page_drift_and_nonofficial_document_url():
         items=[_item("c101953", manuscript="x", when="2026-01-01 10:00:00")],
     )
     with pytest.raises(ValueError, match="page mismatch"):
-        parse_csrc_search_page(wrong_page, channel=channel, requested_page=1)
+        parse_csrc_search_page(
+            wrong_page,
+            channel=channel,
+            requested_page=1,
+            requested_page_size=1,
+        )
 
     bad_url = _page_payload(
         "c101953",
@@ -223,8 +234,106 @@ def test_search_page_rejects_page_drift_and_nonofficial_document_url():
         ],
     )
     with pytest.raises(ValueError, match="official HTTPS host"):
-        parse_csrc_search_page(bad_url, channel=channel, requested_page=1)
+        parse_csrc_search_page(
+            bad_url,
+            channel=channel,
+            requested_page=1,
+            requested_page_size=1,
+        )
 
+
+
+
+def test_search_page_accepts_server_capacity_larger_than_actual_results():
+    channel = PolicyChannel(
+        segment="CSRC_ORDERS",
+        channel_code="c101953",
+        channel_id="a" * 32,
+        channel_name="orders",
+        default_evidence_type="REGULATORY_EVENT",
+    )
+    items = [
+        _item(
+            "c101953",
+            manuscript=f"m{index}",
+            when=f"2026-01-{index + 1:02d} 10:00:00",
+        )
+        for index in range(14)
+    ]
+    payload = _page_payload(
+        "c101953",
+        page=7,
+        total=352,
+        rows=20,
+        items=items,
+    )
+
+    entries, meta = parse_csrc_search_page(
+        payload,
+        channel=channel,
+        requested_page=7,
+        requested_page_size=50,
+    )
+
+    assert len(entries) == 14
+    assert meta == {
+        "page": 7,
+        "rows": 20,
+        "returned": 14,
+        "total": 352,
+    }
+
+
+def test_search_page_rejects_invalid_server_capacity_contract():
+    channel = PolicyChannel(
+        segment="CSRC_ORDERS",
+        channel_code="c101953",
+        channel_id="a" * 32,
+        channel_name="orders",
+        default_evidence_type="REGULATORY_EVENT",
+    )
+    item = _item(
+        "c101953",
+        manuscript="m1",
+        when="2026-01-01 10:00:00",
+    )
+
+    too_large_capacity = _page_payload(
+        "c101953",
+        page=1,
+        total=1,
+        rows=51,
+        items=[item],
+    )
+    with pytest.raises(ValueError, match="exceeds requested page size"):
+        parse_csrc_search_page(
+            too_large_capacity,
+            channel=channel,
+            requested_page=1,
+            requested_page_size=50,
+        )
+
+    too_many_results = _page_payload(
+        "c101953",
+        page=1,
+        total=2,
+        rows=1,
+        items=[
+            item,
+            _item(
+                "c101953",
+                manuscript="m2",
+                when="2026-01-02 10:00:00",
+            ),
+        ],
+    )
+    with pytest.raises(ValueError, match="exceed effective page capacity"):
+        parse_csrc_search_page(
+            too_many_results,
+            channel=channel,
+            requested_page=1,
+            requested_page_size=50,
+        )
 
 def test_policy_materializer_uses_official_json_archive_and_pins_article_hashes():
     result = materialize_csrc_policy_archive(
@@ -236,7 +345,7 @@ def test_policy_materializer_uses_official_json_archive_and_pins_article_hashes(
     )
     assert result.summary["source_coverage_complete"] is True
     assert result.summary["readiness_state"] == "QUALIFIED_INPUT"
-    assert result.summary["archive_protocol"] == "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V3_FULL_ENUMERATION"
+    assert result.summary["archive_protocol"] == "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V4_SERVER_PAGE_CAPACITY"
     assert set(result.records["source_identity"]) == {POLICY_SOURCE_ID}
     assert result.coverage["query_status"].eq("COMPLETE_WINDOW").all()
     assert len(result.records) == len(CSRC_CHANNELS)
@@ -290,7 +399,10 @@ def test_search_page_accepts_unordered_publication_times_when_identity_is_valid(
     )
 
     entries, meta = parse_csrc_search_page(
-        payload, channel=channel, requested_page=1
+        payload,
+        channel=channel,
+        requested_page=1,
+        requested_page_size=3,
     )
 
     assert meta["total"] == 3
