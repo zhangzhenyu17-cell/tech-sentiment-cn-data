@@ -8,6 +8,7 @@ from typing import Callable, Iterable
 
 import pandas as pd
 
+from .bounded_retry import call_with_bounded_network_retry
 from .capital_input_data import (
     SSE_MARGIN_SOURCE_ID,
     SSE_MARGIN_SOURCE_URL,
@@ -87,6 +88,8 @@ def materialize_financing_history(
     *,
     sse_fetcher: Callable[[str, str], pd.DataFrame] | None = None,
     szse_fetcher: Callable[[str], pd.DataFrame] | None = None,
+    retry_attempts: int = 3,
+    retry_backoff_seconds: float = 0.5,
 ) -> FinancingMaterializationResult:
     """Materialize a bilateral financing rail without guessing units or missing dates.
 
@@ -110,7 +113,13 @@ def materialize_financing_history(
     start_arg = cal.min().strftime("%Y%m%d")
     end_arg = cal.max().strftime("%Y%m%d")
     try:
-        sse = normalize_sse_financing_history(sse_fetcher(start_arg, end_arg))
+        sse = normalize_sse_financing_history(
+            call_with_bounded_network_retry(
+                lambda: sse_fetcher(start_arg, end_arg),
+                attempts=retry_attempts,
+                backoff_seconds=retry_backoff_seconds,
+            )
+        )
         sse = sse[sse["date"].isin(cal)].copy()
     except Exception as exc:
         sse = pd.DataFrame(
@@ -130,7 +139,12 @@ def materialize_financing_history(
         try:
             sz_rows.append(
                 normalize_szse_financing_snapshot(
-                    szse_fetcher(arg), observation_date=date
+                    call_with_bounded_network_retry(
+                        lambda: szse_fetcher(arg),
+                        attempts=retry_attempts,
+                        backoff_seconds=retry_backoff_seconds,
+                    ),
+                    observation_date=date,
                 )
             )
         except Exception as exc:
