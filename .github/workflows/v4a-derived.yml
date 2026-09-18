@@ -1,0 +1,166 @@
+name: v4a-09-derived
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Qualification start date"
+        required: true
+        default: "2022-01-04"
+        type: string
+      end_date:
+        description: "Qualification end date"
+        required: true
+        default: "2026-09-17"
+        type: string
+
+concurrency:
+  group: v4a-derived-${{ inputs.start_date }}-${{ inputs.end_date }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  derived:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: Download and verify shared bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/shared bundle-meta stage/shared
+          python scripts/v4a_persistent_stage_bundle.py key --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" --out bundle-meta/shared-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/shared-key.json"))["asset_base"])' )"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/shared
+          cp "bundle/shared/${BASE}.manifest.json" bundle-meta/shared.json
+          python scripts/v4a_persistent_stage_bundle.py verify --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --archive "bundle/shared/${BASE}.tar.gz" --manifest bundle-meta/shared.json --extract-to stage/shared
+      - name: Resolve issuer source lineage manifests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for source in cninfo sse szse; do
+            family="issuer_${source}"
+            mkdir -p "bundle/${family}"
+            python scripts/v4a_persistent_stage_bundle.py key --family "$family" \
+              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+              --input-manifest shared=bundle-meta/shared.json --out "bundle-meta/${family}-key.json"
+            base="$(python -c "import json; print(json.load(open('bundle-meta/${family}-key.json'))['asset_base'])")"
+            bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$base" "bundle/${family}"
+            cp "bundle/${family}/${base}.manifest.json" "bundle-meta/${family}.json"
+          done
+      - name: Download and verify issuer aggregate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/issuer_aggregate stage/issuer_aggregate
+          python scripts/v4a_persistent_stage_bundle.py key --family issuer_aggregate \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json \
+            --input-manifest cninfo=bundle-meta/issuer_cninfo.json \
+            --input-manifest sse=bundle-meta/issuer_sse.json \
+            --input-manifest szse=bundle-meta/issuer_szse.json \
+            --out bundle-meta/issuer_aggregate-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/issuer_aggregate-key.json"))["asset_base"])' )"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/issuer_aggregate
+          cp "bundle/issuer_aggregate/${BASE}.manifest.json" bundle-meta/issuer_aggregate.json
+          python scripts/v4a_persistent_stage_bundle.py verify --family issuer_aggregate \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json \
+            --input-manifest cninfo=bundle-meta/issuer_cninfo.json \
+            --input-manifest sse=bundle-meta/issuer_sse.json \
+            --input-manifest szse=bundle-meta/issuer_szse.json \
+            --archive "bundle/issuer_aggregate/${BASE}.tar.gz" \
+            --manifest bundle-meta/issuer_aggregate.json --extract-to stage/issuer_aggregate
+      - name: Download fundamental, prices, and policy bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for family in fundamental prices policy; do
+            mkdir -p "bundle/${family}" "inputs/${family}"
+            python scripts/v4a_persistent_stage_bundle.py key --family "$family" \
+              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+              --input-manifest shared=bundle-meta/shared.json --out "bundle-meta/${family}-key.json"
+            base="$(python -c "import json; print(json.load(open('bundle-meta/${family}-key.json'))['asset_base'])")"
+            bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$base" "bundle/${family}"
+            cp "bundle/${family}/${base}.manifest.json" "bundle-meta/${family}.json"
+            python scripts/v4a_persistent_stage_bundle.py verify --family "$family" \
+              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+              --input-manifest shared=bundle-meta/shared.json \
+              --archive "bundle/${family}/${base}.tar.gz" --manifest "bundle-meta/${family}.json" \
+              --extract-to "inputs/${family}"
+          done
+          mkdir -p stage/fundamental stage/prices stage/policy
+          cp -a inputs/fundamental/shards/. stage/fundamental/
+          cp -a inputs/prices/shards/. stage/prices/
+          cp -a inputs/policy/. stage/policy/
+      - name: Assemble derived PIT rails
+        run: |
+          ISSUER_COMMIT="$(python -c 'import json; print(json.load(open("bundle-meta/issuer_aggregate.json"))["original_source_commit"])' )"
+          FUND_COMMIT="$(python -c 'import json; print(json.load(open("bundle-meta/fundamental.json"))["original_source_commit"])' )"
+          PRICE_COMMIT="$(python -c 'import json; print(json.load(open("bundle-meta/prices.json"))["original_source_commit"])' )"
+          POLICY_COMMIT="$(python -c 'import json; print(json.load(open("bundle-meta/policy.json"))["original_source_commit"])' )"
+          mkdir -p stage/derived/pit_evidence_materialization
+          python scripts/assemble_v4a_derived_pit.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --calendar-csv stage/shared/trading_calendar.csv \
+            --issuer-dir stage/issuer_aggregate \
+            --fundamental-root stage/fundamental \
+            --price-root stage/prices --policy-dir stage/policy \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --source-commit "${{ github.sha }}" \
+            --issuer-source-commit "$ISSUER_COMMIT" \
+            --fundamental-source-commit "$FUND_COMMIT" \
+            --price-source-commit "$PRICE_COMMIT" \
+            --policy-source-commit "$POLICY_COMMIT" \
+            --out-dir stage/derived/pit_evidence_materialization
+      - name: Seal derived stage
+        run: |
+          python scripts/write_v4a_stage_receipt.py --root stage/derived --stage-kind derived --stage-id derived \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out stage/derived/receipt.json
+      - name: Preserve derived diagnostics before qualification gate
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-derived-stage-${{ github.run_id }}
+          path: stage/derived
+          if-no-files-found: error
+          retention-days: 30
+      - name: Qualification gate
+        run: python scripts/assert_v4a_stage_qualifiable.py --kind derived --root stage/derived/pit_evidence_materialization
+      - name: Package persistent Derived bundle
+        run: |
+          mkdir -p dist
+          python scripts/v4a_persistent_stage_bundle.py package --family derived \
+            --stage-root stage/derived --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json \
+            --input-manifest issuer=bundle-meta/issuer_aggregate.json \
+            --input-manifest fundamental=bundle-meta/fundamental.json \
+            --input-manifest prices=bundle-meta/prices.json \
+            --input-manifest policy=bundle-meta/policy.json \
+            --out-dir dist --out dist/package.json
+      - name: Publish immutable Derived bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BASE="$(python -c 'import json; print(json.load(open("dist/package.json"))["asset_base"])' )"
+          bash scripts/publish_v4a_release_bundle.sh v4a-stage-bundles-v1 dist "$BASE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v4a-persistent-derived-${{ github.run_id }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 90

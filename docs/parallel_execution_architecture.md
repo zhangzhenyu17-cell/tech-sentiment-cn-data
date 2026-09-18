@@ -19,6 +19,18 @@ Prefer a parallel DAG when a workflow has all or most of the following character
 
 Do not force parallelism when stages share mutable state, have unavoidable sequential dependencies, or cannot be independently verified.
 
+## Reusable manual-stage architecture
+
+V4-A no longer treats one GitHub Actions run as the unit of successful historical materialization. The unit of reuse is an immutable stage bundle.
+
+A stage bundle is accepted across repository commits only when the current code independently recomputes the same stage-specific producer fingerprint, date window, and upstream bundle identities. The original stage commit remains recorded in lineage, while the final canonical public artifact is bound to the current finalizer commit.
+
+Persistent inter-workflow handoff uses the public release registry `v4a-stage-bundles-v1`. GitHub Actions cache remains local resume acceleration only and is not a canonical stage handoff.
+
+The manual stage order, failure recovery matrix, and trigger policy are defined in [V4-A Manual Reusable Stage Runbook](v4a_manual_reusable_stage_runbook.md).
+
+This architecture deliberately prevents a Policy-only fix from invalidating Capital, Financing, Prices, or unrelated issuer bundles. Conversely, a change to Shared/frozen scope invalidates all bundles that name that Shared bundle identity as an input.
+
 ## Core design
 
 A compliant long-running pipeline should normally have five layers:

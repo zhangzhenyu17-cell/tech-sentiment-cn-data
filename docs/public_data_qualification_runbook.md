@@ -4,12 +4,14 @@
 
 This runbook defines the preferred operating procedure for long-running public-data qualification and materialization workflows in this repository.
 
-The V4-A Capital/PIT workflow is the current reference implementation:
+The V4-A Capital/PIT qualification is now implemented as a manual reusable-stage pipeline.
 
-- workflow: `.github/workflows/qualify-capital-inputs.yml`
-- trigger: manual `workflow_dispatch` only
-- reference successful preflight run: `35368616602`
-- reference successful preflight commit: `9d9e0e7b66c3364701728ad9df3a11f23264e8af`
+- every producer/finalizer workflow is manual `workflow_dispatch` only;
+- successful producer stages are persisted as immutable reusable release bundles;
+- the final `qualify-capital-inputs` workflow is assembly/finalization only;
+- the full operating order is defined in [V4-A Manual Reusable Stage Runbook](v4a_manual_reusable_stage_runbook.md).
+
+Historical reference: preflight run `35368616602` proved the original five-way fast-fail gate before the reusable-stage architecture was introduced.
 
 This runbook is an engineering execution contract. It does not change evidence eligibility, PIT/no-lookahead semantics, research scope, model behavior, production authority, trading authority, or public/private security boundaries.
 
@@ -28,7 +30,16 @@ The default progression is:
 
 Do not skip directly to a multi-hour materialization after a code or source-contract change when a representative preflight can prove the same failure class in minutes.
 
-## Two execution modes
+For V4-A, the additional default rule is:
+
+> Never rerun an already-published compatible stage merely because another stage failed or the repository received an unrelated commit.
+
+A failed stage is repaired and rerun in isolation. Only downstream bundles whose exact input bundle identity changed are regenerated.
+
+## Legacy monolithic execution modes
+
+The section below describes the historical monolithic workflow pattern and remains useful as general preflight guidance. The active V4-A execution path is the manual reusable-stage pipeline documented above; it no longer uses one `preflight_only/full` workflow to perform all materialization.
+
 
 ### Preflight-only
 

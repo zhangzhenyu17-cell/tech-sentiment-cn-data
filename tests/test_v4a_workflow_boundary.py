@@ -2,198 +2,180 @@ from pathlib import Path
 import re
 
 
-WORKFLOW = Path(".github/workflows/qualify-capital-inputs.yml")
+WORKFLOW_DIR = Path(".github/workflows")
+FINAL = WORKFLOW_DIR / "qualify-capital-inputs.yml"
+
+STAGE_WORKFLOWS = (
+    WORKFLOW_DIR / "v4a-shared-inputs.yml",
+    WORKFLOW_DIR / "v4a-capital.yml",
+    WORKFLOW_DIR / "v4a-financing.yml",
+    WORKFLOW_DIR / "v4a-issuer-source.yml",
+    WORKFLOW_DIR / "v4a-issuer-aggregate.yml",
+    WORKFLOW_DIR / "v4a-fundamental-earnings.yml",
+    WORKFLOW_DIR / "v4a-prices.yml",
+    WORKFLOW_DIR / "v4a-policy.yml",
+    WORKFLOW_DIR / "v4a-derived.yml",
+)
+ALL_V4A_WORKFLOWS = STAGE_WORKFLOWS + (FINAL,)
 
 
-def test_v4a_materialization_workflow_is_manual_only_and_has_no_universe_override():
-    text = WORKFLOW.read_text(encoding="utf-8")
-    assert "workflow_dispatch:" in text
-    assert "schedule:" not in text
-    assert "workflow_run:" not in text
-    assert "pull_request:" not in text
-    assert "push:" not in text
-    assert "${{ inputs.pit_symbols }}" not in text
-    assert re.search(r"(?m)^\s+pit_symbols:\s*$", text) is None
-    assert "--symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv" in text
-    assert "preflight_only:" in text
-    assert 'description: "Run fast-fail preflights only; skip expensive materialization"' in text
-    assert re.search(r"(?ms)^      preflight_only:\n.*?default: false\n.*?type: boolean", text)
+def _text(path: Path) -> str:
+    assert path.is_file(), path
+    return path.read_text(encoding="utf-8")
 
 
-def test_v4a_parallel_dag_has_verified_stage_boundaries():
-    text = WORKFLOW.read_text(encoding="utf-8")
-    for job in (
-        "preflight_static:",
-        "preflight_cninfo:",
-        "preflight_policy:",
-        "preflight_issuer:",
-        "preflight_shared:",
-        "preflight_gate:",
-        "capital:",
-        "financing:",
-        "issuer_cninfo:",
-        "issuer_sse:",
-        "issuer_szse:",
-        "issuer_aggregate:",
-        "fundamental_earnings:",
-        "prices:",
-        "policy:",
-        "derived_aggregate:",
-        "finalize:",
+def test_all_v4a_workflows_are_manual_only():
+    for path in ALL_V4A_WORKFLOWS:
+        text = _text(path)
+        assert re.search(r"(?m)^on:\s*$", text)
+        assert re.search(r"(?m)^  workflow_dispatch:\s*$", text)
+        for forbidden in ("schedule:", "workflow_run:", "pull_request:", "push:"):
+            assert forbidden not in text, (path, forbidden)
+
+
+def test_final_workflow_identity_is_preserved_for_private_intake():
+    text = _text(FINAL)
+    assert text.startswith("name: qualify-capital-inputs\n")
+    assert "capital-pit-input-materialization" in text
+    assert "write_capital_pit_artifact_receipt.py" in text
+    assert "finalize_capital_pit_materialization.py" in text
+    assert "build_v4a_stage_lineage_summary.py" in text
+
+
+def test_final_workflow_is_assembly_only_and_never_refetches_public_data():
+    text = _text(FINAL)
+    for forbidden in (
+        "qualify_capital_inputs.py",
+        "materialize_financing_history.py",
+        "materialize_pit_evidence.py",
+        "materialize_v4a_fundamental_earnings_shard.py",
+        "materialize_v4a_price_shard.py",
+        "materialize_v4a_policy_stage.py",
+        "assemble_v4a_derived_pit.py",
+        "check_cninfo_connectivity.py",
+        "check_csrc_policy_connectivity.py",
+        "check_issuer_archive_connectivity.py",
+        "check_v4a_source_freshness.py",
     ):
-        assert job in text
-    assert text.count("write_v4a_stage_receipt.py") >= 8
-    assert text.count("verify_v4a_stage_receipt.py") >= 5
-    assert "merge-multiple: true" in text
-    assert "stage/issuer_aggregate" in text
-    assert "stage/derived/pit_evidence_materialization" in text
+        assert forbidden not in text, forbidden
+    assert text.count("v4a_persistent_stage_bundle.py verify") >= 6
+    assert "v4a-stage-bundles-v1" in text
 
 
-def test_v4a_parallelism_is_bounded_and_source_aware():
-    text = WORKFLOW.read_text(encoding="utf-8")
+def test_every_stage_producer_publishes_an_immutable_reusable_bundle():
+    for path in STAGE_WORKFLOWS:
+        text = _text(path)
+        assert "v4a_persistent_stage_bundle.py" in text
+        assert "publish_v4a_release_bundle.sh" in text
+        assert "v4a-stage-bundles-v1" in text
+        assert "retention-days: 90" in text
+        assert "workflow_dispatch:" in text
+
+
+def test_no_stage_workflow_automatically_triggers_another_workflow():
+    for path in ALL_V4A_WORKFLOWS:
+        text = _text(path)
+        assert "workflow_run:" not in text
+        assert "repository_dispatch:" not in text
+        assert "gh workflow run" not in text
+        assert "actions/github-script" not in text
+
+
+def test_issuer_sources_are_independently_manual_and_cninfo_keeps_bounded_shards():
+    text = _text(WORKFLOW_DIR / "v4a-issuer-source.yml")
+    assert "type: choice" in text
+    for source in ("cninfo", "sse", "szse"):
+        assert f"          - {source}" in text
+        assert f"inputs.source == '{source}'" in text
     assert "max-parallel: 4" in text
-    assert text.count("shard: [0, 1, 2, 3]") >= 3
+    assert "shard: [0, 1, 2, 3]" in text
     assert "--source CNINFO_ANNOUNCEMENT_ARCHIVE" in text
     assert "--source SSE_ANNOUNCEMENT_ARCHIVE" in text
     assert "--source SZSE_ANNOUNCEMENT_ARCHIVE" in text
-    assert "needs: [preflight_gate, issuer_cninfo]" in text
-    assert "needs: [preflight_gate, issuer_aggregate, fundamental_earnings, prices, policy]" in text
-    assert "needs: [preflight_static, preflight_cninfo, preflight_policy, preflight_issuer, preflight_shared]" in text
 
 
-def test_v4a_checkpoint_cache_namespace_matches_parallel_exact_identity_architecture():
-    text = WORKFLOW.read_text(encoding="utf-8")
-    assert "capital-pit-v4a4-" not in text
-    assert "capital-pit-v4a5-${{ github.sha }}-${{ inputs.start_date }}-" in text
-    assert "actions/cache/restore@v4" in text
-    assert text.count("actions/cache/save@v4") >= 7
-    assert '--source-commit "${{ github.sha }}"' in text
-
-
-def test_fast_fail_preflights_run_before_expensive_materialization():
-    text = WORKFLOW.read_text(encoding="utf-8")
-    capital = text.index("Materialize ETF-share and SSE+SZSE turnover")
-    for marker in (
-        "CNINFO protocol, PDF, facts and earnings smoke",
-        "CSRC policy protocol smoke",
-        "SSE and SZSE issuer archive protocol smoke",
-        "Latest public-source freshness preflight",
-        "Audit public tree and run tests",
-    ):
-        assert text.index(marker) < capital
-
-    assert "timeout 9m python scripts/check_cninfo_connectivity.py" in text
-    assert "timeout 7m python scripts/check_csrc_policy_connectivity.py" in text
-    assert "timeout 7m python scripts/check_issuer_archive_connectivity.py" in text
-    assert "timeout 10m python scripts/check_v4a_source_freshness.py" in text
-    assert "timeout 8m bash -c 'python scripts/audit_public_tree.py && pytest -q'" in text
-    assert "timeout-minutes: 360" not in text
-
-
-def test_all_expensive_jobs_are_blocked_by_unified_fast_fail_gate():
-    text = WORKFLOW.read_text(encoding="utf-8")
-    for job in (
-        "capital",
-        "financing",
-        "issuer_cninfo",
-        "issuer_sse",
-        "issuer_szse",
-        "issuer_aggregate",
-        "fundamental_earnings",
-        "prices",
-        "policy",
-        "derived_aggregate",
-        "finalize",
-    ):
-        marker = f"  {job}:\n"
-        start = text.index(marker) + len(marker)
-        next_job = re.search(r"(?m)^  [A-Za-z0-9_]+:\s*$", text[start:])
-        end = start + next_job.start() if next_job is not None else len(text)
-        block = text[start:end]
-        assert "needs:" in block
-        assert "preflight_gate" in block
-        assert "if: ${{ inputs.preflight_only != true }}" in block
-    assert "needs.preflight.outputs.end_date" not in text
-
-
-def test_finalizer_remains_single_canonical_bundle_authority():
-    text = WORKFLOW.read_text(encoding="utf-8")
-    assert text.count("finalize_capital_pit_materialization.py") == 1
-    assert text.count("name: capital-pit-input-materialization\n") == 1
-    assert text.count("write_capital_pit_artifact_receipt.py") == 1
-
-
-def test_qualification_blocker_guards_run_after_diagnostics_are_preserved():
-    text = WORKFLOW.read_text(encoding="utf-8")
-    assert text.count("assert_v4a_stage_qualifiable.py") == 8
-    expected = {
-        "capital": "--kind capital",
-        "financing": "--kind financing",
-        "issuer_cninfo": "--kind issuer",
-        "issuer_sse": "--kind issuer",
-        "issuer_szse": "--kind issuer",
-        "fundamental_earnings": "--kind fundamental_earnings",
-        "policy": "--kind policy",
-        "derived_aggregate": "--kind derived",
-    }
-    for job, kind in expected.items():
-        marker = f"  {job}:\n"
-        start = text.index(marker) + len(marker)
-        next_job = re.search(r"(?m)^  [A-Za-z0-9_]+:\s*$", text[start:])
-        end = start + next_job.start() if next_job is not None else len(text)
-        block = text[start:end]
-        assert kind in block
-        assert block.index("actions/upload-artifact@v4") < block.index(
-            "assert_v4a_stage_qualifiable.py"
+def test_stage_cache_namespaces_remain_exact_commit_and_stage_compatible():
+    cache_workflows = (
+        "v4a-capital.yml",
+        "v4a-financing.yml",
+        "v4a-issuer-source.yml",
+        "v4a-fundamental-earnings.yml",
+        "v4a-prices.yml",
+        "v4a-policy.yml",
+    )
+    for name in cache_workflows:
+        text = _text(WORKFLOW_DIR / name)
+        assert "STAGE_COMPAT" in text
+        assert "actions/cache/restore@v4" in text
+        assert "actions/cache/save@v4" in text
+        cache_lines = "\n".join(
+            line for line in text.splitlines()
+            if "key:" in line or "restore-keys:" in line
         )
+        assert "STAGE_COMPAT" in cache_lines
+        assert "github.sha" in cache_lines
 
-    prices_start = text.index("  prices:\n")
-    prices_next = re.search(
-        r"(?m)^  [A-Za-z0-9_]+:\s*$",
-        text[prices_start + len("  prices:\n"):],
+
+def test_derived_workflow_consumes_only_verified_persistent_upstreams():
+    text = _text(WORKFLOW_DIR / "v4a-derived.yml")
+    for family in ("shared", "issuer_aggregate", "fundamental", "prices", "policy"):
+        assert family in text
+    assert "v4a_persistent_stage_bundle.py verify" in text
+    assert "assemble_v4a_derived_pit.py" in text
+    assert "--issuer-source-commit" in text
+    assert "--fundamental-source-commit" in text
+    assert "--price-source-commit" in text
+    assert "--policy-source-commit" in text
+
+
+def test_issuer_aggregate_tracks_original_source_commits():
+    text = _text(WORKFLOW_DIR / "v4a-issuer-aggregate.yml")
+    assert "--cninfo-source-commit" in text
+    assert "--sse-source-commit" in text
+    assert "--szse-source-commit" in text
+    assert "--input-manifest cninfo=bundle-meta/issuer_cninfo.json" in text
+    assert "--input-manifest sse=bundle-meta/issuer_sse.json" in text
+    assert "--input-manifest szse=bundle-meta/issuer_szse.json" in text
+
+
+def test_stage_diagnostics_are_preserved_before_qualification_failure():
+    required = {
+        "v4a-capital.yml": "assert_v4a_stage_qualifiable.py",
+        "v4a-financing.yml": "assert_v4a_stage_qualifiable.py",
+        "v4a-issuer-source.yml": "assert_v4a_stage_qualifiable.py",
+        "v4a-fundamental-earnings.yml": "assert_v4a_stage_qualifiable.py",
+        "v4a-policy.yml": "assert_v4a_stage_qualifiable.py",
+        "v4a-derived.yml": "assert_v4a_stage_qualifiable.py",
+    }
+    for name, gate in required.items():
+        text = _text(WORKFLOW_DIR / name)
+        first_upload = text.index("actions/upload-artifact@v4")
+        first_gate = text.index(gate)
+        assert first_upload < first_gate, name
+
+
+def test_manual_pipeline_has_explicit_failure_isolation_order():
+    expected_names = (
+        "v4a-01-shared-inputs",
+        "v4a-02-capital",
+        "v4a-03-financing",
+        "v4a-04-issuer-source",
+        "v4a-05-issuer-aggregate",
+        "v4a-06-fundamental-earnings",
+        "v4a-07-prices",
+        "v4a-08-policy",
+        "v4a-09-derived",
     )
-    prices_end = (
-        prices_start + len("  prices:\n") + prices_next.start()
-        if prices_next is not None
-        else len(text)
-    )
-    assert "assert_v4a_stage_qualifiable.py" not in text[prices_start:prices_end]
+    for path, expected in zip(STAGE_WORKFLOWS, expected_names):
+        assert _text(path).startswith(f"name: {expected}\n")
 
+def test_release_publisher_recovers_partial_assets_without_overwrite():
+    text = _text(Path("scripts/publish_v4a_release_bundle.sh"))
+    assert 'missing_assets=()' in text
+    assert 'missing_assets+=("${DIR}/${name}")' in text
+    assert 'gh release upload "$TAG" "${missing_assets[@]}"' in text
+    assert 'persistent bundle asset exists with different bytes' in text
+    assert 'persistent bundle asset verification mismatch' in text
+    assert "--clobber" not in text
+    assert 'gh release view "$TAG" >/dev/null 2>&1 || {' in text
 
-def test_preflight_observability_persists_diagnostics_without_changing_gate():
-    text = WORKFLOW.read_text(encoding="utf-8")
-
-    assert "  preflight_report:\n" in text
-    report_start = text.index("  preflight_report:\n")
-    gate_start = text.index("  preflight_gate:\n")
-    report = text[report_start:gate_start]
-    assert "if: ${{ always() }}" in report
-    assert (
-        "needs: [preflight_static, preflight_cninfo, preflight_policy, "
-        "preflight_issuer, preflight_shared]"
-    ) in report
-    assert "GITHUB_STEP_SUMMARY" in report
-    assert "v4a-preflight-*-diagnostics" in report
-
-    for name in ("static", "cninfo", "policy", "issuer", "shared"):
-        assert f"v4a-preflight-{name}-diagnostics" in text
-
-    assert text.count("if: ${{ always() }}") >= 6
-    assert text.count("set -o pipefail") >= 8
-    assert text.count("path: diagnostics") >= 5
-
-    gate_end_match = re.search(
-        r"(?m)^  [A-Za-z0-9_]+:\s*$",
-        text[gate_start + len("  preflight_gate:\n"):],
-    )
-    gate_end = (
-        gate_start + len("  preflight_gate:\n") + gate_end_match.start()
-        if gate_end_match is not None
-        else len(text)
-    )
-    gate = text[gate_start:gate_end]
-    assert "preflight_report" not in gate
-    assert (
-        "needs: [preflight_static, preflight_cninfo, preflight_policy, "
-        "preflight_issuer, preflight_shared]"
-    ) in gate

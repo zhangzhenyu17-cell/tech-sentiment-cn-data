@@ -288,8 +288,17 @@ def main() -> None:
     parser.add_argument("--start-date", required=True)
     parser.add_argument("--end-date", required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--issuer-source-commit", default="")
+    parser.add_argument("--fundamental-source-commit", default="")
+    parser.add_argument("--price-source-commit", default="")
+    parser.add_argument("--policy-source-commit", default="")
     parser.add_argument("--out-dir", required=True)
     args = parser.parse_args()
+
+    issuer_source_commit = args.issuer_source_commit or args.source_commit
+    fundamental_source_commit = args.fundamental_source_commit or args.source_commit
+    price_source_commit = args.price_source_commit or args.source_commit
+    policy_source_commit = args.policy_source_commit or args.source_commit
 
     target_start = pd.Timestamp(args.start_date).normalize()
     target_end = pd.Timestamp(args.end_date).normalize()
@@ -307,13 +316,13 @@ def main() -> None:
     verify_stage_receipt(
         root=issuer_dir,
         receipt_path=issuer_dir / "receipt.json",
-        source_commit=args.source_commit,
+        source_commit=issuer_source_commit,
         stage_kind="issuer_aggregate",
         start_date=args.start_date,
         end_date=args.end_date,
     )
     issuer_manifest = _read_json(issuer_dir / "pit_materialization_manifest.json")
-    if str(issuer_manifest.get("source_commit") or "") != args.source_commit:
+    if str(issuer_manifest.get("source_commit") or "") != issuer_source_commit:
         raise ValueError("issuer aggregate commit mismatch")
     issuer_evidence = _read_csv(issuer_dir / "pit_evidence.csv")
     issuer_coverage = _read_csv(issuer_dir / "pit_source_coverage.csv")
@@ -324,7 +333,7 @@ def main() -> None:
         Path(args.fundamental_root),
         kind="fundamental_earnings",
         schema="v4a-fundamental-earnings-shard-v1",
-        source_commit=args.source_commit,
+        source_commit=fundamental_source_commit,
         start_date=args.start_date,
         end_date=args.end_date,
         expected_symbols=expected_symbols,
@@ -333,7 +342,7 @@ def main() -> None:
         Path(args.price_root),
         kind="prices",
         schema="v4a-price-shard-v1",
-        source_commit=args.source_commit,
+        source_commit=price_source_commit,
         start_date=args.start_date,
         end_date=args.end_date,
         expected_symbols=expected_symbols,
@@ -342,7 +351,7 @@ def main() -> None:
     verify_stage_receipt(
         root=policy_dir,
         receipt_path=policy_dir / "receipt.json",
-        source_commit=args.source_commit,
+        source_commit=policy_source_commit,
         stage_kind="policy",
         start_date=args.start_date,
         end_date=args.end_date,
@@ -591,6 +600,12 @@ def main() -> None:
         "start_date": args.start_date,
         "end_date": args.end_date,
         "source_commit": args.source_commit,
+        "input_stage_source_commits": {
+            "issuer": issuer_source_commit,
+            "fundamental": fundamental_source_commit,
+            "prices": price_source_commit,
+            "policy": policy_source_commit,
+        },
         "symbols": len(expected_symbols),
         "source_states": source_states,
         "earnings_direction_readiness_state": earnings_state,
