@@ -39,7 +39,14 @@ def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
         extract_standard_filing_facts("单位：万元\n营业收入 10 9")
 
 
-def _facts(title: str, available: str, doc: str, revenue: float, profit: float) -> pd.DataFrame:
+def _facts(
+    title: str,
+    available: str,
+    doc: str,
+    revenue: float,
+    profit: float,
+    published: str | None = None,
+) -> pd.DataFrame:
     text = f"""
     主要会计数据和财务指标 单位：元 币种：人民币
     营业收入 {revenue} {revenue - 1}
@@ -49,6 +56,7 @@ def _facts(title: str, available: str, doc: str, revenue: float, profit: float) 
         entity_id="600000.SH",
         title=title,
         evidence_available_date=available,
+        publication_timestamp=published or available,
         source_identity="CNINFO_ANNOUNCEMENT_ARCHIVE",
         provider="CNINFO",
         document_id=doc,
@@ -89,4 +97,41 @@ def test_later_restatement_is_append_only_not_history_rewrite():
     ].iloc[0]
     payload = json.loads(revenue["evidence_payload"])
     assert payload["prior_document_id"] == "r"
+    assert payload["yoy_change"] == pytest.approx(0.1)
+
+
+def test_same_close_date_revision_uses_official_publication_order_not_document_id():
+    original = _facts(
+        "2024年年度报告",
+        "2025-04-21",
+        "z_original",
+        100.0,
+        10.0,
+        published="2025-04-21 09:00:00",
+    )
+    revision = _facts(
+        "2024年年度报告（修订版）",
+        "2025-04-21",
+        "a_revision",
+        110.0,
+        11.0,
+        published="2025-04-21 14:00:00",
+    )
+    current = _facts(
+        "2025年年度报告",
+        "2026-04-20",
+        "current",
+        121.0,
+        12.1,
+        published="2026-04-20 10:00:00",
+    )
+    evidence = derive_fundamental_trend_evidence(
+        pd.concat([original, revision, current], ignore_index=True)
+    )
+    revenue = evidence[
+        (evidence["evidence_type"] == "REVENUE_TREND")
+        & (evidence["document_id"] == "current")
+    ].iloc[0]
+    payload = json.loads(revenue["evidence_payload"])
+    assert payload["prior_document_id"] == "a_revision"
     assert payload["yoy_change"] == pytest.approx(0.1)
