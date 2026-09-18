@@ -4,6 +4,7 @@ import json
 
 import pandas as pd
 
+from tech_sentiment.bounded_retry import call_with_bounded_network_retry
 from tech_sentiment.official_policy_archive import (
     CSRC_CHANNELS,
     _channel_metadata_url,
@@ -15,12 +16,31 @@ from tech_sentiment.official_policy_archive import (
 )
 
 
+PROBE_TIMEOUT_SECONDS = 10.0
+
+
+def _probe_fetch_json(url: str) -> dict[str, object]:
+    return call_with_bounded_network_retry(
+        lambda: _fetch_json(url, timeout=PROBE_TIMEOUT_SECONDS),
+        attempts=3,
+        backoff_seconds=0.5,
+    )
+
+
+def _probe_fetch_text(url: str) -> str:
+    return call_with_bounded_network_retry(
+        lambda: _fetch_text(url, timeout=PROBE_TIMEOUT_SECONDS),
+        attempts=3,
+        backoff_seconds=0.5,
+    )
+
+
 def main() -> None:
     channels: list[dict[str, object]] = []
     article_probe: dict[str, object] | None = None
 
     for segment, (channel_code, default_type) in CSRC_CHANNELS.items():
-        metadata = _fetch_json(_channel_metadata_url(channel_code))
+        metadata = _probe_fetch_json(_channel_metadata_url(channel_code))
         channel = resolve_csrc_channel(
             segment=segment,
             channel_code=channel_code,
@@ -29,7 +49,7 @@ def main() -> None:
         )
         page_size = 2
         page_url = _search_list_url(channel.channel_id, page=1, page_size=page_size)
-        payload = _fetch_json(page_url)
+        payload = _probe_fetch_json(page_url)
         entries, meta = parse_csrc_search_page(
             payload,
             channel=channel,
@@ -48,7 +68,7 @@ def main() -> None:
                 page=2,
                 page_size=page_size,
             )
-            page2_payload = _fetch_json(page2_url)
+            page2_payload = _probe_fetch_json(page2_url)
             page2_entries, page2_meta = parse_csrc_search_page(
                 page2_payload,
                 channel=channel,
@@ -89,7 +109,7 @@ def main() -> None:
         )
         if article_probe is None:
             entry = entries[0]
-            body = _fetch_text(entry.url)
+            body = _probe_fetch_text(entry.url)
             if len(body.strip()) < 100:
                 raise SystemExit(
                     "CSRC protocol probe failed: canonical article body is empty/too short"
