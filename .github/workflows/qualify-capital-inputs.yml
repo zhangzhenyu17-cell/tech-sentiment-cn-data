@@ -62,7 +62,6 @@ jobs:
           key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-restore
           restore-keys: |
             capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-
-            capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-
 
       - name: Prepare checkpoint directories
         shell: bash
