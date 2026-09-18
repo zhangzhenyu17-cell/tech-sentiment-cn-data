@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -8,7 +9,12 @@ from typing import Callable
 
 import pandas as pd
 
+from tech_sentiment.canonical_materialization import (
+    canonicalize_frame,
+    canonicalize_metadata,
+)
 from tech_sentiment.cninfo_direct import fetch_cninfo_announcements_direct
+from tech_sentiment.immutable_checkpoint import CheckpointIdentity, ImmutableCheckpointStore
 from tech_sentiment.official_pit_archives import (
     SSE_SOURCE_ID,
     SZSE_SOURCE_ID,
@@ -23,14 +29,10 @@ from tech_sentiment.pit_public_materialization import (
     materialize_cninfo_archive,
     validate_materialized_pit_records,
 )
+from tech_sentiment.pit_replay_audit import audit_pit_replay
 
 
-UNMATERIALIZED_SOURCE_STATES = {
-    "DERIVED_PIT_FUNDAMENTAL_TRENDS": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
-    "DERIVED_PIT_TRAILING_VALUATION": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
-    "OFFICIAL_POLICY_AND_REGULATORY_NOTICE_ARCHIVE": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
-    "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE": "HISTORICAL_RECONSTRUCTABLE_NOT_MATERIALIZED",
-}
+ISSUER_PIT_CHECKPOINT_VERSION = "issuer-pit-exact-identity-v2"
 
 
 def _symbols(value: str) -> list[str]:
@@ -70,14 +72,6 @@ def filter_records_available_by_asof(
     publication_column: str,
     trading_dates: pd.Series,
 ) -> tuple[pd.DataFrame, int]:
-    """Drop only disclosures that cannot yet be used by the bundle's last market close.
-
-    This is not a fill or an inferred availability date. A date-only or after-close
-    disclosure on the final real trading date needs a later trading date before it
-    becomes usable, so it stays outside the current as-of ledger and can appear on
-    a later rerun when that real date exists.
-    """
-
     if publication_column not in frame.columns:
         raise ValueError(f"publication column missing: {publication_column}")
     if frame.empty:
@@ -110,54 +104,52 @@ def filter_records_available_by_asof(
     return frame.loc[mask].copy().reset_index(drop=True), int((~mask).sum())
 
 
-def _checkpoint_paths(root: Path, source: str, symbol: str) -> tuple[Path, Path, Path, Path]:
-    base = root / source.lower() / symbol
-    return (
-        base / "records.csv",
-        base / "coverage.csv",
-        base / "errors.csv",
-        base / "metadata.json",
-    )
+def _calendar_identity(trading_dates: pd.Series) -> str:
+    dates = [
+        str(pd.Timestamp(value).normalize().date())
+        for value in pd.to_datetime(trading_dates, errors="raise")
+    ]
+    return hashlib.sha256("\n".join(dates).encode("utf-8")).hexdigest()
 
 
-def _read_checkpoint(
-    root: Path,
+def _checkpoint_identity(
     *,
     source: str,
     symbol: str,
     start_date: str,
     end_date: str,
-) -> PitMaterializationResult | None:
-    records_path, coverage_path, errors_path, metadata_path = _checkpoint_paths(root, source, symbol)
-    if not metadata_path.is_file() or not coverage_path.is_file() or not records_path.is_file():
-        return None
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if metadata.get("source_identity") != source:
-        return None
-    if metadata.get("start_date") != start_date or metadata.get("end_date") != end_date:
-        return None
-    coverage = pd.read_csv(coverage_path)
-    if coverage.empty or not coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").all():
-        return None
-    records = pd.read_csv(records_path)
+    source_commit: str,
+    calendar_identity: str,
+) -> CheckpointIdentity:
+    return CheckpointIdentity(
+        producer="issuer-pit-archive",
+        producer_version=ISSUER_PIT_CHECKPOINT_VERSION,
+        source_commit=source_commit,
+        source_identities=(source,),
+        query_identity={"symbol": symbol, "source_identity": source},
+        scope={
+            "start_date": start_date,
+            "end_date": end_date,
+            "calendar_identity": calendar_identity,
+        },
+    )
+
+
+def _with_tail_filter(result: PitMaterializationResult, *, omitted: int) -> PitMaterializationResult:
+    summary = canonicalize_metadata(result.summary)
+    if not isinstance(summary, dict):
+        raise ValueError("issuer PIT source summary must be a mapping")
+    summary["tail_records_beyond_asof_not_materialized"] = int(omitted)
+    summary["tail_handling"] = "OMIT_UNTIL_NEXT_REAL_TRADING_DATE_EXISTS_NO_FILL_NO_BACKFILL"
+    records = canonicalize_frame(result.records)
+    coverage = canonicalize_frame(result.coverage)
     if len(records):
         records = validate_materialized_pit_records(records)
-    errors = pd.read_csv(errors_path) if errors_path.is_file() else pd.DataFrame(
-        columns=["source_identity", "entity_id", "error"]
-    )
-    return PitMaterializationResult(records=records, coverage=coverage, errors=errors, summary=metadata)
-
-
-def _write_checkpoint(root: Path, result: PitMaterializationResult, *, symbol: str) -> None:
-    source = str(result.summary["source_identity"])
-    records_path, coverage_path, errors_path, metadata_path = _checkpoint_paths(root, source, symbol)
-    metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    result.records.to_csv(records_path, index=False)
-    result.coverage.to_csv(coverage_path, index=False)
-    result.errors.to_csv(errors_path, index=False)
-    metadata_path.write_text(
-        json.dumps(result.summary, ensure_ascii=False, sort_keys=True, indent=2, default=str) + "\n",
-        encoding="utf-8",
+    return PitMaterializationResult(
+        records=records,
+        coverage=coverage,
+        errors=result.errors.copy(),
+        summary=summary,
     )
 
 
@@ -167,7 +159,9 @@ def _run_source(
     symbols: list[str],
     start_date: str,
     end_date: str,
-    checkpoint_root: Path,
+    source_commit: str,
+    calendar_identity: str,
+    store: ImmutableCheckpointStore,
     materialize_one: Callable[[str], PitMaterializationResult],
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, object]]:
     record_parts: list[pd.DataFrame] = []
@@ -177,23 +171,56 @@ def _run_source(
     executed = 0
     tail_omitted = 0
     for symbol in symbols:
-        result = _read_checkpoint(
-            checkpoint_root,
+        identity = _checkpoint_identity(
             source=source,
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
+            source_commit=source_commit,
+            calendar_identity=calendar_identity,
         )
-        if result is None:
-            result = materialize_one(symbol)
-            executed += 1
-            _write_checkpoint(checkpoint_root, result, symbol=symbol)
-        else:
+        loaded = store.load(identity)
+        if loaded is not None:
+            result = PitMaterializationResult(
+                records=canonicalize_frame(loaded.frames["records"]),
+                coverage=canonicalize_frame(loaded.frames["coverage"]),
+                errors=loaded.frames["errors"],
+                summary=dict(loaded.receipt.get("metadata", {}).get("summary") or {}),
+            )
+            if len(result.records):
+                result = PitMaterializationResult(
+                    records=validate_materialized_pit_records(result.records),
+                    coverage=result.coverage,
+                    errors=result.errors,
+                    summary=result.summary,
+                )
             resumed += 1
+        else:
+            result = materialize_one(symbol)
+            stable_summary = canonicalize_metadata(result.summary)
+            if not isinstance(stable_summary, dict):
+                raise ValueError("issuer PIT checkpoint summary must be a mapping")
+            store.save(
+                identity,
+                frames={
+                    "records": canonicalize_frame(result.records),
+                    "coverage": canonicalize_frame(result.coverage),
+                    "errors": result.errors,
+                },
+                metadata={"summary": stable_summary},
+            )
+            result = PitMaterializationResult(
+                records=canonicalize_frame(result.records),
+                coverage=canonicalize_frame(result.coverage),
+                errors=result.errors,
+                summary=stable_summary,
+            )
+            executed += 1
         tail_omitted += int(result.summary.get("tail_records_beyond_asof_not_materialized") or 0)
         if len(result.records):
             record_parts.append(result.records)
-        coverage_parts.append(result.coverage)
+        if len(result.coverage):
+            coverage_parts.append(result.coverage)
         if len(result.errors):
             error_parts.append(result.errors)
 
@@ -210,17 +237,18 @@ def _run_source(
     )
     complete = int(coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").sum()) if len(coverage) else 0
     failed = int(coverage["query_status"].astype(str).eq("FAILED").sum()) if len(coverage) else len(symbols)
-    state = (
-        "QUALIFIED_INPUT"
-        if symbols and complete == len(symbols) and failed == 0 and len(records) > 0
-        else "PARTIAL_COVERAGE"
-        if complete > 0
-        else "DATA_INSUFFICIENT"
-    )
-    summary: dict[str, object] = {
+    if symbols and complete == len(symbols) and failed == 0:
+        state = "QUALIFIED_INPUT"
+    elif complete > 0:
+        state = "PARTIAL_COVERAGE"
+    else:
+        state = "DATA_INSUFFICIENT"
+    summary_with_runtime: dict[str, object] = {
         "source_identity": source,
         "start_date": start_date,
         "end_date": end_date,
+        "source_commit": source_commit,
+        "calendar_identity": calendar_identity,
         "symbols": len(symbols),
         "complete_symbol_queries": complete,
         "failed_symbol_queries": failed,
@@ -228,103 +256,27 @@ def _run_source(
         "tail_records_beyond_asof_not_materialized": tail_omitted,
         "resumed_symbol_queries": resumed,
         "executed_symbol_queries": executed,
+        "checkpoint_schema": ISSUER_PIT_CHECKPOINT_VERSION,
         "readiness_state": state,
     }
+    summary = canonicalize_metadata(summary_with_runtime)
+    if not isinstance(summary, dict):
+        raise ValueError("issuer PIT summary must be a mapping")
     return records, coverage, errors, summary
-
-
-def _with_tail_filter(
-    result: PitMaterializationResult,
-    *,
-    omitted: int,
-) -> PitMaterializationResult:
-    summary = dict(result.summary)
-    summary["tail_records_beyond_asof_not_materialized"] = int(omitted)
-    summary["tail_handling"] = "OMIT_UNTIL_NEXT_REAL_TRADING_DATE_EXISTS_NO_FILL_NO_BACKFILL"
-    return PitMaterializationResult(
-        records=result.records,
-        coverage=result.coverage,
-        errors=result.errors,
-        summary=summary,
-    )
-
-
-def _audit_summary(records: pd.DataFrame) -> dict[str, object]:
-    if records.empty:
-        return {
-            "records": 0,
-            "required_fields_complete": False,
-            "no_future_evidence": False,
-            "duplicate_identity_free": False,
-            "provenance_complete": False,
-            "append_only_schema_ready": True,
-            "prefix_replay_filter_equality": False,
-            "revision_identity_complete": False,
-        }
-    validated = validate_materialized_pit_records(records)
-    required_text = [
-        "entity_id",
-        "evidence_type",
-        "source_identity",
-        "provider",
-        "document_id",
-        "revision_id",
-        "provenance",
-        "availability_state",
-    ]
-    provenance_ok = True
-    for value in validated["provenance"]:
-        try:
-            payload = json.loads(str(value))
-        except json.JSONDecodeError:
-            provenance_ok = False
-            break
-        if not isinstance(payload, dict) or not payload.get("source_identity") or not payload.get("provider"):
-            provenance_ok = False
-            break
-    ordered = validated.sort_values(
-        ["evidence_available_date", "source_identity", "entity_id", "evidence_id"]
-    ).reset_index(drop=True)
-    prefix_ok = True
-    for cutoff in ordered["evidence_available_date"].drop_duplicates().sort_values():
-        prefix = ordered[ordered["evidence_available_date"].le(cutoff)].reset_index(drop=True)
-        replay = ordered[ordered["evidence_available_date"].le(cutoff)].reset_index(drop=True)
-        if not prefix.astype(str).equals(replay.astype(str)):
-            prefix_ok = False
-            break
-    return {
-        "records": int(len(validated)),
-        "required_fields_complete": all(
-            validated[column].notna().all() and validated[column].astype(str).str.strip().ne("").all()
-            for column in required_text
-        ),
-        "no_future_evidence": bool(
-            (validated["evidence_available_date"] >= validated["event_date"]).all()
-        ),
-        "duplicate_identity_free": bool(
-            not validated["evidence_id"].duplicated().any()
-            and not validated["ingestion_identity"].duplicated().any()
-        ),
-        "provenance_complete": provenance_ok,
-        "append_only_schema_ready": True,
-        "prefix_replay_filter_equality": prefix_ok,
-        "revision_identity_complete": bool(validated["revision_id"].astype(str).str.strip().ne("").all()),
-        "earliest_evidence_available_date": str(validated["evidence_available_date"].min().date()),
-        "latest_evidence_available_date": str(validated["evidence_available_date"].max().date()),
-    }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Manual-only PIT evidence materialization from registered public sources."
+        description="Manual-only exact-identity PIT issuer archive materialization."
     )
-    parser.add_argument("--symbols", default="", help="Optional comma-separated six-digit A-share codes")
-    parser.add_argument("--symbols-csv", default="", help="Optional CSV with a symbol column")
+    parser.add_argument("--symbols", default="")
+    parser.add_argument("--symbols-csv", default="")
     parser.add_argument("--start-date", default="2022-01-04")
     parser.add_argument("--end-date", required=True)
-    parser.add_argument("--calendar-csv", required=True, help="Real trading calendar CSV from the same Capital qualification run")
+    parser.add_argument("--calendar-csv", required=True)
     parser.add_argument("--calendar-date-column", default="date")
-    parser.add_argument("--checkpoint-dir", default=".cache/capital_pit_v4a")
+    parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--checkpoint-dir", default=".cache/capital_pit_v4a/issuer")
     parser.add_argument("--out-dir", default="output/pit_evidence_materialization")
     args = parser.parse_args()
 
@@ -345,120 +297,111 @@ def main() -> None:
 
     start_date = str(pd.Timestamp(args.start_date).date())
     end_date = str(pd.Timestamp(args.end_date).date())
-    checkpoint_root = Path(args.checkpoint_dir)
+    calendar_identity = _calendar_identity(trading_dates)
+    store = ImmutableCheckpointStore(args.checkpoint_dir)
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     sh_symbols = [symbol for symbol in symbols if _entity_suffix(symbol) == ".SH"]
     sz_symbols = [symbol for symbol in symbols if _entity_suffix(symbol) == ".SZ"]
 
-    def cninfo_fetcher(**kwargs: object) -> pd.DataFrame:
-        raw = fetch_cninfo_announcements_direct(**kwargs)
-        filtered, omitted = filter_records_available_by_asof(
-            raw, publication_column="公告时间", trading_dates=trading_dates
-        )
-        filtered.attrs["tail_records_beyond_asof_not_materialized"] = omitted
-        return filtered
-
-    def sse_fetcher(**kwargs: object) -> pd.DataFrame:
-        raw = fetch_sse_announcements(**kwargs)
-        filtered, omitted = filter_records_available_by_asof(
-            raw, publication_column="publication_time", trading_dates=trading_dates
-        )
-        filtered.attrs["tail_records_beyond_asof_not_materialized"] = omitted
-        return filtered
-
-    def szse_fetcher(**kwargs: object) -> pd.DataFrame:
-        raw = fetch_szse_announcements(**kwargs)
-        filtered, omitted = filter_records_available_by_asof(
-            raw, publication_column="publication_time", trading_dates=trading_dates
-        )
-        filtered.attrs["tail_records_beyond_asof_not_materialized"] = omitted
-        return filtered
-
     def cninfo_one(symbol: str) -> PitMaterializationResult:
         omitted = 0
 
         def fetcher(**kwargs: object) -> pd.DataFrame:
             nonlocal omitted
-            frame = cninfo_fetcher(**kwargs)
-            omitted = int(frame.attrs.get("tail_records_beyond_asof_not_materialized") or 0)
-            return frame
+            raw = fetch_cninfo_announcements_direct(**kwargs)
+            filtered, omitted = filter_records_available_by_asof(
+                raw, publication_column="公告时间", trading_dates=trading_dates
+            )
+            return filtered
 
-        result = materialize_cninfo_archive(
-            [symbol],
-            start_date=start_date,
-            end_date=end_date,
-            trading_dates=trading_dates,
-            fetcher=fetcher,
+        return _with_tail_filter(
+            materialize_cninfo_archive(
+                [symbol],
+                start_date=start_date,
+                end_date=end_date,
+                trading_dates=trading_dates,
+                fetcher=fetcher,
+            ),
+            omitted=omitted,
         )
-        return _with_tail_filter(result, omitted=omitted)
 
     def sse_one(symbol: str) -> PitMaterializationResult:
         omitted = 0
 
         def fetcher(**kwargs: object) -> pd.DataFrame:
             nonlocal omitted
-            frame = sse_fetcher(**kwargs)
-            omitted = int(frame.attrs.get("tail_records_beyond_asof_not_materialized") or 0)
-            return frame
+            raw = fetch_sse_announcements(**kwargs)
+            filtered, omitted = filter_records_available_by_asof(
+                raw, publication_column="publication_time", trading_dates=trading_dates
+            )
+            return filtered
 
-        result = materialize_sse_archive(
-            [symbol],
-            start_date=start_date,
-            end_date=end_date,
-            trading_dates=trading_dates,
-            fetcher=fetcher,
+        return _with_tail_filter(
+            materialize_sse_archive(
+                [symbol],
+                start_date=start_date,
+                end_date=end_date,
+                trading_dates=trading_dates,
+                fetcher=fetcher,
+            ),
+            omitted=omitted,
         )
-        return _with_tail_filter(result, omitted=omitted)
 
     def szse_one(symbol: str) -> PitMaterializationResult:
         omitted = 0
 
         def fetcher(**kwargs: object) -> pd.DataFrame:
             nonlocal omitted
-            frame = szse_fetcher(**kwargs)
-            omitted = int(frame.attrs.get("tail_records_beyond_asof_not_materialized") or 0)
-            return frame
+            raw = fetch_szse_announcements(**kwargs)
+            filtered, omitted = filter_records_available_by_asof(
+                raw, publication_column="publication_time", trading_dates=trading_dates
+            )
+            return filtered
 
-        result = materialize_szse_archive(
-            [symbol],
-            start_date=start_date,
-            end_date=end_date,
-            trading_dates=trading_dates,
-            fetcher=fetcher,
+        return _with_tail_filter(
+            materialize_szse_archive(
+                [symbol],
+                start_date=start_date,
+                end_date=end_date,
+                trading_dates=trading_dates,
+                fetcher=fetcher,
+            ),
+            omitted=omitted,
         )
-        return _with_tail_filter(result, omitted=omitted)
-
-    cninfo = _run_source(
-        source=CNINFO_SOURCE_ID,
-        symbols=symbols,
-        start_date=start_date,
-        end_date=end_date,
-        checkpoint_root=checkpoint_root,
-        materialize_one=cninfo_one,
-    )
-    sse = _run_source(
-        source=SSE_SOURCE_ID,
-        symbols=sh_symbols,
-        start_date=start_date,
-        end_date=end_date,
-        checkpoint_root=checkpoint_root,
-        materialize_one=sse_one,
-    )
-    szse = _run_source(
-        source=SZSE_SOURCE_ID,
-        symbols=sz_symbols,
-        start_date=start_date,
-        end_date=end_date,
-        checkpoint_root=checkpoint_root,
-        materialize_one=szse_one,
-    )
 
     source_results = {
-        CNINFO_SOURCE_ID: cninfo,
-        SSE_SOURCE_ID: sse,
-        SZSE_SOURCE_ID: szse,
+        CNINFO_SOURCE_ID: _run_source(
+            source=CNINFO_SOURCE_ID,
+            symbols=symbols,
+            start_date=start_date,
+            end_date=end_date,
+            source_commit=args.source_commit,
+            calendar_identity=calendar_identity,
+            store=store,
+            materialize_one=cninfo_one,
+        ),
+        SSE_SOURCE_ID: _run_source(
+            source=SSE_SOURCE_ID,
+            symbols=sh_symbols,
+            start_date=start_date,
+            end_date=end_date,
+            source_commit=args.source_commit,
+            calendar_identity=calendar_identity,
+            store=store,
+            materialize_one=sse_one,
+        ),
+        SZSE_SOURCE_ID: _run_source(
+            source=SZSE_SOURCE_ID,
+            symbols=sz_symbols,
+            start_date=start_date,
+            end_date=end_date,
+            source_commit=args.source_commit,
+            calendar_identity=calendar_identity,
+            store=store,
+            materialize_one=szse_one,
+        ),
     }
     all_records = [result[0] for result in source_results.values() if len(result[0])]
     all_coverage = [result[1] for result in source_results.values() if len(result[1])]
@@ -474,22 +417,32 @@ def main() -> None:
         if all_errors
         else pd.DataFrame(columns=["source_identity", "entity_id", "error"])
     )
-
     source_states = {
         source: str(result[3]["readiness_state"]) for source, result in source_results.items()
     }
-    source_states.update(UNMATERIALIZED_SOURCE_STATES)
     evidence_counts = (
         records["evidence_type"].astype(str).value_counts().sort_index().to_dict()
         if len(records)
         else {}
     )
-    audit = _audit_summary(records)
+    audit = audit_pit_replay(records) if len(records) else {
+        "records": 0,
+        "required_fields_complete": False,
+        "no_future_evidence": False,
+        "duplicate_identity_free": False,
+        "provenance_complete": False,
+        "prefix_replay_filter_equality": False,
+        "as_of_replay_equality": False,
+        "revision_identity_complete": False,
+        "later_revision_does_not_rewrite_prior_rows": False,
+    }
     summary = {
-        "schema_version": "capital-pit-public-ledger-v4a",
-        "status": "MATERIALIZED_PARTIAL" if len(records) else "NO_RECORDS_MATERIALIZED",
+        "schema_version": "capital-pit-public-issuer-ledger-v4a2",
+        "status": "PUBLIC_ISSUER_PIT_MATERIALIZATION_COMPLETED",
         "start_date": start_date,
         "end_date": end_date,
+        "source_commit": args.source_commit,
+        "calendar_identity": calendar_identity,
         "symbols": len(symbols),
         "sh_symbols": len(sh_symbols),
         "sz_symbols": len(sz_symbols),
@@ -499,8 +452,6 @@ def main() -> None:
         "source_summaries": {source: result[3] for source, result in source_results.items()},
         "evidence_type_counts": evidence_counts,
         "pit_audit": audit,
-        "major_negative_event_exclusion_complete": False,
-        "major_negative_reason": "OFFICIAL_POLICY_REGULATORY_AND_NEGATIVE_EVENT_REVIEW_NOT_MATERIALIZED",
         "future_prices_or_returns_used": False,
         "predictive_research_run": False,
         "holdout_run": False,

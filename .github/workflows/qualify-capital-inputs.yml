@@ -4,17 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       start_date:
-        description: "Start date for public input qualification"
+        description: "Start date for public input materialization"
         required: true
         default: "2022-01-04"
         type: string
       end_date:
         description: "Optional end date; blank uses current Asia/Shanghai date"
-        required: false
-        default: ""
-        type: string
-      pit_symbols:
-        description: "Optional comma-separated override; blank uses the frozen STAR50+ChiNext50 historical member union"
         required: false
         default: ""
         type: string
@@ -42,6 +37,12 @@ jobs:
           python scripts/audit_public_tree.py
           pytest -q
 
+      - name: Qualification reachability preflight
+        run: |
+          python scripts/check_v4a_reachability.py \
+            --out output/v4a_reachability.json \
+            --require-reachable
+
       - name: Resolve end date
         id: dates
         shell: bash
@@ -53,56 +54,128 @@ jobs:
           fi
           echo "end_date=${END_DATE}" >> "$GITHUB_OUTPUT"
 
+      - name: Restore exact-identity V4-A checkpoints
+        id: checkpoint_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-restore
+          restore-keys: |
+            capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-
+
+      - name: Prepare checkpoint directories
+        shell: bash
+        run: |
+          mkdir -p \
+            .cache/capital_pit_v4a/capital \
+            .cache/capital_pit_v4a/financing \
+            .cache/capital_pit_v4a/issuer \
+            .cache/capital_pit_v4a/derived
+
       - name: Materialize ETF-share and SSE+SZSE turnover inputs
+        id: capital_materialize
         shell: bash
         run: |
           python scripts/qualify_capital_inputs.py \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --calendar-index-code "000688" \
+            --source-commit "${{ github.sha }}" \
+            --checkpoint-dir .cache/capital_pit_v4a/capital \
             --out-dir output/capital_input_qualification
 
+      - name: Save Capital checkpoints
+        if: ${{ always() && steps.capital_materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-capital
+
       - name: Materialize bilateral financing history
+        id: financing_materialize
         shell: bash
         run: |
           python scripts/materialize_financing_history.py \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --calendar-index-code "000688" \
+            --source-commit "${{ github.sha }}" \
+            --checkpoint-dir .cache/capital_pit_v4a/financing \
             --out-dir output/financing_materialization
 
+      - name: Save financing checkpoints
+        if: ${{ always() && steps.financing_materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-financing
+
       - name: Build frozen Capital/PIT symbol scope
+        id: scope_build
         shell: bash
         run: |
           python scripts/build_capital_pit_symbol_scope.py \
             --out-dir output/pit_symbol_scope
 
-      - name: Restore resumable PIT checkpoints
-        uses: actions/cache@v4
-        with:
-          path: .cache/capital_pit_v4a
-          key: capital-pit-v4a1-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}
-          restore-keys: |
-            capital-pit-v4a1-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-
-
-      - name: Materialize independent CNINFO, SSE and SZSE PIT archives
+      - name: Materialize independent CNINFO, SSE and SZSE PIT issuer archives
+        id: issuer_pit_materialize
         shell: bash
         run: |
-          EXTRA_ARGS=()
-          if [[ -n "${{ inputs.pit_symbols }}" ]]; then
-            EXTRA_ARGS+=(--symbols "${{ inputs.pit_symbols }}")
-          else
-            EXTRA_ARGS+=(--symbols-csv output/pit_symbol_scope/capital_pit_symbols.csv)
-          fi
           python scripts/materialize_pit_evidence.py \
-            "${EXTRA_ARGS[@]}" \
+            --symbols-csv output/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ steps.dates.outputs.end_date }}" \
             --calendar-csv output/capital_input_qualification/trading_calendar.csv \
-            --checkpoint-dir .cache/capital_pit_v4a \
+            --source-commit "${{ github.sha }}" \
+            --checkpoint-dir .cache/capital_pit_v4a/issuer \
             --out-dir output/pit_evidence_materialization
 
-      - name: Finalize immutable qualification bundle
+      - name: Save issuer PIT checkpoints
+        if: ${{ always() && steps.issuer_pit_materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-issuer
+
+      - name: Materialize fundamental, earnings, valuation, policy and major-negative PIT rails
+        id: derived_pit_materialize
+        shell: bash
+        run: |
+          python scripts/materialize_v4a_derived_pit.py \
+            --symbols-csv output/pit_symbol_scope/capital_pit_symbols.csv \
+            --calendar-csv output/capital_input_qualification/trading_calendar.csv \
+            --issuer-evidence-csv output/pit_evidence_materialization/pit_evidence.csv \
+            --issuer-coverage-csv output/pit_evidence_materialization/pit_source_coverage.csv \
+            --issuer-manifest output/pit_evidence_materialization/pit_materialization_manifest.json \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ steps.dates.outputs.end_date }}" \
+            --source-commit "${{ github.sha }}" \
+            --checkpoint-dir .cache/capital_pit_v4a/derived \
+            --out-dir output/pit_evidence_materialization
+
+      - name: Save derived PIT checkpoints
+        if: ${{ always() && steps.derived_pit_materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a
+          key: capital-pit-v4a4-${{ github.sha }}-${{ inputs.start_date }}-${{ steps.dates.outputs.end_date }}-${{ github.run_id }}-${{ github.run_attempt }}-derived
+
+      - name: Stage frozen Fundamental PIT evidence contract
+        shell: bash
+        run: |
+          cp \
+            reference/v4a_fundamental_pit_state_contract_v1.json \
+            output/pit_evidence_materialization/fundamental_pit_state_contract_v1.json
+
+      - name: Summarize immutable checkpoint receipts
+        shell: bash
+        run: |
+          python scripts/summarize_v4a_checkpoints.py \
+            --checkpoint-root .cache/capital_pit_v4a \
+            --source-commit "${{ github.sha }}" \
+            --out output/pit_evidence_materialization/checkpoint_receipt_summary.json
+
+      - name: Finalize immutable public materialization bundle
         shell: bash
         run: |
           python scripts/finalize_capital_pit_materialization.py \

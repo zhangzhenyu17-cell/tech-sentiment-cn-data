@@ -1,0 +1,72 @@
+{
+  "contract_id": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1",
+  "contract_version": 1,
+  "purpose": "Deterministic accounting-state classification for V4-A PIT historical qualification; not a predictive model.",
+  "canonical_source_identities": [
+    "CNINFO_ANNOUNCEMENT_ARCHIVE",
+    "SSE_ANNOUNCEMENT_ARCHIVE",
+    "SZSE_ANNOUNCEMENT_ARCHIVE"
+  ],
+  "derived_source_identity": "DERIVED_PIT_FUNDAMENTAL_TRENDS",
+  "required_current_and_prior_comparable_facts": [
+    "OPERATING_REVENUE",
+    "NET_PROFIT_PARENT",
+    "OPERATING_CASH_FLOW_NET",
+    "NET_PROFIT_MARGIN"
+  ],
+  "comparable_period_rule": "Same report-period end exactly one calendar year earlier, selected only from versions available by the current evidence_available_date.",
+  "data_insufficient_conditions": [
+    "Any required current or prior-comparable fact is missing.",
+    "Any required fact lacks immutable document/revision/provenance identity.",
+    "The current or prior filing cannot be parsed without inference, unit guessing, interpolation, forward-fill, backfill, or current-snapshot substitution.",
+    "The comparable period or source window is incomplete.",
+    "A duplicate/conflicting identity or replay/revision audit fails."
+  ],
+  "fail_rules_in_priority_order": [
+    {
+      "rule_id": "CURRENT_NET_LOSS",
+      "condition": "current NET_PROFIT_PARENT < 0",
+      "rationale": "An officially reported current-period loss is explicit adverse fundamental evidence; no return-optimized magnitude threshold is used."
+    },
+    {
+      "rule_id": "BROAD_BASED_DETERIORATION",
+      "condition": "current revenue < prior revenue AND current net profit < prior net profit AND current operating cash flow < prior operating cash flow AND current net profit margin < prior net profit margin",
+      "rationale": "All four frozen accounting dimensions deteriorate versus the exact prior comparable period; only direction, not optimized magnitude, is used."
+    },
+    {
+      "rule_id": "PROFIT_CASH_DIVERGENCE",
+      "condition": "current net profit > 0 AND current operating cash flow < 0 AND prior operating cash flow >= 0 AND current operating cash flow < prior operating cash flow",
+      "rationale": "Positive reported profit accompanied by a newly negative and deteriorating operating cash-flow position is explicit earnings-quality deterioration."
+    },
+    {
+      "rule_id": "PROFIT_MARGIN_CASH_DETERIORATION",
+      "condition": "current net profit < prior net profit AND current net profit margin < prior net profit margin AND current operating cash flow < prior operating cash flow",
+      "rationale": "Profit, profitability, and operating cash-flow all deteriorate; no percentage threshold is selected from outcomes."
+    }
+  ],
+  "pass_rule": {
+    "rule_id": "ALL_CORE_DIMENSIONS_NON_DETERIORATING",
+    "condition": "current net profit > 0 AND current operating cash flow >= 0 AND current revenue >= prior revenue AND current net profit >= prior net profit AND current operating cash flow >= prior operating cash flow AND current net profit margin >= prior net profit margin",
+    "rationale": "PASS requires complete qualified evidence, positive profit/cash generation, and no deterioration in any frozen core accounting dimension. Absence of captured negatives alone is never PASS."
+  },
+  "watch_rule": {
+    "rule_id": "QUALIFIED_MIXED_ACCOUNTING_STATE",
+    "condition": "All required evidence is complete and qualified, but neither any FAIL rule nor the PASS rule applies.",
+    "rationale": "WATCH represents genuinely mixed accounting evidence and must never substitute for missing data."
+  },
+  "revision_semantics": "Append-only. A later restatement can change states only on or after its own evidence_available_date and must never rewrite an earlier as-of state.",
+  "threshold_policy": "No historical-return threshold search. V1 uses sign and exact directional comparisons only.",
+  "forbidden_inputs": [
+    "future prices",
+    "future returns",
+    "forward outcomes",
+    "V4-C outcomes",
+    "Cause Attribution outcomes",
+    "analyst hindsight",
+    "current F10 snapshot backfill"
+  ],
+  "evidence_contract_completion_authorized": true,
+  "predictive_research": false,
+  "parameter_search": false,
+  "production_or_trading_authority_changed": false
+}

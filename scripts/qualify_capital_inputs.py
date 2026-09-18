@@ -8,12 +8,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from tech_sentiment.capital_input_data import (
-    fetch_sse_etf_share_history,
-    fetch_sse_szse_a_share_turnover_history,
-    qualify_trailing_etf_coverage,
-)
+from tech_sentiment.canonical_materialization import canonicalize_metadata
+from tech_sentiment.capital_input_data import qualify_trailing_etf_coverage
 from tech_sentiment.index_price import fetch_index_history
+from tech_sentiment.resumable_capital import materialize_capital_monthly
 
 
 def _etf_readiness(coverage: pd.DataFrame) -> str:
@@ -39,6 +37,8 @@ def main() -> None:
     parser.add_argument("--fund-code", default="588000")
     parser.add_argument("--calendar-index-code", default="000906")
     parser.add_argument("--sleep-seconds", type=float, default=0.05)
+    parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--checkpoint-dir", default=".cache/capital_pit_v4a/capital")
     parser.add_argument("--out-dir", default="output/capital_input_qualification")
     args = parser.parse_args()
 
@@ -56,11 +56,15 @@ def main() -> None:
         raise SystemExit("trading calendar source returned no rows")
     dates = pd.DatetimeIndex(pd.to_datetime(calendar["date"], errors="raise")).normalize().sort_values().unique()
 
-    etf = fetch_sse_etf_share_history(
+    chunked = materialize_capital_monthly(
         trading_dates=dates,
         fund_codes=[args.fund_code],
+        source_commit=args.source_commit,
+        checkpoint_dir=args.checkpoint_dir,
         sleep_seconds=args.sleep_seconds,
     )
+    etf = chunked.etf
+    turnover = chunked.turnover
     coverage = qualify_trailing_etf_coverage(
         etf.data,
         trading_dates=dates,
@@ -71,11 +75,6 @@ def main() -> None:
     shares = pd.to_numeric(coverage["fund_shares"], errors="coerce")
     coverage["endpoint_20d_available"] = shares.notna() & shares.shift(20).notna()
     coverage["endpoint_60d_available"] = shares.notna() & shares.shift(60).notna()
-
-    turnover = fetch_sse_szse_a_share_turnover_history(
-        trading_dates=dates,
-        sleep_seconds=args.sleep_seconds,
-    )
 
     calendar.to_csv(out / "trading_calendar.csv", index=False)
     etf.data.to_csv(out / "sse_etf_shares.csv", index=False)
@@ -94,12 +93,16 @@ def main() -> None:
         if len(dates) and len(turnover.combined) == len(dates) and turnover.errors.empty
         else "PARTIAL_COVERAGE" if len(turnover.combined) else "DATA_INSUFFICIENT"
     )
-    summary = {
-        "status": "MANUAL_DIAGNOSTIC_ONLY",
+    summary_with_runtime = {
+        "status": "PUBLIC_MATERIALIZATION_STAGE_COMPLETED",
         "start_date": str(dates.min().date()),
         "end_date": str(dates.max().date()),
         "trading_days": int(len(dates)),
         "fund_code": str(args.fund_code).zfill(6),
+        "source_commit": args.source_commit,
+        "checkpoint_mode": "EXACT_IDENTITY_MONTHLY_CHUNKS",
+        "checkpoint_resumed_chunks": int(chunked.resumed_chunks),
+        "checkpoint_executed_chunks": int(chunked.executed_chunks),
         "etf_readiness_state": etf_state,
         "etf_observed_days": int(coverage["observed"].sum()),
         "etf_raw_coverage": float(coverage["observed"].mean()) if len(coverage) else None,
@@ -114,11 +117,26 @@ def main() -> None:
         "turnover_scope": "SSE_SZSE_A_SHARES",
         "canonical_all_a_state": "INCOMPLETE_BSE_NOT_INCLUDED",
         "production_or_model_output": False,
+        "predictive_research_run": False,
     }
+    summary = canonicalize_metadata(summary_with_runtime)
+    assert isinstance(summary, dict)
     (out / "qualification_summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "canonical_summary": summary,
+                "runtime_diagnostics": {
+                    "checkpoint_resumed_chunks": int(chunked.resumed_chunks),
+                    "checkpoint_executed_chunks": int(chunked.executed_chunks),
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
