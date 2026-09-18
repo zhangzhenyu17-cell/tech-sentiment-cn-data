@@ -83,6 +83,81 @@ def test_pdf_text_keeps_layout_when_layout_already_has_explicit_unit(monkeypatch
     assert calls == ["layout"]
     assert text.startswith("单位：元")
 
+
+
+def test_pdf_text_uses_pdfminer_only_when_both_pypdf_modes_lose_unit(monkeypatch):
+    calls: list[str] = []
+
+    class FakePage:
+        def extract_text(self, extraction_mode=None):
+            calls.append("layout" if extraction_mode == "layout" else "plain")
+            return (
+                "主要会计数据\n"
+                "营业收入 124,099,843,771.99 106,190,154,843.76\n"
+                "归属于上市公司股东的净利润 62,716,443,738.27 52,460,144,378.16\n"
+            )
+
+    class FakeReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [FakePage()]
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=FakeReader))
+    monkeypatch.setattr(
+        filing_module,
+        "_extract_pdfminer_text",
+        lambda content: (
+            "主要会计数据\n"
+            "单位：元 币种：人民币\n"
+            "营业收入 124,099,843,771.99 106,190,154,843.76\n"
+            "归属于上市公司股东的净利润 62,716,443,738.27 52,460,144,378.16\n"
+        ),
+    )
+
+    text = extract_pdf_text(b"%PDF-legacy-fixture")
+    facts = extract_standard_filing_facts(text)
+
+    assert calls == ["layout", "plain"]
+    assert "单位：元" in text
+    assert facts["OPERATING_REVENUE"] == 124_099_843_771.99
+    assert facts["NET_PROFIT_PARENT"] == 62_716_443_738.27
+
+
+def test_explicit_unit_ignores_unicode_format_characters_but_not_unit_semantics():
+    text = (
+        "单\u200b位：人\u2060民\u200b币元 币种：人民币\n"
+        "营业收入 1,200.00 1,000.00\n"
+        "归属于上市公司股东的净利润 120.00 100.00\n"
+    )
+    facts = extract_standard_filing_facts(text)
+    assert facts["OPERATING_REVENUE"] == 1200.0
+    assert facts["NET_PROFIT_PARENT"] == 120.0
+
+    with pytest.raises(ValueError, match="non-yuan unit"):
+        extract_standard_filing_facts(
+            "单\u200b位：万\u2060元\n营业收入 10 9"
+        )
+
+
+def test_pdf_text_still_fails_closed_when_no_text_layer_exposes_unit(monkeypatch):
+    class FakePage:
+        def extract_text(self, extraction_mode=None):
+            return "营业收入 120.00 100.00"
+
+    class FakeReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [FakePage()]
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=FakeReader))
+    monkeypatch.setattr(
+        filing_module,
+        "_extract_pdfminer_text",
+        lambda content: "营业收入 120.00 100.00",
+    )
+
+    text = extract_pdf_text(b"%PDF-no-unit")
+    with pytest.raises(ValueError, match="explicit table unit declaration"):
+        extract_standard_filing_facts(text)
+
 def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
     text = """
     主要会计数据和财务指标  单位：元 币种：人民币
