@@ -171,6 +171,7 @@ def _fetch_szse_financing_official(
             "CATALOGID": "1837_xxpl",
             "txtDate": f"{date[:4]}-{date[4:6]}-{date[6:]}",
             "tab1PAGENO": "1",
+            "random": "0.7425245522795993",
         },
         referer=SZSE_MARGIN_SOURCE_URL,
         allowed_query_hosts=("www.szse.cn",),
