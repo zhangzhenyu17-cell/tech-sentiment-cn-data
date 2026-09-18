@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 
+from .bounded_retry import call_with_bounded_network_retry
 from .pit_public_materialization import (
     REQUIRED_PIT_COLUMNS,
     _stable_hash,
@@ -156,13 +157,21 @@ def download_official_document(
     _canonical_host(url)
     retrieval_url = url
     try:
-        content = _download_once(url, timeout=timeout, opener=opener)
+        content = call_with_bounded_network_retry(
+            lambda: _download_once(url, timeout=timeout, opener=opener),
+            attempts=3,
+            backoff_seconds=0.5,
+        )
     except HTTPError as exc:
         fallback = _cninfo_https_download_fallback(url)
         if exc.code != 403 or fallback is None:
             raise
         retrieval_url = fallback
-        content = _download_once(fallback, timeout=timeout, opener=opener)
+        content = call_with_bounded_network_retry(
+            lambda: _download_once(fallback, timeout=timeout, opener=opener),
+            attempts=3,
+            backoff_seconds=0.5,
+        )
 
     if not content:
         raise ValueError("official filing attachment is empty")
