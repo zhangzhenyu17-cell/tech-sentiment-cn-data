@@ -158,3 +158,42 @@ def test_qualification_blocker_guards_run_after_diagnostics_are_preserved():
         else len(text)
     )
     assert "assert_v4a_stage_qualifiable.py" not in text[prices_start:prices_end]
+
+
+def test_preflight_observability_persists_diagnostics_without_changing_gate():
+    text = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "  preflight_report:\n" in text
+    report_start = text.index("  preflight_report:\n")
+    gate_start = text.index("  preflight_gate:\n")
+    report = text[report_start:gate_start]
+    assert "if: ${{ always() }}" in report
+    assert (
+        "needs: [preflight_static, preflight_cninfo, preflight_policy, "
+        "preflight_issuer, preflight_shared]"
+    ) in report
+    assert "GITHUB_STEP_SUMMARY" in report
+    assert "v4a-preflight-*-diagnostics" in report
+
+    for name in ("static", "cninfo", "policy", "issuer", "shared"):
+        assert f"v4a-preflight-{name}-diagnostics" in text
+
+    assert text.count("if: ${{ always() }}") >= 6
+    assert text.count("set -o pipefail") >= 8
+    assert text.count("path: diagnostics") >= 5
+
+    gate_end_match = re.search(
+        r"(?m)^  [A-Za-z0-9_]+:\s*$",
+        text[gate_start + len("  preflight_gate:\n"):],
+    )
+    gate_end = (
+        gate_start + len("  preflight_gate:\n") + gate_end_match.start()
+        if gate_end_match is not None
+        else len(text)
+    )
+    gate = text[gate_start:gate_end]
+    assert "preflight_report" not in gate
+    assert (
+        "needs: [preflight_static, preflight_cninfo, preflight_policy, "
+        "preflight_issuer, preflight_shared]"
+    ) in gate
