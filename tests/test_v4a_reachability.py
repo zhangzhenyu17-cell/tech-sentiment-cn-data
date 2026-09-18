@@ -72,7 +72,7 @@ def test_active_private_handoff_pins_v2_verifier_and_safety_boundaries():
     handoff = json.loads(Path(PRIVATE_HANDOFF_PATH).read_text(encoding="utf-8"))
     assert handoff["activation_state"] == "ACTIVE"
     assert handoff["private_verifier_contract_id"] == "v4a_artifact_intake_contract_v2"
-    assert handoff["private_verifier_merge_sha"] == "b953b9c302467f40dbdb51d421b06ed1f78904b1"
+    assert handoff["private_verifier_merge_sha"] == "6c99d6640e044a6fe86ca27a4c9b756952b32b0d"
     assert len(handoff["private_verifier_merge_sha"]) == 40
     assert handoff["public_grants_historical_qualification"] is False
     assert handoff["formal_public_long_run_allowed_before_activation"] is False
