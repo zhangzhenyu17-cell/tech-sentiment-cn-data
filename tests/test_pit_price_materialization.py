@@ -37,3 +37,32 @@ def test_price_materialization_resumes_exact_symbol_year_chunks(tmp_path: Path):
     assert resumed.prices[["symbol", "date", "close"]].astype(str).equals(
         fresh.prices[["symbol", "date", "close"]].astype(str)
     )
+
+
+def test_price_materializer_retries_transient_provider_failure(tmp_path: Path):
+    calls = 0
+
+    def fetcher(symbol: str, *, start_date: str, end_date: str, adjust: str, provider: str):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionResetError(104, "reset")
+        return pd.DataFrame({
+            "date": pd.to_datetime(["2026-01-05"]),
+            "symbol": [symbol],
+            "close": [10.0],
+            "provider": [provider],
+        })
+
+    result = materialize_pit_stock_prices(
+        ["600000"],
+        start_date="2026-01-05",
+        end_date="2026-01-05",
+        source_commit="retry",
+        checkpoint_dir=tmp_path,
+        fetcher=fetcher,
+        retry_backoff_seconds=0,
+    )
+    assert calls == 2
+    assert result.errors.empty
+    assert result.summary["readiness_state"] == "QUALIFIED_INPUT"
