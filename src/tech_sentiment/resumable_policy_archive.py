@@ -270,7 +270,7 @@ def materialize_csrc_policy_archive_resumable(
     json_fetcher: Callable[[str], Mapping[str, object]] = _fetch_json,
     article_fetcher: Callable[[str], str] = _fetch_text,
     max_pages_per_segment: int = 500,
-    page_size: int = 50,
+    page_size: int = 20,
     retry_attempts: int = 3,
     retry_backoff_seconds: float = 0.5,
 ) -> PitMaterializationResult:
