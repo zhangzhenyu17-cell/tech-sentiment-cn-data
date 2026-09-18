@@ -164,8 +164,11 @@ stage commits are execution lineage, not an alternative finalizer identity.
 GitHub Actions cache is producer-local acceleration only. It is not a canonical
 cross-stage data bus and is never sufficient evidence for final qualification.
 
-Cache keys use the stage compatibility identity rather than the global repository
-SHA, so unrelated repository changes do not discard valid resume checkpoints.
+Cache keys bind both the stage compatibility identity and the exact repository
+source commit. Producer checkpoints therefore never bridge code revisions.
+
+Cross-commit reuse is provided only by a successfully sealed persistent stage
+bundle whose producer fingerprint and upstream bundle identities are revalidated.
 
 The immutable release bundle is the formal reusable inter-workflow handoff.
 
