@@ -18,13 +18,14 @@ def _fact(entity, period, fact_type, value, available, doc):
         "value": value,
         "unit": unit,
         "evidence_available_date": available,
+        "publication_timestamp": f"{available} 12:00:00",
         "source_identity": "CNINFO_ANNOUNCEMENT_ARCHIVE",
         "provider": "CNINFO",
         "document_id": doc,
         "revision_id": f"DOCUMENT:{doc}:SHA256:{doc}",
         "document_url": f"https://static.cninfo.com.cn/{doc}.pdf",
         "document_sha256": (doc * 64)[:64],
-        "parser_version": "official-filing-facts-v1",
+        "parser_version": "official-filing-facts-v2-scoped-units-revision-time",
     }
 
 
