@@ -65,17 +65,48 @@ STAGE_SPECS: dict[str, StageSpec] = {
         ),
         extra_files=(".github/workflows/v4a-financing.yml",),
     ),
-    "issuer": StageSpec(
-        family="issuer",
-        stage_kind="issuer_aggregate",
-        stage_id="issuer_aggregate",
+    "issuer_cninfo": StageSpec(
+        family="issuer_cninfo",
+        stage_kind="issuer_source_group",
+        stage_id="issuer-cninfo-all",
         entrypoints=(
             "scripts/materialize_pit_evidence.py",
-            "scripts/aggregate_v4a_issuer_shards.py",
             "scripts/assert_v4a_stage_qualifiable.py",
             "scripts/write_v4a_stage_receipt.py",
         ),
-        extra_files=(".github/workflows/v4a-issuer.yml",),
+        extra_files=(".github/workflows/v4a-issuer-source.yml",),
+    ),
+    "issuer_sse": StageSpec(
+        family="issuer_sse",
+        stage_kind="issuer_source_group",
+        stage_id="issuer-sse-all",
+        entrypoints=(
+            "scripts/materialize_pit_evidence.py",
+            "scripts/assert_v4a_stage_qualifiable.py",
+            "scripts/write_v4a_stage_receipt.py",
+        ),
+        extra_files=(".github/workflows/v4a-issuer-source.yml",),
+    ),
+    "issuer_szse": StageSpec(
+        family="issuer_szse",
+        stage_kind="issuer_source_group",
+        stage_id="issuer-szse-all",
+        entrypoints=(
+            "scripts/materialize_pit_evidence.py",
+            "scripts/assert_v4a_stage_qualifiable.py",
+            "scripts/write_v4a_stage_receipt.py",
+        ),
+        extra_files=(".github/workflows/v4a-issuer-source.yml",),
+    ),
+    "issuer_aggregate": StageSpec(
+        family="issuer_aggregate",
+        stage_kind="issuer_aggregate",
+        stage_id="issuer_aggregate",
+        entrypoints=(
+            "scripts/aggregate_v4a_issuer_shards.py",
+            "scripts/write_v4a_stage_receipt.py",
+        ),
+        extra_files=(".github/workflows/v4a-issuer-aggregate.yml",),
     ),
     "fundamental": StageSpec(
         family="fundamental",
