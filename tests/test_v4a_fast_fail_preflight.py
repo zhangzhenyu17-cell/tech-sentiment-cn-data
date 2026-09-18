@@ -75,3 +75,19 @@ def test_csrc_preflight_checks_second_page_identity_and_order():
     assert "duplicate manuscript across pages" in source
     assert "cross-page order drift" in source
     assert "total drift across pages" in source
+
+
+def test_cninfo_preflight_exercises_frozen_fundamental_and_valuation_paths():
+    source = (ROOT / "scripts" / "check_cninfo_connectivity.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'set(REQUIRED_FACTS) | {"BASIC_EPS"}' in source
+    assert '"600519_PRIOR"' in source
+    assert "materialize_fundamental_state_evidence(" in source
+    assert '"readiness_state") != "QUALIFIED_INPUT"' in source
+    assert "latest_required_comparable_coverage_complete" in source
+    assert "build_trailing_valuation_rail(" in source
+    assert "valuation_rail_to_pit_evidence(" in source
+    assert "real_input_integration_verified" in source
+    assert '"forward_outcome_read": False' in source
+    assert '"parameter_search": False' in source
