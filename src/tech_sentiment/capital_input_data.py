@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import time
 from typing import Callable, Iterable
-from urllib.parse import urlparse
-
 import numpy as np
 import pandas as pd
 
@@ -265,9 +263,13 @@ def _szse_turnover_payload_frame(payload: object) -> pd.DataFrame:
         parsed.append(
             {
                 "证券类别": str(category).strip(),
+                # The official SZSE JSON catalog reports cjje in 亿元.
+                # Canonical turnover downstream is yuan, matching the prior
+                # official xlsx normalization contract.
                 "成交金额": pd.to_numeric(
                     str(amount).replace(",", ""), errors="coerce"
-                ),
+                )
+                * 100_000_000.0,
             }
         )
     frame = pd.DataFrame(parsed)
@@ -370,6 +372,9 @@ def fetch_sse_etf_share_history(
     retry_backoff_seconds: float = 0.5,
 ) -> EtfShareFetchResult:
     use_official_default = fetcher is None
+    requested_codes = tuple(sorted({str(value).zfill(6) for value in fund_codes}))
+    if not requested_codes:
+        raise ValueError("at least one SSE ETF fund code is required")
     data_parts: list[pd.DataFrame] = []
     errors: list[dict[str, str]] = []
     dates = pd.DatetimeIndex(
@@ -388,7 +393,7 @@ def fetch_sse_etf_share_history(
                 except RuntimeError as bulk_exc:
                     exact_parts: list[pd.DataFrame] = []
                     exact_errors: list[str] = []
-                    for code in sorted({str(value).zfill(6) for value in fund_codes}):
+                    for code in requested_codes:
                         try:
                             exact_parts.append(
                                 call_with_bounded_network_retry(
@@ -418,7 +423,7 @@ def fetch_sse_etf_share_history(
                     backoff_seconds=retry_backoff_seconds,
                 )
             normalized = normalize_sse_etf_share_snapshot(
-                raw, observation_date=value, fund_codes=fund_codes
+                raw, observation_date=value, fund_codes=requested_codes
             )
             if len(normalized):
                 data_parts.append(normalized)
