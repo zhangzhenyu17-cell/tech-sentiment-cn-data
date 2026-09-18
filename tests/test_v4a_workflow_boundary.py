@@ -20,7 +20,12 @@ def test_v4a_materialization_workflow_is_manual_only_and_has_no_universe_overrid
 def test_v4a_parallel_dag_has_verified_stage_boundaries():
     text = WORKFLOW.read_text(encoding="utf-8")
     for job in (
-        "preflight:",
+        "preflight_static:",
+        "preflight_cninfo:",
+        "preflight_policy:",
+        "preflight_issuer:",
+        "preflight_shared:",
+        "preflight_gate:",
         "capital:",
         "financing:",
         "issuer_cninfo:",
@@ -48,8 +53,9 @@ def test_v4a_parallelism_is_bounded_and_source_aware():
     assert "--source CNINFO_ANNOUNCEMENT_ARCHIVE" in text
     assert "--source SSE_ANNOUNCEMENT_ARCHIVE" in text
     assert "--source SZSE_ANNOUNCEMENT_ARCHIVE" in text
-    assert "needs: [preflight, issuer_cninfo]" in text
-    assert "needs: [preflight, issuer_aggregate, fundamental_earnings, prices, policy]" in text
+    assert "needs: [preflight_gate, issuer_cninfo]" in text
+    assert "needs: [preflight_gate, issuer_aggregate, fundamental_earnings, prices, policy]" in text
+    assert "needs: [preflight_static, preflight_cninfo, preflight_policy, preflight_issuer, preflight_shared]" in text
 
 
 def test_v4a_checkpoint_cache_namespace_matches_parallel_exact_identity_architecture():
@@ -61,13 +67,45 @@ def test_v4a_checkpoint_cache_namespace_matches_parallel_exact_identity_architec
     assert '--source-commit "${{ github.sha }}"' in text
 
 
-def test_cninfo_protocol_probe_runs_in_preflight_before_materialization():
+def test_fast_fail_preflights_run_before_expensive_materialization():
     text = WORKFLOW.read_text(encoding="utf-8")
-    preflight = text.index("CNINFO protocol connectivity preflight")
     capital = text.index("Materialize ETF-share and SSE+SZSE turnover")
-    assert preflight < capital
-    assert "python scripts/check_cninfo_connectivity.py" in text
+    for marker in (
+        "CNINFO protocol, PDF, facts and earnings smoke",
+        "CSRC policy protocol smoke",
+        "SSE and SZSE issuer archive protocol smoke",
+        "Latest public-source freshness preflight",
+        "Audit public tree and run tests",
+    ):
+        assert text.index(marker) < capital
+
+    assert "timeout 9m python scripts/check_cninfo_connectivity.py" in text
+    assert "timeout 7m python scripts/check_csrc_policy_connectivity.py" in text
+    assert "timeout 7m python scripts/check_issuer_archive_connectivity.py" in text
+    assert "timeout 10m python scripts/check_v4a_source_freshness.py" in text
+    assert "timeout 8m bash -c 'python scripts/audit_public_tree.py && pytest -q'" in text
     assert "timeout-minutes: 360" not in text
+
+
+def test_all_expensive_jobs_are_blocked_by_unified_fast_fail_gate():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    for job in (
+        "capital",
+        "financing",
+        "issuer_cninfo",
+        "issuer_sse",
+        "issuer_szse",
+        "issuer_aggregate",
+        "fundamental_earnings",
+        "prices",
+        "policy",
+        "derived_aggregate",
+        "finalize",
+    ):
+        block = text.split(f"  {job}:", 1)[1].split("\n  ", 1)[0]
+        assert "needs:" in block
+        assert "preflight_gate" in block
+    assert "needs.preflight.outputs.end_date" not in text
 
 
 def test_finalizer_remains_single_canonical_bundle_authority():
