@@ -2,6 +2,7 @@ import pandas as pd
 
 from tech_sentiment.capital_input_data import (
     SSE_ETF_SCALE_QUERY_URL,
+    SSE_ETF_SCALE_SOA_QUERY_URL,
     SSE_ETF_SHARE_SOURCE_URL,
     _fetch_sse_etf_scale_direct,
     _sse_etf_scale_payload_frame,
@@ -183,6 +184,127 @@ def test_sse_etf_scale_direct_warms_same_official_browser_session_after_403():
     ]
     assert frame.loc[0, "基金代码"] == "588000"
     assert frame.loc[0, "基金份额"] == 9_000_012_300.0
+
+
+
+def test_sse_etf_scale_uses_same_sql_on_official_soa_fallback_and_records_interface():
+    calls: list[tuple[str, str]] = []
+
+    class FakeResponse:
+        def __init__(self, url: str, *, payload=None, status_code: int = 200, text: str = ""):
+            self.url = url
+            self._payload = payload
+            self.status_code = status_code
+            self.text = text
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+        def json(self):
+            if self._payload is None:
+                raise ValueError("not json")
+            return self._payload
+
+    def plain_get(url, **kwargs):
+        return FakeResponse(url, status_code=403)
+
+    def browser_get(url, **kwargs):
+        return FakeResponse(url, status_code=403)
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            calls.append(("session", url))
+            if url == SSE_ETF_SHARE_SOURCE_URL:
+                return FakeResponse(url, status_code=200)
+            if url == SSE_ETF_SCALE_QUERY_URL:
+                return FakeResponse(url, status_code=403)
+            assert url == SSE_ETF_SCALE_SOA_QUERY_URL
+            assert kwargs["params"]["sqlId"] == "COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L"
+            assert kwargs["params"]["STAT_DATE"] == "2026-09-17"
+            assert kwargs["params"]["isPagination"] == "false"
+            return FakeResponse(
+                url,
+                payload={
+                    "result": [
+                        {
+                            "NUM": "1",
+                            "SEC_CODE": "588000",
+                            "SEC_NAME": "科创50ETF",
+                            "ETF_TYPE": "股票型",
+                            "STAT_DATE": "2026-09-17",
+                            "TOT_VOL": "900001.23",
+                        }
+                    ]
+                },
+            )
+
+        def close(self):
+            pass
+
+    frame = _fetch_sse_etf_scale_direct(
+        "20260917",
+        plain_get=plain_get,
+        browser_get=browser_get,
+        browser_session_factory=FakeSession,
+    )
+    normalized = normalize_sse_etf_share_snapshot(
+        frame,
+        observation_date="2026-09-17",
+        fund_codes=["588000"],
+    )
+
+    assert ("session", SSE_ETF_SCALE_SOA_QUERY_URL) in calls
+    assert normalized.loc[0, "provider_interface"] == SSE_ETF_SCALE_SOA_QUERY_URL
+    assert normalized.loc[0, "fund_shares"] == 9_000_012_300.0
+
+
+def test_sse_etf_scale_accepts_strict_jsonp_only_on_official_query_interface():
+    class FakeResponse:
+        def __init__(self, url: str, *, status_code: int = 200, text: str = ""):
+            self.url = url
+            self.status_code = status_code
+            self.text = text
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+        def json(self):
+            raise ValueError("jsonp")
+
+    def plain_get(url, **kwargs):
+        return FakeResponse(url, status_code=403)
+
+    def browser_get(url, **kwargs):
+        return FakeResponse(url, status_code=403)
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            if url == SSE_ETF_SHARE_SOURCE_URL:
+                return FakeResponse(url)
+            if url == SSE_ETF_SCALE_SOA_QUERY_URL:
+                return FakeResponse(url, status_code=403)
+            if "jsonCallBack" in kwargs.get("params", {}):
+                body = (
+                    'jsonpCallbackETFScale({"result":[{"NUM":"1","SEC_CODE":"588000",'
+                    '"SEC_NAME":"科创50ETF","ETF_TYPE":"股票型","STAT_DATE":"2026-09-17",'
+                    '"TOT_VOL":"900001.23"}]});'
+                )
+                return FakeResponse(url, text=body)
+            return FakeResponse(url, status_code=403)
+
+        def close(self):
+            pass
+
+    frame = _fetch_sse_etf_scale_direct(
+        "20260917",
+        plain_get=plain_get,
+        browser_get=browser_get,
+        browser_session_factory=FakeSession,
+    )
+    assert frame.loc[0, "基金代码"] == "588000"
+    assert frame.attrs["provider_interface"] == SSE_ETF_SCALE_QUERY_URL
 
 def test_sse_szse_turnover_normalization_matches_frozen_d1_scope():
     sse_raw = pd.DataFrame({
