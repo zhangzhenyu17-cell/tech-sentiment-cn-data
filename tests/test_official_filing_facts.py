@@ -42,6 +42,45 @@ def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
         extract_standard_filing_facts("单位：万元\n营业收入 10 9")
 
 
+def test_standard_filing_facts_handle_real_sse_wrapped_600519_layout():
+    # Representative pypdf layout from the official 600519 2023 annual report:
+    # long Chinese labels and the EPS unit are visually wrapped across lines.
+    text = """
+    近三年主要会计数据和财务指标
+    (一) 主要会计数据
+    单位：元 币种：人民币
+    主要会计数据 2023年 2022年 本期比上年同期增减(%) 2021年
+    营业收入 147,693,604,994.14 124,099,843,771.99 19.01 106,190,154,843.76
+    归属于上市公司
+    股东的净利润 74,734,071,550.75 62,717,467,870.12 19.16 52,435,506,622.16
+    经营活动产生的
+    现金流量净额 66,593,247,721.09 36,698,595,830.03 81.46 64,028,676,147.37
+    (二) 主要财务指标
+    基本每股收益（元
+    ／股） 59.49 49.93 19.16 41.74
+    """
+
+    facts = extract_standard_filing_facts(text)
+
+    assert facts["OPERATING_REVENUE"] == 147_693_604_994.14
+    assert facts["NET_PROFIT_PARENT"] == 74_734_071_550.75
+    assert facts["OPERATING_CASH_FLOW_NET"] == 66_593_247_721.09
+    assert facts["BASIC_EPS"] == 59.49
+    assert facts["NET_PROFIT_MARGIN"] == pytest.approx(
+        74_734_071_550.75 / 147_693_604_994.14
+    )
+
+
+def test_wrapped_non_yuan_fact_still_fails_closed():
+    text = """
+    单位：万元 币种：人民币
+    归属于上市公司
+    股东的净利润 10 9
+    """
+    with pytest.raises(ValueError, match="non-yuan unit"):
+        extract_standard_filing_facts(text)
+
+
 def _facts(
     title: str,
     available: str,
