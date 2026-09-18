@@ -88,6 +88,12 @@ def main() -> None:
                 raise SystemExit(
                     f"CSRC protocol probe failed: {channel_code} duplicate manuscript across pages"
                 )
+            first_urls = {entry.url for entry in entries}
+            second_urls = {entry.url for entry in page2_entries}
+            if first_urls.intersection(second_urls):
+                raise SystemExit(
+                    f"CSRC protocol probe failed: {channel_code} duplicate canonical URL across pages"
+                )
         channels.append(
             {
                 "segment": segment,
