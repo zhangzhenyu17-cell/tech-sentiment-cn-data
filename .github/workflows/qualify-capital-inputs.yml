@@ -222,6 +222,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Fail fast on qualification-blocking capital state
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py \
+            --kind capital \
+            --root stage/capital/capital_input_qualification
+
   financing:
     if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
@@ -289,6 +295,12 @@ jobs:
             .cache/capital_pit_v4a/financing
           if-no-files-found: error
           retention-days: 7
+
+      - name: Fail fast on qualification-blocking financing state
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py \
+            --kind financing \
+            --root stage/financing/financing_materialization
 
   issuer_cninfo:
     if: ${{ inputs.preflight_only != true }}
@@ -367,6 +379,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Fail fast on qualification-blocking CNINFO issuer state
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py \
+            --kind issuer \
+            --root "stage/issuer/cninfo-${{ matrix.shard }}"
+
   issuer_sse:
     if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
@@ -438,6 +456,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Fail fast on qualification-blocking SSE issuer state
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py \
+            --kind issuer \
+            --root stage/issuer/sse
+
   issuer_szse:
     if: ${{ inputs.preflight_only != true }}
     needs: preflight_gate
@@ -508,6 +532,12 @@ jobs:
             .cache/capital_pit_v4a/issuer
           if-no-files-found: error
           retention-days: 7
+
+      - name: Fail fast on qualification-blocking SZSE issuer state
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py \
+            --kind issuer \
+            --root stage/issuer/szse
 
   issuer_aggregate:
     if: ${{ inputs.preflight_only != true }}
@@ -638,6 +668,12 @@ jobs:
             .cache/capital_pit_v4a/derived/filings
           if-no-files-found: error
           retention-days: 7
+
+      - name: Fail fast on source-incomplete fundamental/earnings shard
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py \
+            --kind fundamental_earnings \
+            --root "stage/fundamental/${{ matrix.shard }}"
 
   prices:
     if: ${{ inputs.preflight_only != true }}
@@ -782,6 +818,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Fail fast on qualification-blocking policy state
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py \
+            --kind policy \
+            --root stage/policy
+
   derived_aggregate:
     if: ${{ inputs.preflight_only != true }}
     needs: [preflight_gate, issuer_aggregate, fundamental_earnings, prices, policy]
@@ -852,6 +894,12 @@ jobs:
           path: stage/derived
           if-no-files-found: error
           retention-days: 7
+
+      - name: Fail fast before finalize when derived readiness is blocked
+        run: |
+          python scripts/assert_v4a_stage_qualifiable.py \
+            --kind derived \
+            --root stage/derived/pit_evidence_materialization
 
   finalize:
     if: ${{ inputs.preflight_only != true }}
