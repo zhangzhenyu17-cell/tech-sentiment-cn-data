@@ -273,12 +273,21 @@ def producer_fingerprint(repo_root: str | Path, family: str) -> dict[str, object
     return {"producer_fingerprint": fingerprint, "producer_files": rows}
 
 
+def _manifest_identity(payload: Mapping[str, object]) -> str:
+    unsigned = dict(payload)
+    unsigned.pop("bundle_identity", None)
+    return sha256(_canonical_json(unsigned).encode("utf-8")).hexdigest()
+
+
 def _load_manifest(path: str | Path) -> dict[str, object]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError(f"persistent bundle manifest must be an object: {path}")
     if payload.get("schema_version") != PERSISTENT_STAGE_SCHEMA:
         raise ValueError(f"persistent bundle manifest schema mismatch: {path}")
+    expected = str(payload.get("bundle_identity") or "")
+    if not expected or expected != _manifest_identity(payload):
+        raise ValueError(f"persistent bundle manifest identity mismatch: {path}")
     return payload
 
 
@@ -407,10 +416,7 @@ def package_stage_bundle(
             "REUSABLE_WHEN_PRODUCER_FINGERPRINT_AND_INPUT_BUNDLE_IDENTITIES_MATCH"
         ),
     }
-    identity_payload = dict(manifest)
-    manifest["bundle_identity"] = sha256(
-        _canonical_json(identity_payload).encode("utf-8")
-    ).hexdigest()
+    manifest["bundle_identity"] = _manifest_identity(manifest)
     manifest_path = out / f"{base}.manifest.json"
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
