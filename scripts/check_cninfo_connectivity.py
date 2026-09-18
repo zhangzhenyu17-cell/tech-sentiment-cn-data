@@ -66,109 +66,132 @@ def _announcement_id(detail_url: str) -> str:
     return document_id
 
 
+
+def _run_annual_report_probe(
+    probe: dict[str, str],
+) -> tuple[dict[str, object], pd.DataFrame, dict[str, object]]:
+    frame = fetch_cninfo_announcements_direct(
+        symbol=str(probe["symbol"]),
+        start_date=str(probe["start_date"]),
+        end_date=str(probe["end_date"]),
+    )
+    matching = frame[
+        frame["公告标题"].astype(str).str.contains(
+            str(probe["expected_title_token"]), regex=False
+        )
+        & ~frame["公告标题"].astype(str).str.contains("摘要", regex=False)
+    ]
+    if matching.empty:
+        raise ValueError(
+            f"{probe['symbol']} missing expected historical disclosure"
+        )
+    immutable = matching[
+        matching["公告附件链接"].astype(str).str.startswith(
+            "https://static.cninfo.com.cn/"
+        )
+    ]
+    if immutable.empty:
+        raise ValueError(
+            f"{probe['symbol']} lacks immutable HTTPS attachment identity"
+        )
+
+    canonical_url = str(immutable.iloc[0]["公告附件链接"]).strip()
+    downloaded = download_official_document(canonical_url)
+    if not downloaded.content.startswith(b"%PDF-"):
+        raise ValueError(
+            f"{probe['symbol']} official attachment did not return PDF bytes"
+        )
+
+    extracted_text = extract_pdf_text(downloaded.content)
+    if len(extracted_text.strip()) < 100:
+        raise ValueError(
+            f"{probe['symbol']} official PDF lacks a usable text layer"
+        )
+
+    facts = extract_standard_filing_facts(extracted_text)
+    required_facts = set(REQUIRED_FACTS) | {"BASIC_EPS"}
+    missing_facts = required_facts - set(facts)
+    if missing_facts:
+        raise ValueError(
+            "annual report parser missing critical facts "
+            f"{sorted(missing_facts)}"
+        )
+
+    row = immutable.iloc[0]
+    title = str(row["公告标题"]).strip()
+    publication = str(row["公告时间"]).strip()
+    document_id = _announcement_id(str(row["公告链接"]))
+    fact_rows = build_filing_fact_rows(
+        entity_id=_entity_id(str(probe["symbol"])),
+        title=title,
+        evidence_available_date=pd.Timestamp(publication).normalize(),
+        publication_timestamp=publication,
+        source_identity="CNINFO_ANNOUNCEMENT_ARCHIVE",
+        provider="CNINFO",
+        document_id=document_id,
+        revision_id=f"DOCUMENT:{document_id}:SHA256:{downloaded.sha256}",
+        document_url=canonical_url,
+        document_sha256=downloaded.sha256,
+        text=extracted_text,
+    )
+    parsed_probe = {
+        "role": probe["role"],
+        "symbol": probe["symbol"],
+        "title": title,
+        "document_id": document_id,
+        "canonical_attachment_url": canonical_url,
+        "retrieval_url": downloaded.retrieval_url or downloaded.url,
+        "document_sha256": downloaded.sha256,
+        "pdf_bytes_verified": True,
+        "pdf_text_layer_verified": True,
+        "critical_filing_facts_verified": sorted(required_facts),
+    }
+    result = {
+        "symbol": probe["symbol"],
+        "query_window": [probe["start_date"], probe["end_date"]],
+        "matching_records": int(len(matching)),
+        "protocol_ok": True,
+    }
+    return parsed_probe, fact_rows, result
+
 def main() -> None:
     results: list[dict[str, object]] = []
     attachment_probe: dict[str, object] | None = None
     annual_report_fact_probes: list[dict[str, object]] = []
     earnings_probe: dict[str, object] | None = None
     fact_frames: dict[str, pd.DataFrame] = {}
+    probe_failures: list[dict[str, object]] = []
     for probe in (*PROBES, COMPARABLE_PROBE):
-        frame = fetch_cninfo_announcements_direct(
-            symbol=str(probe["symbol"]),
-            start_date=str(probe["start_date"]),
-            end_date=str(probe["end_date"]),
-        )
-        matching = frame[
-            frame["公告标题"].astype(str).str.contains(
-                str(probe["expected_title_token"]), regex=False
-            )
-            & ~frame["公告标题"].astype(str).str.contains("摘要", regex=False)
-        ]
-        if matching.empty:
-            raise SystemExit(
-                "CNINFO connectivity/protocol probe failed: "
-                f"{probe['symbol']} missing expected historical disclosure"
-            )
-        immutable = matching[
-            matching["公告附件链接"].astype(str).str.startswith(
-                "https://static.cninfo.com.cn/"
-            )
-        ]
-        if immutable.empty:
-            raise SystemExit(
-                "CNINFO connectivity/protocol probe failed: "
-                f"{probe['symbol']} lacks immutable HTTPS attachment identity"
-            )
-        canonical_url = str(immutable.iloc[0]["公告附件链接"]).strip()
-        downloaded = download_official_document(canonical_url)
-        if not downloaded.content.startswith(b"%PDF-"):
-            raise SystemExit(
-                "CNINFO connectivity/protocol probe failed: "
-                f"{probe['symbol']} official attachment did not return PDF bytes"
-            )
-        extracted_text = extract_pdf_text(downloaded.content)
-        if len(extracted_text.strip()) < 100:
-            raise SystemExit(
-                "CNINFO connectivity/protocol probe failed: "
-                f"{probe['symbol']} official PDF lacks a usable text layer"
-            )
         try:
-            facts = extract_standard_filing_facts(extracted_text)
-        except Exception as exc:
-            raise SystemExit(
-                "CNINFO connectivity/protocol probe failed: "
-                f"role={probe['role']} symbol={probe['symbol']} parser_error="
-                f"{type(exc).__name__}: {exc}"
-            ) from exc
-        required_facts = set(REQUIRED_FACTS) | {"BASIC_EPS"}
-        missing_facts = required_facts - set(facts)
-        if missing_facts:
-            raise SystemExit(
-                "CNINFO connectivity/protocol probe failed: "
-                f"role={probe['role']} symbol={probe['symbol']} "
-                "annual report parser missing critical facts "
-                f"{sorted(missing_facts)}"
+            parsed_probe, fact_rows, result = _run_annual_report_probe(
+                dict(probe)
             )
-        row = immutable.iloc[0]
-        title = str(row["公告标题"]).strip()
-        publication = str(row["公告时间"]).strip()
-        document_id = _announcement_id(str(row["公告链接"]))
-        fact_rows = build_filing_fact_rows(
-            entity_id=_entity_id(str(probe["symbol"])),
-            title=title,
-            evidence_available_date=pd.Timestamp(publication).normalize(),
-            publication_timestamp=publication,
-            source_identity="CNINFO_ANNOUNCEMENT_ARCHIVE",
-            provider="CNINFO",
-            document_id=document_id,
-            revision_id=f"DOCUMENT:{document_id}:SHA256:{downloaded.sha256}",
-            document_url=canonical_url,
-            document_sha256=downloaded.sha256,
-            text=extracted_text,
-        )
+        except Exception as exc:
+            probe_failures.append(
+                {
+                    "role": probe["role"],
+                    "symbol": probe["symbol"],
+                    "query_window": [probe["start_date"], probe["end_date"]],
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            continue
+
         fact_frames[str(probe["role"])] = fact_rows
-        parsed_probe = {
-            "role": probe["role"],
-            "symbol": probe["symbol"],
-            "title": title,
-            "document_id": document_id,
-            "canonical_attachment_url": canonical_url,
-            "retrieval_url": downloaded.retrieval_url or downloaded.url,
-            "document_sha256": downloaded.sha256,
-            "pdf_bytes_verified": True,
-            "pdf_text_layer_verified": True,
-            "critical_filing_facts_verified": sorted(required_facts),
-        }
         annual_report_fact_probes.append(parsed_probe)
         if attachment_probe is None:
             attachment_probe = dict(parsed_probe)
-        results.append(
-            {
-                "symbol": probe["symbol"],
-                "query_window": [probe["start_date"], probe["end_date"]],
-                "matching_records": int(len(matching)),
-                "protocol_ok": True,
-            }
+        results.append(result)
+
+    if probe_failures:
+        raise SystemExit(
+            "CNINFO connectivity/protocol probe failed with aggregated annual-report "
+            "diagnostics: "
+            + json.dumps(
+                probe_failures,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
         )
 
     comparable_facts = pd.concat(
