@@ -6,6 +6,7 @@ import pytest
 from tech_sentiment.v4a_reachability import (
     PRIVATE_HANDOFF_PATH,
     REQUIREMENTS,
+    _private_handoff_blockers,
     assess_reachability,
     assert_formal_run_reachable,
 )
@@ -65,3 +66,30 @@ def test_public_rails_have_no_remaining_hard_coded_materialization_blockers():
             continue
         assert row["structurally_reachable"] is True, (row["item"], row["blockers"])
         assert not any("NOT_MATERIALIZED" in str(value) for value in row["blockers"])
+
+
+def test_active_private_handoff_pins_v2_verifier_and_safety_boundaries():
+    handoff = json.loads(Path(PRIVATE_HANDOFF_PATH).read_text(encoding="utf-8"))
+    assert handoff["activation_state"] == "ACTIVE"
+    assert handoff["private_verifier_contract_id"] == "v4a_artifact_intake_contract_v2"
+    assert handoff["private_verifier_merge_sha"] == "b953b9c302467f40dbdb51d421b06ed1f78904b1"
+    assert len(handoff["private_verifier_merge_sha"]) == 40
+    assert handoff["public_grants_historical_qualification"] is False
+    assert handoff["formal_public_long_run_allowed_before_activation"] is False
+    assert handoff["formal_public_long_run_allowed_after_activation"] is True
+    assert handoff["forward_outcome_read_required"] is False
+    assert handoff["parameter_search_required"] is False
+    assert handoff["production_or_trading_change_required"] is False
+    assert _private_handoff_blockers(Path(".")) == []
+
+
+def test_private_handoff_invalid_sha_or_boundary_fails_closed(tmp_path):
+    path = tmp_path / PRIVATE_HANDOFF_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handoff = json.loads(Path(PRIVATE_HANDOFF_PATH).read_text(encoding="utf-8"))
+    handoff["private_verifier_merge_sha"] = "not-a-commit"
+    handoff["forward_outcome_read_required"] = True
+    path.write_text(json.dumps(handoff), encoding="utf-8")
+    blockers = _private_handoff_blockers(tmp_path)
+    assert "private_v4a2_verifier_merge_sha_invalid" in blockers
+    assert "forward_outcome_boundary_invalid" in blockers
