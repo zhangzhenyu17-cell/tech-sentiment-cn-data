@@ -30,6 +30,7 @@ PROBES = (
 def main() -> None:
     results: list[dict[str, object]] = []
     attachment_probe: dict[str, object] | None = None
+    annual_report_fact_probes: list[dict[str, object]] = []
     earnings_probe: dict[str, object] | None = None
     for probe in PROBES:
         frame = fetch_cninfo_announcements_direct(
@@ -57,37 +58,40 @@ def main() -> None:
                 "CNINFO connectivity/protocol probe failed: "
                 f"{probe['symbol']} lacks immutable HTTPS attachment identity"
             )
+        canonical_url = str(immutable.iloc[0]["公告附件链接"]).strip()
+        downloaded = download_official_document(canonical_url)
+        if not downloaded.content.startswith(b"%PDF-"):
+            raise SystemExit(
+                "CNINFO connectivity/protocol probe failed: "
+                f"{probe['symbol']} official attachment did not return PDF bytes"
+            )
+        extracted_text = extract_pdf_text(downloaded.content)
+        if len(extracted_text.strip()) < 100:
+            raise SystemExit(
+                "CNINFO connectivity/protocol probe failed: "
+                f"{probe['symbol']} official PDF lacks a usable text layer"
+            )
+        facts = extract_standard_filing_facts(extracted_text)
+        required_facts = {"OPERATING_REVENUE", "NET_PROFIT_PARENT", "BASIC_EPS"}
+        missing_facts = required_facts - set(facts)
+        if missing_facts:
+            raise SystemExit(
+                "CNINFO connectivity/protocol probe failed: "
+                f"{probe['symbol']} annual report parser missing critical facts "
+                f"{sorted(missing_facts)}"
+            )
+        parsed_probe = {
+            "symbol": probe["symbol"],
+            "canonical_attachment_url": canonical_url,
+            "retrieval_url": downloaded.retrieval_url or downloaded.url,
+            "document_sha256": downloaded.sha256,
+            "pdf_bytes_verified": True,
+            "pdf_text_layer_verified": True,
+            "critical_filing_facts_verified": sorted(required_facts),
+        }
+        annual_report_fact_probes.append(parsed_probe)
         if attachment_probe is None:
-            canonical_url = str(immutable.iloc[0]["公告附件链接"]).strip()
-            downloaded = download_official_document(canonical_url)
-            if not downloaded.content.startswith(b"%PDF-"):
-                raise SystemExit(
-                    "CNINFO connectivity/protocol probe failed: "
-                    "official attachment did not return PDF bytes"
-                )
-            extracted_text = extract_pdf_text(downloaded.content)
-            if len(extracted_text.strip()) < 100:
-                raise SystemExit(
-                    "CNINFO connectivity/protocol probe failed: "
-                    "official PDF lacks a usable text layer"
-                )
-            facts = extract_standard_filing_facts(extracted_text)
-            required_facts = {"OPERATING_REVENUE", "NET_PROFIT_PARENT", "BASIC_EPS"}
-            missing_facts = required_facts - set(facts)
-            if missing_facts:
-                raise SystemExit(
-                    "CNINFO connectivity/protocol probe failed: "
-                    f"official annual report parser missing critical facts {sorted(missing_facts)}"
-                )
-            attachment_probe = {
-                "symbol": probe["symbol"],
-                "canonical_attachment_url": canonical_url,
-                "retrieval_url": downloaded.retrieval_url or downloaded.url,
-                "document_sha256": downloaded.sha256,
-                "pdf_bytes_verified": True,
-                "pdf_text_layer_verified": True,
-                "critical_filing_facts_verified": sorted(required_facts),
-            }
+            attachment_probe = dict(parsed_probe)
         results.append(
             {
                 "symbol": probe["symbol"],
@@ -140,6 +144,7 @@ def main() -> None:
                 "parameter_search": False,
                 "probes": results,
                 "attachment_probe": attachment_probe,
+                "annual_report_fact_probes": annual_report_fact_probes,
                 "earnings_probe": earnings_probe,
             },
             ensure_ascii=False,

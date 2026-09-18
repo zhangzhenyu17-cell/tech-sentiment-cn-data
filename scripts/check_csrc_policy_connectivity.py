@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pandas as pd
+
 from tech_sentiment.official_policy_archive import (
     CSRC_CHANNELS,
     _channel_metadata_url,
@@ -25,7 +27,8 @@ def main() -> None:
             default_evidence_type=default_type,
             payload=metadata,
         )
-        page_url = _search_list_url(channel.channel_id, page=1, page_size=2)
+        page_size = 2
+        page_url = _search_list_url(channel.channel_id, page=1, page_size=page_size)
         payload = _fetch_json(page_url)
         entries, meta = parse_csrc_search_page(
             payload,
@@ -36,6 +39,40 @@ def main() -> None:
             raise SystemExit(
                 f"CSRC protocol probe failed: {channel_code} first page is empty"
             )
+
+        pagination_verified = True
+        second_page_rows = 0
+        if int(meta["total"]) > int(meta["rows"]):
+            page2_url = _search_list_url(
+                channel.channel_id,
+                page=2,
+                page_size=page_size,
+            )
+            page2_payload = _fetch_json(page2_url)
+            page2_entries, page2_meta = parse_csrc_search_page(
+                page2_payload,
+                channel=channel,
+                requested_page=2,
+            )
+            second_page_rows = int(page2_meta["rows"])
+            if int(page2_meta["total"]) != int(meta["total"]):
+                raise SystemExit(
+                    f"CSRC protocol probe failed: {channel_code} total drift across pages"
+                )
+            first_ids = {entry.manuscript_id for entry in entries}
+            second_ids = {entry.manuscript_id for entry in page2_entries}
+            if first_ids.intersection(second_ids):
+                raise SystemExit(
+                    f"CSRC protocol probe failed: {channel_code} duplicate manuscript across pages"
+                )
+            if entries and page2_entries:
+                first_tail = pd.Timestamp(entries[-1].publication_timestamp)
+                second_head = pd.Timestamp(page2_entries[0].publication_timestamp)
+                if second_head > first_tail:
+                    raise SystemExit(
+                        f"CSRC protocol probe failed: {channel_code} cross-page order drift"
+                    )
+
         channels.append(
             {
                 "segment": segment,
@@ -45,6 +82,8 @@ def main() -> None:
                 "page": meta["page"],
                 "rows": meta["rows"],
                 "total": meta["total"],
+                "second_page_rows": second_page_rows,
+                "pagination_verified": pagination_verified,
                 "protocol_ok": True,
             }
         )
