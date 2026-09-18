@@ -23,7 +23,7 @@ from .pit_public_materialization import (
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v4-fragmented-label-safe-units-revision-time"
+FILING_PARSER_VERSION = "official-filing-facts-v5-whitespace-safe-units-revision-time"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -69,7 +69,7 @@ _FACT_LABELS: dict[str, tuple[str, ...]] = {
     ),
     "BASIC_EPS": ("基本每股收益",),
 }
-_UNIT_RE = re.compile(r"单位\s*:\s*(人民币)?(百万元|万元|元)(?:\s|$|币种|[,，;；])")
+_UNIT_RE = re.compile(r"单位:(?:人民币)?(百万元|万元|元)(?:$|币种|[,，;；])")
 _NUMERIC_TOKEN_RE = re.compile(
     r"(?<![\d.])(?:-?\d[\d,]*(?:\.\d+)?|\(\d[\d,]*(?:\.\d+)?\))(?![\d.])"
 )
@@ -400,19 +400,45 @@ def _parse_numeric_token(token: str) -> float:
     return -value if negative else value
 
 
+def _explicit_unit_from_text(value: str) -> str | None:
+    """Read only an explicit 单位 declaration while ignoring PDF layout whitespace."""
+
+    compact = re.sub(r"\s+", "", str(value))
+    match = _UNIT_RE.search(compact)
+    return str(match.group(1)) if match else None
+
+
 def _nearest_explicit_unit(lines: list[str], index: int, *, lookback: int = 12) -> str | None:
     """Return the nearest explicit table unit at or before a fact row.
 
     The bounded lookup avoids using a unit declaration from an unrelated distant
-    table. No rescaling is performed: only exact yuan tables are eligible.
+    table. Whitespace inserted by PDF layout extraction is ignored only inside
+    the explicit unit declaration; no unit is inferred and no rescaling is done.
     """
 
     left = max(0, index - lookback)
     for position in range(index, left - 1, -1):
-        match = _UNIT_RE.search(lines[position])
-        if match:
-            return str(match.group(2))
+        unit = _explicit_unit_from_text(lines[position])
+        if unit is not None:
+            return unit
+        if position < index and position + 1 < len(lines):
+            unit = _explicit_unit_from_text(
+                lines[position] + " " + lines[position + 1]
+            )
+            if unit is not None:
+                return unit
     return None
+
+
+def _has_explicit_unit_declaration(lines: list[str]) -> bool:
+    for position, line in enumerate(lines):
+        if _explicit_unit_from_text(line) is not None:
+            return True
+        if position + 1 < len(lines) and _explicit_unit_from_text(
+            line + " " + lines[position + 1]
+        ) is not None:
+            return True
+    return False
 
 
 def _logical_row_window(
@@ -555,7 +581,7 @@ def extract_standard_filing_facts(text: str) -> dict[str, float]:
     """
 
     lines = _normalize_text_lines(text)
-    if not any(_UNIT_RE.search(line) for line in lines):
+    if not _has_explicit_unit_declaration(lines):
         raise ValueError("filing text does not contain an explicit table unit declaration")
 
     facts: dict[str, float] = {}
