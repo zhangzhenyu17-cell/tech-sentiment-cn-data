@@ -94,7 +94,7 @@ def test_issuer_sources_are_independently_manual_and_cninfo_keeps_bounded_shards
     assert "--source SZSE_ANNOUNCEMENT_ARCHIVE" in text
 
 
-def test_stage_cache_namespaces_use_stage_compatibility_not_global_repo_sha():
+def test_stage_cache_namespaces_remain_exact_commit_and_stage_compatible():
     cache_workflows = (
         "v4a-capital.yml",
         "v4a-financing.yml",
@@ -108,11 +108,12 @@ def test_stage_cache_namespaces_use_stage_compatibility_not_global_repo_sha():
         assert "STAGE_COMPAT" in text
         assert "actions/cache/restore@v4" in text
         assert "actions/cache/save@v4" in text
-        cache_lines = [
+        cache_lines = "\n".join(
             line for line in text.splitlines()
             if "key:" in line or "restore-keys:" in line
-        ]
-        assert "github.sha" not in "\n".join(cache_lines)
+        )
+        assert "STAGE_COMPAT" in cache_lines
+        assert "github.sha" in cache_lines
 
 
 def test_derived_workflow_consumes_only_verified_persistent_upstreams():
