@@ -6,6 +6,7 @@ from typing import Callable, Iterable, Sequence
 
 import pandas as pd
 
+from .bounded_retry import call_with_bounded_network_retry
 from .data_akshare import fetch_stock_history
 from .immutable_checkpoint import CheckpointIdentity, ImmutableCheckpointStore
 
@@ -58,6 +59,8 @@ def materialize_pit_stock_prices(
     checkpoint_dir: str | Path,
     providers: Sequence[str] = ("tencent", "eastmoney"),
     fetcher: Callable[..., pd.DataFrame] = fetch_stock_history,
+    retry_attempts: int = 3,
+    retry_backoff_seconds: float = 0.5,
 ) -> PitPriceMaterializationResult:
     start = pd.Timestamp(start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
@@ -96,12 +99,16 @@ def materialize_pit_stock_prices(
                 provider_errors: list[str] = []
                 for provider in providers:
                     try:
-                        candidate = fetcher(
-                            symbol,
-                            start_date=str(chunk_start.date()),
-                            end_date=str(chunk_end.date()),
-                            adjust="",
-                            provider=provider,
+                        candidate = call_with_bounded_network_retry(
+                            lambda: fetcher(
+                                symbol,
+                                start_date=str(chunk_start.date()),
+                                end_date=str(chunk_end.date()),
+                                adjust="",
+                                provider=provider,
+                            ),
+                            attempts=retry_attempts,
+                            backoff_seconds=retry_backoff_seconds,
                         )
                         if candidate is not None and len(candidate):
                             frame = candidate.copy()
