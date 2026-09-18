@@ -14,8 +14,8 @@ PROBES = (
     },
     {
         "symbol": "000538",
-        "start_date": "2024-04-10",
-        "end_date": "2024-04-12",
+        "start_date": "2024-03-29",
+        "end_date": "2024-03-31",
         "expected_title_token": "2023年年度报告",
     },
 )
