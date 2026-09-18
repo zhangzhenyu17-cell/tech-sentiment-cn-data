@@ -208,6 +208,19 @@ def extract_standard_filing_facts(text: str) -> dict[str, float]:
         if value is not None:
             facts[fact_type] = value
     if not facts:
+        for index, line in enumerate(lines):
+            contains_target = any(
+                label in line
+                for labels in _FACT_LABELS.values()
+                for label in labels
+            )
+            if not contains_target:
+                continue
+            unit = _nearest_explicit_unit(lines, index)
+            if unit in {"万元", "百万元"}:
+                raise ValueError(
+                    "filing target fact uses non-yuan unit; parser refuses inferred scaling"
+                )
         raise ValueError("filing has no target facts with locally proven CNY-yuan units")
     if "OPERATING_REVENUE" in facts and "NET_PROFIT_PARENT" in facts:
         revenue = facts["OPERATING_REVENUE"]
