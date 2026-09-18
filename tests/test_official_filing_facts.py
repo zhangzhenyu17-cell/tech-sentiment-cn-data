@@ -160,6 +160,52 @@ def test_600519_2022_summary_table_layout_remains_fail_closed_and_complete():
         62_716_443_738.27 / 124_099_843_771.99
     )
 
+
+
+def test_explicit_unit_ignores_unicode_format_characters_but_not_unit_semantics():
+    text = (
+        "单\u200b位：人\u2060民\u200b币元 币种：人民币\n"
+        "营业收入 1,200.00 1,000.00\n"
+        "归属于上市公司股东的净利润 120.00 100.00\n"
+    )
+    facts = extract_standard_filing_facts(text)
+    assert facts["OPERATING_REVENUE"] == 1200.0
+    assert facts["NET_PROFIT_PARENT"] == 120.0
+    with pytest.raises(ValueError, match="non-yuan unit"):
+        extract_standard_filing_facts(
+            "单\u200b位：万\u2060元\n营业收入 10 9"
+        )
+
+
+def test_pdf_text_secondary_engine_still_runs_when_pypdf_plain_raises(monkeypatch):
+    class FakePage:
+        def extract_text(self, extraction_mode=None):
+            if extraction_mode == "layout":
+                return "营业收入 120.00 100.00"
+            raise RuntimeError("plain extraction fixture failure")
+
+    class FakeReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [FakePage()]
+
+    class MinerPage:
+        def extract_text(self, **kwargs):
+            return "单位：元 币种：人民币\n营业收入 120.00 100.00"
+
+    class FakePdf:
+        pages = [MinerPage()]
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=FakeReader))
+    monkeypatch.setitem(
+        sys.modules, "pdfplumber", SimpleNamespace(open=lambda stream: FakePdf())
+    )
+    text = extract_pdf_text(b"%PDF-engine-isolation")
+    assert "单位：元" in text
+
 def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
     text = """
     主要会计数据和财务指标  单位：元 币种：人民币
