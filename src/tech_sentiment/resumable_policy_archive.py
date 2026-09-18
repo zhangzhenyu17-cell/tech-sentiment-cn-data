@@ -34,7 +34,7 @@ from .pit_public_materialization import (
 )
 
 
-POLICY_CHECKPOINT_VERSION = "csrc-policy-json-page-document-v3-full-enumeration"
+POLICY_CHECKPOINT_VERSION = "csrc-policy-json-page-document-v4-server-page-capacity"
 
 
 def _channel_identity(
@@ -361,7 +361,14 @@ def materialize_csrc_policy_archive_resumable(
                     total = int(metadata.get("total") or 0)
                     returned_page = int(metadata.get("page") or 0)
                     rows = int(metadata.get("rows") or 0)
-                    if returned_page != page or rows != len(entries):
+                    returned = int(metadata.get("returned") or 0)
+                    if (
+                        returned_page != page
+                        or returned != len(entries)
+                        or rows < returned
+                        or rows > page_size
+                        or (total > 0 and rows <= 0)
+                    ):
                         raise ValueError("cached CSRC page metadata is inconsistent")
                     resumed_pages += 1
                 else:
@@ -371,14 +378,23 @@ def materialize_csrc_policy_archive_resumable(
                         backoff_seconds=retry_backoff_seconds,
                     )
                     entries, meta = parse_csrc_search_page(
-                        payload, channel=channel, requested_page=page
+                        payload,
+                        channel=channel,
+                        requested_page=page,
+                        requested_page_size=page_size,
                     )
                     total = int(meta["total"])
                     rows = int(meta["rows"])
+                    returned = int(meta["returned"])
                     store.save(
                         identity,
                         frames={"entries": _entries_frame(entries)},
-                        metadata={"total": total, "page": page, "rows": rows},
+                        metadata={
+                            "total": total,
+                            "page": page,
+                            "rows": rows,
+                            "returned": returned,
+                        },
                     )
                     executed_pages += 1
                 pages_read += 1
@@ -519,7 +535,7 @@ def materialize_csrc_policy_archive_resumable(
     summary = {
         "source_identity": POLICY_SOURCE_ID,
         "provider": POLICY_PROVIDER,
-        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V3_FULL_ENUMERATION",
+        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V4_SERVER_PAGE_CAPACITY",
         "start_date": str(start.date()),
         "end_date": str(end.date()),
         "coverage_segments": sorted(CSRC_CHANNELS),
