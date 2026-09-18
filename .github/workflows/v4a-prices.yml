@@ -1,0 +1,160 @@
+name: v4a-07-prices
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Qualification start date"
+        required: true
+        default: "2022-01-04"
+        type: string
+      end_date:
+        description: "Qualification end date"
+        required: true
+        default: "2026-09-17"
+        type: string
+
+concurrency:
+  group: v4a-prices-${{ inputs.start_date }}-${{ inputs.end_date }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  shards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: Download compatible shared bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/shared bundle-meta stage/shared
+          python scripts/v4a_persistent_stage_bundle.py key --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" --out bundle-meta/shared-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/shared-key.json"))["asset_base"])' )"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/shared
+          cp "bundle/shared/${BASE}.manifest.json" bundle-meta/shared.json
+          python scripts/v4a_persistent_stage_bundle.py verify --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --archive "bundle/shared/${BASE}.tar.gz" --manifest bundle-meta/shared.json --extract-to stage/shared
+      - name: Resolve stage compatibility identity
+        run: |
+          python scripts/v4a_persistent_stage_bundle.py key --family prices \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/stage-key.json
+          echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/stage-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+      - name: Restore price checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/prices
+          key: v4a-prices-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            v4a-prices-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-
+      - name: Materialize price shard
+        id: materialize
+        run: |
+          mkdir -p "stage-shard/${{ matrix.shard }}" .cache/capital_pit_v4a/derived/prices
+          python scripts/materialize_v4a_price_shard.py \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --source-commit "${{ github.sha }}" \
+            --shard-index "${{ matrix.shard }}" --shard-count 4 \
+            --checkpoint-dir .cache/capital_pit_v4a/derived/prices \
+            --out-dir "stage-shard/${{ matrix.shard }}"
+      - name: Save price checkpoints
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/prices
+          key: v4a-prices-${{ env.STAGE_COMPAT }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Seal price shard
+        if: ${{ success() }}
+        run: |
+          python scripts/write_v4a_stage_receipt.py --root "stage-shard/${{ matrix.shard }}" \
+            --stage-kind prices --stage-id "prices-${{ matrix.shard }}-of-4" \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out "stage-shard/${{ matrix.shard }}/receipt.json"
+      - name: Preserve price shard
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-price-shard-${{ matrix.shard }}-${{ github.run_id }}
+          path: stage-shard/${{ matrix.shard }}
+          if-no-files-found: error
+          retention-days: 30
+
+  package:
+    needs: shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: Download all price shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: v4a-price-shard-*-${{ github.run_id }}
+          path: downloads
+          merge-multiple: false
+      - name: Build price-group stage
+        run: |
+          mkdir -p persistent-stage/shards
+          for d in downloads/*; do
+            name="$(basename "$d")"
+            shard="${name#v4a-price-shard-}"
+            shard="${shard%-${{ github.run_id }}}"
+            mkdir -p "persistent-stage/shards/${shard}"
+            cp -a "$d"/. "persistent-stage/shards/${shard}/"
+          done
+          python scripts/write_v4a_stage_receipt.py --root persistent-stage \
+            --stage-kind prices_group --stage-id prices-all \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --out persistent-stage/receipt.json
+      - name: Download shared manifest for lineage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/shared bundle-meta
+          python scripts/v4a_persistent_stage_bundle.py key --family shared \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" --out bundle-meta/shared-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/shared-key.json"))["asset_base"])' )"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/shared
+          cp "bundle/shared/${BASE}.manifest.json" bundle-meta/shared.json
+      - name: Package and publish persistent bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          python scripts/v4a_persistent_stage_bundle.py package --family prices \
+            --stage-root persistent-stage --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out-dir dist --out dist/package.json
+          BASE="$(python -c 'import json; print(json.load(open("dist/package.json"))["asset_base"])' )"
+          bash scripts/publish_v4a_release_bundle.sh v4a-stage-bundles-v1 dist "$BASE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v4a-persistent-prices-${{ github.run_id }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 90
