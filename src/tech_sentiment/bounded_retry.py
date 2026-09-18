@@ -4,7 +4,7 @@ import http.client
 import socket
 import time
 from typing import Callable, TypeVar
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 try:  # requests is an optional runtime dependency at import time.
     import requests
@@ -22,6 +22,9 @@ def is_transient_network_error(exc: BaseException) -> bool:
     those can hide a provider contract change and would weaken fail-closed
     behavior.
     """
+
+    if isinstance(exc, HTTPError):
+        return False
 
     transient: tuple[type[BaseException], ...] = (
         URLError,
