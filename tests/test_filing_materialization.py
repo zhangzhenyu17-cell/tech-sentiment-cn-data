@@ -51,3 +51,15 @@ def test_empty_fact_schema_is_consumable_by_trend_derivation():
     trends = derive_fundamental_trend_evidence(empty)
     assert trends.empty
     assert list(trends.columns) == list(DERIVED_FUNDAMENTAL_EVIDENCE_COLUMNS)
+
+
+
+def test_numeric_financial_filing_title_excludes_non_primary_report_variants():
+    predicate = filing_materialization.is_numeric_financial_filing_title
+
+    assert predicate("贵州茅台2022年年度报告") is True
+    assert predicate("贵州茅台2022年年度报告（修订版）") is True
+    assert predicate("贵州茅台2022年年度报告（英文版）") is False
+    assert predicate("贵州茅台2022年年度报告摘要") is False
+    assert predicate("关于贵州茅台2022年年度报告的问询函回复") is False
+    assert predicate("贵州茅台2022年度审计报告") is False
