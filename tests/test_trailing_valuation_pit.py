@@ -20,6 +20,7 @@ def _eps(period_end: str, available: str, value: float, doc: str) -> dict[str, o
         "value": value,
         "unit": "CNY_PER_SHARE",
         "evidence_available_date": available,
+        "publication_timestamp": f"{available} 12:00:00",
         "document_id": doc,
         "revision_id": f"DOCUMENT:{doc}",
         "document_sha256": (doc * 64)[:64],
