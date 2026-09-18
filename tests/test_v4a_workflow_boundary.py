@@ -28,3 +28,12 @@ def test_v4a_checkpoint_cache_namespace_matches_v2_exact_identity_architecture()
     assert "actions/cache/restore@v4" in text
     assert text.count("actions/cache/save@v4") >= 4
     assert "--source-commit \"${{ github.sha }}\"" in text
+
+
+def test_cninfo_protocol_probe_runs_before_expensive_materialization():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    probe = text.index("CNINFO protocol connectivity preflight")
+    capital = text.index("Materialize ETF-share and SSE+SZSE turnover inputs")
+    assert probe < capital
+    assert "python scripts/check_cninfo_connectivity.py" in text
+    assert "timeout-minutes: 360" in text

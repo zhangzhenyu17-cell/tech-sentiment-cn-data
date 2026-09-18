@@ -12,6 +12,7 @@ from .cninfo_direct import fetch_cninfo_announcements_direct
 from .immutable_checkpoint import CheckpointIdentity, ImmutableCheckpointStore
 from .official_filing_facts import (
     DERIVED_FUNDAMENTAL_SOURCE_ID,
+    FILING_FACT_COLUMNS,
     FILING_PARSER_VERSION,
     build_filing_fact_rows,
     derive_fundamental_trend_evidence,
@@ -299,7 +300,11 @@ def materialize_versioned_filing_facts(
             }
         )
 
-    facts = pd.concat(fact_parts, ignore_index=True, sort=False) if fact_parts else pd.DataFrame()
+    facts = (
+        pd.concat(fact_parts, ignore_index=True, sort=False)
+        if fact_parts
+        else pd.DataFrame(columns=list(FILING_FACT_COLUMNS))
+    )
     if len(facts):
         facts["period_end"] = pd.to_datetime(facts["period_end"], errors="raise").dt.normalize()
         facts["evidence_available_date"] = pd.to_datetime(
@@ -320,7 +325,7 @@ def materialize_versioned_filing_facts(
         ).drop(columns=["publication_timestamp_order"]).drop_duplicates(
             ["entity_id", "document_id", "revision_id", "fact_type"], keep="last"
         ).reset_index(drop=True)
-    trends = derive_fundamental_trend_evidence(facts) if len(facts) else pd.DataFrame()
+    trends = derive_fundamental_trend_evidence(facts)
     coverage = pd.DataFrame(coverage_rows)
     complete_entities = int(
         coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").sum()

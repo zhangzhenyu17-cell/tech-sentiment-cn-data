@@ -420,6 +420,38 @@ def main() -> None:
     source_states = {
         source: str(result[3]["readiness_state"]) for source, result in source_results.items()
     }
+
+    # Runtime-only diagnostic: preserve stable canonical summaries while making
+    # provider/protocol failures immediately visible in Actions logs. Only the
+    # exception class prefix is emitted; raw transport text remains in the
+    # per-source errors CSV and does not enter canonical qualification metadata.
+    for source, result in source_results.items():
+        source_errors = result[2]
+        if len(source_errors) and "error" in source_errors.columns:
+            error_types = (
+                source_errors["error"]
+                .astype(str)
+                .str.split(":", n=1)
+                .str[0]
+                .value_counts()
+                .sort_index()
+                .to_dict()
+            )
+            print(
+                json.dumps(
+                    {
+                        "diagnostic": "ISSUER_SOURCE_ERROR_TYPES",
+                        "source_identity": source,
+                        "failed_rows": int(len(source_errors)),
+                        "error_type_counts": {
+                            str(key): int(value) for key, value in error_types.items()
+                        },
+                        "canonical_summary_unchanged": True,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
     evidence_counts = (
         records["evidence_type"].astype(str).value_counts().sort_index().to_dict()
         if len(records)

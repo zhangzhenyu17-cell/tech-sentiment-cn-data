@@ -13,7 +13,7 @@ import pandas as pd
 
 CNINFO_SOURCE_ID = "CNINFO_ANNOUNCEMENT_ARCHIVE"
 CNINFO_PROVIDER = "CNINFO"
-CNINFO_QUERY_URL = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
+CNINFO_QUERY_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 
 REQUIRED_PIT_COLUMNS = (
     "evidence_id",

@@ -20,7 +20,7 @@ permissions:
 jobs:
   qualify:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +42,10 @@ jobs:
           python scripts/check_v4a_reachability.py \
             --out output/v4a_reachability.json \
             --require-reachable
+
+      - name: CNINFO protocol connectivity preflight
+        run: |
+          python scripts/check_cninfo_connectivity.py
 
       - name: Resolve end date
         id: dates
