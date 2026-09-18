@@ -1,10 +1,17 @@
+import importlib.util
 import json
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from scripts.assert_v4a_stage_qualifiable import stage_blockers
+
+_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "assert_v4a_stage_qualifiable.py"
+_SPEC = importlib.util.spec_from_file_location("v4a_stage_guard_test_module", _SCRIPT)
+assert _SPEC is not None and _SPEC.loader is not None
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
+stage_blockers = _MODULE.stage_blockers
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
