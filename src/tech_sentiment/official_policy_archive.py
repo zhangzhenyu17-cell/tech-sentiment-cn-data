@@ -293,12 +293,21 @@ def parse_csrc_search_page(
     raw_results = data.get("results")
     if not isinstance(raw_results, list):
         raise ValueError("CSRC searchList results must be a list")
-    if rows != len(raw_results):
+    actual_rows = len(raw_results)
+    # CSRC's "rows" field is a page-capacity / requested-row-count field, not
+    # a promise that every page contains exactly that many results. Short pages
+    # are valid. Coverage is proven later by stable advertised total plus unique
+    # immutable identities across all enumerated pages.
+    if actual_rows > rows:
         raise ValueError(
-            f"CSRC searchList rows mismatch: metadata={rows} actual={len(raw_results)}"
+            f"CSRC searchList actual rows exceed page capacity: "
+            f"capacity={rows} actual={actual_rows}"
         )
-    if rows > total and total >= 0:
-        raise ValueError("CSRC searchList page rows exceed total")
+    if actual_rows > total:
+        raise ValueError(
+            f"CSRC searchList actual page results exceed advertised total: "
+            f"actual={actual_rows} total={total}"
+        )
 
     entries: list[PolicyListEntry] = []
     seen_manuscripts: set[str] = set()
@@ -346,7 +355,12 @@ def parse_csrc_search_page(
             )
         )
 
-    return entries, {"page": page, "rows": rows, "total": total}
+    return entries, {
+        "page": page,
+        "rows": rows,
+        "actual_rows": actual_rows,
+        "total": total,
+    }
 
 
 def _parse_date(value: str) -> pd.Timestamp | None:
