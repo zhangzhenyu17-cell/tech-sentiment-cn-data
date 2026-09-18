@@ -63,6 +63,9 @@ def main() -> None:
     parser.add_argument("--shard-root", required=True)
     parser.add_argument("--symbols-csv", required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--cninfo-source-commit", default="")
+    parser.add_argument("--sse-source-commit", default="")
+    parser.add_argument("--szse-source-commit", default="")
     parser.add_argument("--start-date", required=True)
     parser.add_argument("--end-date", required=True)
     parser.add_argument("--out-dir", required=True)
@@ -71,6 +74,11 @@ def main() -> None:
     root = Path(args.shard_root)
     scope = pd.read_csv(args.symbols_csv, dtype=str)
     expected_sources = {CNINFO_SOURCE_ID, SSE_SOURCE_ID, SZSE_SOURCE_ID}
+    source_commits = {
+        CNINFO_SOURCE_ID: args.cninfo_source_commit or args.source_commit,
+        SSE_SOURCE_ID: args.sse_source_commit or args.source_commit,
+        SZSE_SOURCE_ID: args.szse_source_commit or args.source_commit,
+    }
     receipts = sorted(root.rglob("receipt.json"))
     if not receipts:
         raise SystemExit("no issuer shard receipts found")
@@ -79,10 +87,20 @@ def main() -> None:
     seen_stage_ids: set[str] = set()
     for receipt in receipts:
         stage_dir = receipt.parent
+        manifest = _read_json(stage_dir / "pit_materialization_manifest.json")
+        if manifest.get("schema_version") != SCHEMA_VERSION:
+            raise ValueError(f"issuer shard schema mismatch: {stage_dir}")
+        selected = manifest.get("selected_sources")
+        if not isinstance(selected, list) or len(selected) != 1:
+            raise ValueError(f"issuer shard must contain exactly one source: {stage_dir}")
+        source = str(selected[0])
+        if source not in expected_sources:
+            raise ValueError(f"unexpected issuer source: {source}")
+        expected_source_commit = str(source_commits[source])
         payload = verify_stage_receipt(
             root=stage_dir,
             receipt_path=receipt,
-            source_commit=args.source_commit,
+            source_commit=expected_source_commit,
             stage_kind="issuer",
             start_date=args.start_date,
             end_date=args.end_date,
@@ -91,21 +109,12 @@ def main() -> None:
         if stage_id in seen_stage_ids:
             raise ValueError(f"duplicate issuer stage id: {stage_id}")
         seen_stage_ids.add(stage_id)
-        manifest = _read_json(stage_dir / "pit_materialization_manifest.json")
-        if manifest.get("schema_version") != SCHEMA_VERSION:
-            raise ValueError(f"issuer shard schema mismatch: {stage_id}")
-        if str(manifest.get("source_commit") or "") != str(args.source_commit):
+        if str(manifest.get("source_commit") or "") != expected_source_commit:
             raise ValueError(f"issuer shard commit mismatch: {stage_id}")
         if str(manifest.get("start_date") or "") != str(args.start_date):
             raise ValueError(f"issuer shard start mismatch: {stage_id}")
         if str(manifest.get("end_date") or "") != str(args.end_date):
             raise ValueError(f"issuer shard end mismatch: {stage_id}")
-        selected = manifest.get("selected_sources")
-        if not isinstance(selected, list) or len(selected) != 1:
-            raise ValueError(f"issuer shard must contain exactly one source: {stage_id}")
-        source = str(selected[0])
-        if source not in expected_sources:
-            raise ValueError(f"unexpected issuer source: {source}")
         shards.append((stage_dir, manifest))
 
     by_source: dict[str, list[tuple[Path, dict[str, object]]]] = {
@@ -205,7 +214,8 @@ def main() -> None:
             "source_identity": source,
             "start_date": str(args.start_date),
             "end_date": str(args.end_date),
-            "source_commit": str(args.source_commit),
+            "source_commit": str(source_commits[source]),
+            "aggregate_source_commit": str(args.source_commit),
             "calendar_identity": next(iter(calendar_ids)),
             "symbols": len(expected),
             "complete_symbol_queries": complete,
@@ -271,6 +281,7 @@ def main() -> None:
         ),
         "source_states": source_states,
         "source_summaries": source_summaries,
+        "input_source_commits": dict(sorted(source_commits.items())),
         "evidence_type_counts": evidence_counts,
         "pit_audit": audit,
         "parallel_stage_receipts_verified": True,
