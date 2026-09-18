@@ -176,7 +176,8 @@ def test_cninfo_static_403_uses_only_official_https_download_fallback():
         "https://www.cninfo.com.cn/new/announcement/download"
         "?bulletinId=1225568832&announceTime=2026-09-16"
     )
-    assert downloaded.url == calls[1]
+    assert downloaded.url == original
+    assert downloaded.retrieval_url == calls[1]
     assert downloaded.content.startswith(b"%PDF-")
     assert len(downloaded.sha256) == 64
 
