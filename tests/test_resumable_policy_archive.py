@@ -234,3 +234,73 @@ def test_policy_cross_page_order_drift_is_safe_under_full_enumeration(tmp_path):
     assert result.summary["source_coverage_complete"] is True
     assert result.summary["readiness_state"] == "QUALIFIED_INPUT"
     assert len(result.errors) == 0
+
+
+
+def test_policy_page_capacity_metadata_resumes_with_partial_actual_rows(tmp_path):
+    calls: list[str] = []
+
+    def fetcher(url: str) -> dict[str, object]:
+        calls.append(url)
+        parsed = urlparse(url)
+        if parsed.path == "/getLocalList":
+            code = parse_qs(parsed.query)["channelCode"][0]
+            return _metadata_payload(code)
+        channel_id = parsed.path.rsplit("/", 1)[-1]
+        code = next(code for code, value in _CHANNEL_IDS.items() if value == channel_id)
+        page = int(parse_qs(parsed.query)["page"][0])
+        if page == 1:
+            return {
+                "data": {
+                    "page": 1,
+                    "rows": 20,
+                    "total": 2,
+                    "channelId": _CHANNEL_IDS[code],
+                    "results": [
+                        _item(
+                            code,
+                            manuscript=f"{code}-new",
+                            when="2026-01-20 10:00:00",
+                        )
+                    ],
+                }
+            }
+        if page == 2:
+            return {
+                "data": {
+                    "page": 2,
+                    "rows": 20,
+                    "total": 2,
+                    "channelId": _CHANNEL_IDS[code],
+                    "results": [
+                        _item(
+                            code,
+                            manuscript=f"{code}-old",
+                            when="2021-12-31 10:00:00",
+                        )
+                    ],
+                }
+            }
+        raise AssertionError(url)
+
+    kwargs = dict(
+        start_date="2022-01-04",
+        end_date="2026-01-30",
+        trading_dates=pd.bdate_range("2021-12-30", "2026-02-03"),
+        source_commit="capacity-fixture",
+        checkpoint_dir=tmp_path,
+        json_fetcher=fetcher,
+        article_fetcher=lambda url: "official article",
+        page_size=50,
+    )
+
+    first = materialize_csrc_policy_archive_resumable(**kwargs)
+    assert first.summary["readiness_state"] == "QUALIFIED_INPUT"
+    assert first.summary["source_coverage_complete"] is True
+    assert first.summary["executed_pages"] == 8
+
+    calls.clear()
+    second = materialize_csrc_policy_archive_resumable(**kwargs)
+    assert calls == []
+    assert second.summary["resumed_pages"] == 8
+    assert second.summary["readiness_state"] == "QUALIFIED_INPUT"
