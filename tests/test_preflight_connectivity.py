@@ -169,3 +169,24 @@ def test_cninfo_preflight_fails_closed_on_ambiguous_latest_eligible_reports():
         assert "ambiguous latest eligible financial reports" in str(exc)
     else:
         raise AssertionError("ambiguous latest CNINFO reports must fail closed")
+
+
+
+def test_cninfo_preflight_deduplicates_identical_immutable_document_rows():
+    row = _cninfo_row(
+        "贵州茅台2022年年度报告",
+        "2023-03-31 00:00:00",
+        "1216281757",
+    )
+    frame = pd.DataFrame([row, dict(row)])
+
+    selected, raw_count, eligible_count = cninfo_probe[
+        "_select_numeric_report_candidate"
+    ](
+        frame,
+        expected_title_token="2022年年度报告",
+    )
+
+    assert raw_count == 2
+    assert eligible_count == 1
+    assert selected["公告标题"] == "贵州茅台2022年年度报告"
