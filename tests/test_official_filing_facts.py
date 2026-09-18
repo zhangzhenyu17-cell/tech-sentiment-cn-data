@@ -160,6 +160,100 @@ def test_600519_2022_summary_table_layout_remains_fail_closed_and_complete():
         62_716_443_738.27 / 124_099_843_771.99
     )
 
+
+
+def test_explicit_unit_survives_unicode_controls_and_three_line_split():
+    text = """
+    主要会计数据
+    单\u200b 位 ：
+    人 民 币
+    元 币\u0000种 ： 人 民 币
+    营业收入 124,099,843,771.99 106,190,154,843.76
+    归属于上市公司股东的净利润 62,716,443,738.27 52,460,144,378.16
+    """
+    facts = extract_standard_filing_facts(text)
+    assert facts["OPERATING_REVENUE"] == 124_099_843_771.99
+    assert facts["NET_PROFIT_PARENT"] == 62_716_443_738.27
+    assert facts["NET_PROFIT_MARGIN"] == pytest.approx(
+        62_716_443_738.27 / 124_099_843_771.99
+    )
+
+
+def test_pdf_text_uses_pymupdf_when_other_text_engines_lose_explicit_unit(monkeypatch):
+    class FakePypdfPage:
+        def extract_text(self, extraction_mode=None):
+            return (
+                "主要会计数据\n"
+                "营业收入 124,099,843,771.99 106,190,154,843.76\n"
+                "归属于上市公司股东的净利润 62,716,443,738.27 52,460,144,378.16\n"
+            )
+
+    class FakeReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [FakePypdfPage()]
+
+    class MinerPage:
+        def extract_text(self, **kwargs):
+            return "主要会计数据\n营业收入 1 1"
+
+    class FakeMinerPdf:
+        pages = [MinerPage()]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class MuPage:
+        def get_text(self, mode, sort=False):
+            assert mode == "text"
+            assert sort is True
+            return (
+                "主要会计数据\n"
+                "单 位 ： 人 民 币\n"
+                "元 币 种 ： 人 民 币\n"
+                "营业收入 124,099,843,771.99 106,190,154,843.76\n"
+                "归属于上市公司股东的净利润 62,716,443,738.27 52,460,144,378.16\n"
+            )
+
+    class MuDoc:
+        def __iter__(self):
+            return iter([MuPage()])
+
+        def close(self):
+            pass
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=FakeReader))
+    monkeypatch.setitem(
+        sys.modules,
+        "pdfplumber",
+        SimpleNamespace(open=lambda stream: FakeMinerPdf()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "pymupdf",
+        SimpleNamespace(open=lambda **kwargs: MuDoc()),
+    )
+
+    text = extract_pdf_text(b"%PDF-fixture")
+    facts = extract_standard_filing_facts(text)
+
+    assert "单 位" in text
+    assert facts["OPERATING_REVENUE"] == 124_099_843_771.99
+    assert facts["NET_PROFIT_PARENT"] == 62_716_443_738.27
+
+
+def test_three_line_spaced_non_yuan_unit_still_fails_closed():
+    text = """
+    单 位 ：
+    人 民 币
+    万 元
+    营业收入 10 9
+    """
+    with pytest.raises(ValueError, match="non-yuan unit"):
+        extract_standard_filing_facts(text)
+
 def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
     text = """
     主要会计数据和财务指标  单位：元 币种：人民币
