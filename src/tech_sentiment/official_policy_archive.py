@@ -710,7 +710,7 @@ def materialize_csrc_policy_archive(
     summary = {
         "source_identity": POLICY_SOURCE_ID,
         "provider": POLICY_PROVIDER,
-        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V3_FULL_ENUMERATION",
+        "archive_protocol": "OFFICIAL_CSRC_GETLOCALLIST_SEARCHLIST_JSON_V4_PAGE_CAPACITY_FULL_ENUMERATION",
         "start_date": str(start.date()),
         "end_date": str(end.date()),
         "coverage_segments": sorted(CSRC_CHANNELS),
