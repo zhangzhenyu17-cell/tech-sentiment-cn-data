@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from tech_sentiment.cninfo_direct import fetch_cninfo_announcements_direct
+from tech_sentiment.official_filing_facts import download_official_document
 
 
 PROBES = (
@@ -23,6 +24,7 @@ PROBES = (
 
 def main() -> None:
     results: list[dict[str, object]] = []
+    attachment_probe: dict[str, object] | None = None
     for probe in PROBES:
         frame = fetch_cninfo_announcements_direct(
             symbol=str(probe["symbol"]),
@@ -39,13 +41,31 @@ def main() -> None:
                 "CNINFO connectivity/protocol probe failed: "
                 f"{probe['symbol']} missing expected historical disclosure"
             )
-        if not matching["公告附件链接"].astype(str).str.startswith(
-            "https://static.cninfo.com.cn/"
-        ).any():
+        immutable = matching[
+            matching["公告附件链接"].astype(str).str.startswith(
+                "https://static.cninfo.com.cn/"
+            )
+        ]
+        if immutable.empty:
             raise SystemExit(
                 "CNINFO connectivity/protocol probe failed: "
                 f"{probe['symbol']} lacks immutable HTTPS attachment identity"
             )
+        if attachment_probe is None:
+            canonical_url = str(immutable.iloc[0]["公告附件链接"]).strip()
+            downloaded = download_official_document(canonical_url)
+            if not downloaded.content.startswith(b"%PDF-"):
+                raise SystemExit(
+                    "CNINFO connectivity/protocol probe failed: "
+                    "official attachment did not return PDF bytes"
+                )
+            attachment_probe = {
+                "symbol": probe["symbol"],
+                "canonical_attachment_url": canonical_url,
+                "retrieval_url": downloaded.url,
+                "document_sha256": downloaded.sha256,
+                "pdf_bytes_verified": True,
+            }
         results.append(
             {
                 "symbol": probe["symbol"],
@@ -63,6 +83,7 @@ def main() -> None:
                 "forward_outcome_read": False,
                 "parameter_search": False,
                 "probes": results,
+                "attachment_probe": attachment_probe,
             },
             ensure_ascii=False,
             sort_keys=True,
