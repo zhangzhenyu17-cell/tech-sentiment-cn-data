@@ -5,6 +5,7 @@ from hashlib import sha256
 import io
 import json
 import re
+import unicodedata
 from typing import Callable, Iterable, Mapping
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlparse
@@ -23,7 +24,7 @@ from .pit_public_materialization import (
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v6-dual-text-extraction-safe-units-revision-time"
+FILING_PARSER_VERSION = "official-filing-facts-v7-multi-text-extraction-safe-units-revision-time"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -342,14 +343,27 @@ def download_official_document(
     )
 
 
-def extract_pdf_text(content: bytes) -> str:
-    """Extract the embedded text layer; OCR is deliberately not used.
+def _extract_pdfminer_text(content: bytes) -> str:
+    """Extract the same PDF text layer with pdfminer; OCR is never invoked."""
 
-    Layout mode remains primary because it preserves table geometry on most
-    filings. Some older official PDFs drop unit-label text in layout mode while
-    preserving it in ordinary text extraction. In that narrow case, plain text
-    is used only when it restores an explicit unit declaration. Both paths read
-    the same immutable PDF bytes and never invoke OCR.
+    try:
+        from pdfminer.high_level import extract_text as pdfminer_extract_text
+    except ImportError as exc:  # pragma: no cover - installed by the data extra
+        raise RuntimeError(
+            "pdfminer.six is required for secondary official filing text extraction"
+        ) from exc
+    return str(pdfminer_extract_text(io.BytesIO(content)) or "").strip()
+
+
+def extract_pdf_text(content: bytes) -> str:
+    """Extract an official PDF text layer through conservative parser fallbacks.
+
+    pypdf layout mode remains primary because it preserves table geometry. Some
+    older exchange/CNINFO PDFs expose different text fragments to pypdf's plain
+    mode or to pdfminer. A fallback is selected only when it restores an
+    *explicit* unit declaration from the exact same immutable PDF bytes. OCR,
+    image interpretation, inferred units and external document substitution are
+    deliberately excluded.
     """
 
     try:
@@ -372,23 +386,30 @@ def extract_pdf_text(content: bytes) -> str:
         return "\n".join(parts).strip()
 
     layout_text = _collect(layout=True)
-    plain_text = ""
-
-    if not layout_text:
-        plain_text = _collect(layout=False)
-        if not plain_text:
-            raise ValueError("official filing has no extractable text layer")
-        return plain_text
-
-    layout_lines = _normalize_text_lines(layout_text)
-    if _has_explicit_unit_declaration(layout_lines):
+    if layout_text and _has_explicit_unit_declaration(
+        _normalize_text_lines(layout_text)
+    ):
         return layout_text
 
     plain_text = _collect(layout=False)
-    if plain_text and _has_explicit_unit_declaration(_normalize_text_lines(plain_text)):
+    if plain_text and _has_explicit_unit_declaration(
+        _normalize_text_lines(plain_text)
+    ):
         return plain_text
 
-    return layout_text
+    pdfminer_text = _extract_pdfminer_text(content)
+    if pdfminer_text and _has_explicit_unit_declaration(
+        _normalize_text_lines(pdfminer_text)
+    ):
+        return pdfminer_text
+
+    # Return the richest available text so the downstream parser emits its
+    # existing explicit-unit/fact diagnostic rather than masking it as a generic
+    # extraction failure.
+    for candidate in (layout_text, plain_text, pdfminer_text):
+        if candidate:
+            return candidate
+    raise ValueError("official filing has no extractable text layer")
 
 
 def filing_period_end_from_title(title: object) -> pd.Timestamp:
@@ -431,9 +452,14 @@ def _parse_numeric_token(token: str) -> float:
 
 
 def _explicit_unit_from_text(value: str) -> str | None:
-    """Read only an explicit 单位 declaration while ignoring PDF layout whitespace."""
+    """Read only an explicit 单位 declaration despite PDF formatting artifacts."""
 
-    compact = re.sub(r"\s+", "", str(value))
+    normalized = unicodedata.normalize("NFKC", str(value))
+    compact = "".join(
+        char
+        for char in normalized
+        if not char.isspace() and unicodedata.category(char) != "Cf"
+    )
     match = _UNIT_RE.search(compact)
     return str(match.group(1)) if match else None
 
