@@ -195,6 +195,26 @@ def _fundamental_readiness(
     }
 
 
+def _manifest_shard_identity(
+    manifest: dict[str, object],
+    *,
+    kind: str,
+    stage_dir: Path,
+) -> tuple[int, int]:
+    raw_count = manifest.get("shard_count")
+    raw_index = manifest.get("shard_index")
+    if raw_count is None or raw_index is None or isinstance(raw_count, bool) or isinstance(raw_index, bool):
+        raise ValueError(f"{kind} invalid shard identity: {stage_dir}")
+    try:
+        count = int(raw_count)
+        index = int(raw_index)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{kind} invalid shard identity: {stage_dir}") from exc
+    if count < 1 or index < 0 or index >= count:
+        raise ValueError(f"{kind} invalid shard identity: {stage_dir}")
+    return count, index
+
+
 def _verified_shards(
     root: Path,
     *,
@@ -231,10 +251,11 @@ def _verified_shards(
             raise ValueError(f"{kind} stage start mismatch: {stage_dir}")
         if str(manifest.get("end_date") or "") != end_date:
             raise ValueError(f"{kind} stage end mismatch: {stage_dir}")
-        count = int(manifest.get("shard_count") or 0)
-        index = int(manifest.get("shard_index") or -1)
-        if count < 1 or index < 0 or index >= count:
-            raise ValueError(f"{kind} invalid shard identity: {stage_dir}")
+        count, index = _manifest_shard_identity(
+            manifest,
+            kind=kind,
+            stage_dir=stage_dir,
+        )
         shard_counts.add(count)
         shard_indexes.append(index)
         shard_symbols = {str(value).zfill(6) for value in manifest.get("symbols", [])}
