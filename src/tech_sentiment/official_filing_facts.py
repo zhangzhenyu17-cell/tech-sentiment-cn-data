@@ -75,7 +75,10 @@ _NUMERIC_TOKEN_RE = re.compile(
 
 @dataclass(frozen=True)
 class DownloadedOfficialDocument:
+    # Canonical immutable source identity requested by the materializer.
     url: str
+    # Actual same-provider HTTPS transport endpoint used to retrieve bytes.
+    retrieval_url: str
     sha256: str
     content: bytes
 
@@ -163,7 +166,8 @@ def download_official_document(
     if not content:
         raise ValueError("official filing attachment is empty")
     return DownloadedOfficialDocument(
-        url=retrieval_url,
+        url=url,
+        retrieval_url=retrieval_url,
         sha256=sha256(content).hexdigest(),
         content=content,
     )
