@@ -14,6 +14,9 @@ from tech_sentiment.official_pit_archives import (
     SZSE_PROVIDER,
     SZSE_SOURCE_ID,
     SZSE_SPEC,
+    SZSE_QUERY_URL,
+    SZSE_REFERER,
+    fetch_szse_announcements,
     materialize_official_archive,
     normalize_official_announcements,
 )
@@ -262,3 +265,182 @@ def test_sse_issuer_browser_session_is_reused_across_year_windows(monkeypatch):
     assert session_count == 1
     assert len(query_calls) == 2
     assert all(url.startswith(SSE_QUERY_URL + "?") for url in query_calls)
+
+
+
+def test_szse_issuer_browser_session_fallback_preserves_official_endpoint(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    def blocked_urlopen(request, timeout=None):
+        raise HTTPError(
+            request.full_url,
+            403,
+            "Forbidden",
+            hdrs=None,
+            fp=None,
+        )
+
+    class FakeResponse:
+        def __init__(self, url: str, payload: dict[str, object] | None = None):
+            self.url = url
+            self.content = (
+                json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                if payload is not None
+                else b"<html>official SZSE bootstrap</html>"
+            )
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            calls.append(("get", url))
+            assert url == SZSE_REFERER
+            assert kwargs["impersonate"] == "chrome"
+            return FakeResponse(url)
+
+        def post(self, url, **kwargs):
+            calls.append(("post", url))
+            assert url == SZSE_QUERY_URL
+            assert kwargs["impersonate"] == "chrome"
+            assert kwargs["headers"]["Referer"] == SZSE_REFERER
+            assert kwargs["json"]["pageNum"] == 1
+            return FakeResponse(
+                url,
+                {
+                    "announceCount": 1,
+                    "data": [
+                        {
+                            "secCode": ["000538"],
+                            "title": "2023年年度报告",
+                            "publishTime": "2024-03-30 08:00:00",
+                            "id": "fixture-szse-000538",
+                            "attachPath": "/disc/disk03/finalpage/fixture.pdf",
+                        }
+                    ],
+                },
+            )
+
+        def close(self):
+            calls.append(("close", "session"))
+
+    monkeypatch.setattr(official_pit_archives, "urlopen", blocked_urlopen)
+
+    frame = fetch_szse_announcements(
+        symbol="000538",
+        start_date="2024-03-29",
+        end_date="2024-03-31",
+        browser_session_factory=FakeSession,
+    )
+
+    assert list(frame["document_id"]) == ["fixture-szse-000538"]
+    assert (
+        frame.loc[0, "source_url"]
+        == "https://disc.static.szse.cn/download/disc/disk03/finalpage/fixture.pdf"
+    )
+    assert calls[0] == ("get", SZSE_REFERER)
+    assert calls[1] == ("post", SZSE_QUERY_URL)
+    assert calls[-1] == ("close", "session")
+
+
+def test_szse_issuer_uses_announce_count_not_short_page_to_stop(monkeypatch):
+    page_calls: list[int] = []
+
+    def fake_post(url, *, headers, payload, timeout, expected_host=None):
+        assert url == SZSE_QUERY_URL
+        assert expected_host == "www.szse.cn"
+        page = int(payload["pageNum"])
+        page_calls.append(page)
+        if page == 1:
+            return {
+                "announceCount": 2,
+                "data": [
+                    {
+                        "secCode": "000538",
+                        "title": "公告一",
+                        "publishTime": "2024-03-29 08:00:00",
+                        "id": "szse-doc-1",
+                        "attachPath": "/disc/disk03/finalpage/doc1.pdf",
+                    }
+                ],
+            }
+        if page == 2:
+            return {
+                "announceCount": 2,
+                "data": [
+                    {
+                        "secCode": "000538",
+                        "title": "公告二",
+                        "publishTime": "2024-03-30 08:00:00",
+                        "id": "szse-doc-2",
+                        "attachPath": "/disc/disk03/finalpage/doc2.pdf",
+                    }
+                ],
+            }
+        raise AssertionError(page)
+
+    monkeypatch.setattr(official_pit_archives, "_post_json", fake_post)
+
+    frame = fetch_szse_announcements(
+        symbol="000538",
+        start_date="2024-03-29",
+        end_date="2024-03-31",
+    )
+
+    assert page_calls == [1, 2]
+    assert set(frame["document_id"]) == {"szse-doc-1", "szse-doc-2"}
+
+
+def test_szse_issuer_fails_closed_on_total_drift_and_duplicate(monkeypatch):
+    def drifting_post(url, *, headers, payload, timeout, expected_host=None):
+        page = int(payload["pageNum"])
+        return {
+            "announceCount": 2 if page == 1 else 3,
+            "data": [
+                {
+                    "secCode": "000538",
+                    "title": f"公告{page}",
+                    "publishTime": f"2024-03-{28 + page:02d} 08:00:00",
+                    "id": f"szse-doc-{page}",
+                    "attachPath": f"/disc/disk03/finalpage/doc{page}.pdf",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(official_pit_archives, "_post_json", drifting_post)
+    try:
+        fetch_szse_announcements(
+            symbol="000538",
+            start_date="2024-03-29",
+            end_date="2024-03-31",
+        )
+    except ValueError as exc:
+        assert "announceCount drifted" in str(exc)
+    else:
+        raise AssertionError("announceCount drift must fail closed")
+
+    def duplicate_post(url, *, headers, payload, timeout, expected_host=None):
+        return {
+            "announceCount": 2,
+            "data": [
+                {
+                    "secCode": "000538",
+                    "title": "重复公告",
+                    "publishTime": "2024-03-29 08:00:00",
+                    "id": "same-doc",
+                    "attachPath": "/disc/disk03/finalpage/same.pdf",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(official_pit_archives, "_post_json", duplicate_post)
+    try:
+        fetch_szse_announcements(
+            symbol="000538",
+            start_date="2024-03-29",
+            end_date="2024-03-31",
+        )
+    except ValueError as exc:
+        assert "duplicate document" in str(exc)
+    else:
+        raise AssertionError("duplicate SZSE document must fail closed")
