@@ -189,3 +189,47 @@ def test_policy_duplicate_across_pages_fails_closed(tmp_path):
     ].iloc[0]
     assert orders["query_status"] == "FAILED"
     assert result.errors["error"].str.contains("duplicate", case=False).any()
+
+
+def test_policy_cross_page_order_drift_fails_closed(tmp_path):
+    calls: list[str] = []
+
+    def fetcher(url: str) -> dict[str, object]:
+        calls.append(url)
+        parsed = urlparse(url)
+        if parsed.path == "/getLocalList":
+            code = parse_qs(parsed.query)["channelCode"][0]
+            return _metadata_payload(code)
+        channel_id = parsed.path.rsplit("/", 1)[-1]
+        code = next(code for code, value in _CHANNEL_IDS.items() if value == channel_id)
+        page = int(parse_qs(parsed.query)["page"][0])
+        when = "2026-01-20 10:00:00"
+        if code == "c101953" and page == 2:
+            when = "2026-01-21 10:00:00"
+        elif page == 2:
+            when = "2021-12-31 10:00:00"
+        return _page_payload(
+            code,
+            page=page,
+            manuscript=f"{code}-{page}",
+            when=when,
+            total=2,
+        )
+
+    result = materialize_csrc_policy_archive_resumable(
+        start_date="2022-01-04",
+        end_date="2026-01-30",
+        trading_dates=pd.bdate_range("2021-12-30", "2026-02-03"),
+        source_commit="abc123",
+        checkpoint_dir=tmp_path,
+        json_fetcher=fetcher,
+        article_fetcher=lambda url: "official article",
+        page_size=1,
+    )
+    orders = result.coverage[
+        result.coverage["coverage_segment"].eq("CSRC_ORDERS")
+    ].iloc[0]
+    assert orders["query_status"] == "FAILED"
+    assert result.errors["error"].str.contains(
+        "cross-page publication order drift", regex=False
+    ).any()
