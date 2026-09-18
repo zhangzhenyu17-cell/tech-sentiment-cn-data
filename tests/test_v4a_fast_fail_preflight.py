@@ -37,6 +37,10 @@ def test_issuer_preflight_covers_both_exchanges_and_exact_historical_disclosures
 
     probes = list(module.PROBES)
     assert {probe["market"] for probe in probes} == {"SSE", "SZSE"}
+    sse_symbols = {probe["symbol"] for probe in probes if probe["market"] == "SSE"}
+    szse_symbols = {probe["symbol"] for probe in probes if probe["market"] == "SZSE"}
+    assert {"600519", "688981"} <= sse_symbols
+    assert "000538" in szse_symbols
     assert all(probe["expected_title_token"] for probe in probes)
     assert all(probe["start_date"] <= probe["end_date"] for probe in probes)
 
