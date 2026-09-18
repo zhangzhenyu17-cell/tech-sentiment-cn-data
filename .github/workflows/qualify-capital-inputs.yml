@@ -248,6 +248,13 @@ jobs:
         with:
           name: v4a-stage-shared
           path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
       - name: Restore CNINFO issuer checkpoints
         uses: actions/cache/restore@v4
         with:
@@ -312,6 +319,13 @@ jobs:
         with:
           name: v4a-stage-shared
           path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
       - name: Restore SSE issuer checkpoints
         uses: actions/cache/restore@v4
         with:
@@ -375,6 +389,13 @@ jobs:
         with:
           name: v4a-stage-shared
           path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
       - name: Restore SZSE issuer checkpoints
         uses: actions/cache/restore@v4
         with:
@@ -438,6 +459,13 @@ jobs:
         with:
           name: v4a-stage-shared
           path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
       - uses: actions/download-artifact@v4
         with:
           pattern: v4a-stage-issuer-*
@@ -489,6 +517,13 @@ jobs:
         with:
           name: v4a-stage-shared
           path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
       - name: Restore filing checkpoints
         uses: actions/cache/restore@v4
         with:
@@ -557,6 +592,13 @@ jobs:
         with:
           name: v4a-stage-shared
           path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
       - name: Restore price checkpoints
         uses: actions/cache/restore@v4
         with:
@@ -619,6 +661,13 @@ jobs:
         with:
           name: v4a-stage-shared
           path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
       - name: Restore policy checkpoints
         uses: actions/cache/restore@v4
         with:
@@ -679,6 +728,13 @@ jobs:
         with:
           name: v4a-stage-shared
           path: stage/shared
+      - name: Verify shared-input stage
+        run: |
+          python scripts/verify_v4a_stage_receipt.py \
+            --root stage/shared --stage-kind shared --stage-id shared \
+            --source-commit "${{ github.sha }}" \
+            --start-date "${{ inputs.start_date }}" \
+            --end-date "${{ needs.preflight.outputs.end_date }}"
       - uses: actions/download-artifact@v4
         with:
           name: v4a-stage-issuer-aggregate
