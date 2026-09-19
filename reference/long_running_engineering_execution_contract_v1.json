@@ -28,7 +28,9 @@
     "rerun_failed_jobs_before_full_ci_when_appropriate": true,
     "cache_visibility_scope_must_be_preflighted": true,
     "inline_restore_resolver_execution_test_required": true,
-    "resume_effectiveness_requires_runtime_counters": true
+    "resume_effectiveness_requires_runtime_counters": true,
+    "post_success_producer_identity_freeze_required": true,
+    "stage_success_distinct_from_pipeline_qualification": true
   },
   "restore_precedence": [
     "IMMUTABLE_COMPLETED_WORK_UNIT",
@@ -76,7 +78,10 @@
     "record_immutable_publish_result": true,
     "record_cache_source_run_and_ref": true,
     "record_restore_layer_selected": true,
-    "record_zero_work_recovery_proof": true
+    "record_zero_work_recovery_proof": true,
+    "record_execution_class": true,
+    "record_group_bundle_identity_and_hashes": true,
+    "record_downstream_handoff_freeze_state": true
   },
   "failure_classes": [
     "DETERMINISTIC_CODE_OR_ORCHESTRATION",
@@ -95,7 +100,10 @@
     "diagnostics_retained": true,
     "lineage_recorded": true,
     "unauthorized_boundary_change": false,
-    "stop_when_acceptance_met": true
+    "stop_when_acceptance_met": true,
+    "stage_acceptance_does_not_equal_pipeline_qualification": true,
+    "downstream_handoff_freeze_declared_when_applicable": true,
+    "group_bundle_identity_and_hashes_recorded": true
   },
   "recovery_branch": {
     "same_branch_cache_scope_supported": true,
@@ -114,5 +122,25 @@
     "current_qualification_required": true,
     "current_generation_immutable_publish_required": true,
     "targeted_semantic_reproof_may_execute_only_affected_subset": true
+  },
+  "runtime_estimation": {
+    "classify_fully_resumed_units": true,
+    "classify_targeted_semantic_repair_units": true,
+    "classify_provider_recompute_units": true,
+    "forecast_by_execution_class_and_parallelism": true,
+    "do_not_apply_single_unit_average_to_mixed_recovery": true
+  },
+  "post_success_handoff_freeze": {
+    "record_group_asset_base": true,
+    "record_bundle_identity": true,
+    "record_compatibility_key": true,
+    "record_archive_sha256": true,
+    "record_stage_receipt_sha256": true,
+    "record_original_source_commit": true,
+    "freeze_producer_fingerprint_inputs_until_downstream_consumed": true,
+    "logical_retirement_may_precede_physical_cleanup": true,
+    "physical_cleanup_deferred_if_it_changes_producer_identity": true,
+    "cleanup_requires_separate_review_after_handoff": true,
+    "documentation_outside_producer_identity_may_continue": true
   }
 }
