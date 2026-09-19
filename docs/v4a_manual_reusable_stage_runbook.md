@@ -267,9 +267,87 @@ the corrected presentation classifier is allowed to resolve the conflicting
 carrier.
 
 After all 16 work units have immutable bundles under the current presentation
-generation, remove any one-time branch guard/bridge only through a separately
-reviewed workflow-only cleanup. Do not weaken the underlying semantic,
-qualification, PIT, or evidence contracts.
+generation, the recovery branch/bridge is logically eligible for retirement.
+However, physical cleanup must respect the producer-identity handoff freeze
+below.
+
+### Successful recovery closure — run 35451946515
+
+The current presentation-recheck recovery completed successfully on
+`v4a/fundamental-resume-295710` at source commit
+`f55033f31e00bfed5bda798929dc5dccecbceac7`.
+
+Observed result:
+
+- 16 / 16 work units passed;
+- the final package job passed;
+- all 16 qualified shard artifacts were downloaded and digest-verified during
+  group assembly;
+- the Fundamental group contained 208 files;
+- total workflow wall-clock was approximately 10 minutes 50 seconds;
+- fully resumed units such as 0-2 completed in roughly one minute with
+  `executed_symbol_queries = 0` and `executed_documents = 0`;
+- the previously failing unit 5 restored the newest compatible progress and
+  completed the repaired path in roughly six minutes before qualification and
+  immutable publication.
+
+The published canonical persistent Fundamental handoff is:
+
+- asset base:
+  `v4a-fundamental-20220104-20260917-56e8c44ca678668bfc17`;
+- bundle identity:
+  `f558db45af7a9e8b5e69dad1275f98e93e6ee49c09914fa591edd4348cfde4c4`;
+- compatibility key:
+  `56e8c44ca678668bfc17fd7ef5da5a9c32503dcbac03eb86fa3963ecd0cf751b`;
+- archive SHA-256:
+  `c1df2ec495657f52cf34935feb5ab94c7159f43e4cbf6f24bb8fbcf43ffdb54e`;
+- stage receipt SHA-256:
+  `2b27a25584e22521811ceebfdc873363d6a8fc43cf82d1b442d8ced121b91770`;
+- original source commit:
+  `f55033f31e00bfed5bda798929dc5dccecbceac7`.
+
+### Producer-identity freeze before Derived
+
+Do **not** modify files contributing to the Fundamental producer fingerprint
+before the current persistent bundle has been consumed by the required
+downstream V4-A stages.
+
+This includes, in particular:
+
+- `.github/workflows/v4a-fundamental-earnings.yml`;
+- `reference/v4a_fundamental_checkpoint_reuse_contract_v1.json`;
+- `reference/v4a_fundamental_pit_state_contract_v1.json`;
+- `reference/v4a_qualification_tolerance_contract_v1.json`;
+- the Fundamental materialization/package entrypoints and recursively imported
+  producer modules.
+
+The one-time recovery branch guard and presentation bridge have completed their
+operational purpose, but their **physical removal is deferred** until the
+published Fundamental compatibility identity has been consumed by
+`v4a-09-derived` and the required canonical handoff chain.
+
+Documentation, incident-review, run-plan, and generic engineering-contract
+changes outside the Fundamental producer fingerprint may proceed without
+invalidating this handoff.
+
+This is deliberate: removing a harmless one-time guard immediately after a
+green run would change the Fundamental producer fingerprint and could cause
+Derived to reject or fail to locate the just-published valid bundle.
+
+### Qualification boundary after public success
+
+A successful Fundamental workflow and persistent bundle mean the public
+Fundamental stage has completed its qualified input production and immutable
+handoff.
+
+They do **not** by themselves mean:
+
+`HISTORICAL_DATA_QUALIFIED`.
+
+The remaining V4-A chain still requires the applicable downstream assembly,
+canonical public finalizer, private PostRun Preflight, and private Artifact
+Intake. The final state must remain either the intake-supported qualified state
+or an honest fail-closed / data-insufficient state.
 
 ## Trigger policy
 
