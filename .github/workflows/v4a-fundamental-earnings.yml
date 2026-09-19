@@ -220,6 +220,36 @@ jobs:
               if bridge.get(key) is not False:
                   raise SystemExit(f"cancelled-run bridge boundary drift: {key}")
 
+          gate_bridge = contract.get("qualification_gate_nameerror_progress_bridge") or {}
+          if gate_bridge.get("schema_version") != "v4a-gate-nameerror-progress-bridge-v1":
+              raise SystemExit("gate NameError progress bridge schema mismatch")
+          if gate_bridge.get("status") != "FROZEN_ONE_TIME_ENGINEERING_COMPATIBILITY":
+              raise SystemExit("gate NameError progress bridge is not frozen")
+          if int(gate_bridge.get("source_run_id") or 0) != 35438201372:
+              raise SystemExit("gate NameError progress bridge run mismatch")
+          if (
+              gate_bridge.get("source_semantic_fingerprint")
+              != "e77232e9d11a5739a3010794d6cd6c7c58046b1dc8bd76fbae46a4d3309808f3"
+          ):
+              raise SystemExit("gate NameError progress bridge fingerprint mismatch")
+          for key in (
+              "restore_only_as_engineering_progress",
+          ):
+              if gate_bridge.get(key) is not True:
+                  raise SystemExit(f"gate NameError progress bridge invariant missing: {key}")
+          for key in (
+              "formal_evidence_handoff",
+              "qualification_granted",
+              "parser_semantics_changed",
+              "checkpoint_identity_changed",
+              "evidence_eligibility_changed",
+              "pit_no_lookahead_semantics_changed",
+              "production_authority_changed",
+              "trading_authority_changed",
+          ):
+              if gate_bridge.get(key) is not False:
+                  raise SystemExit(f"gate NameError progress bridge boundary drift: {key}")
+
           work_unit_count = int(progress.get("work_unit_count") or 0)
           legacy_source_shard_count = int(progress.get("legacy_source_shard_count") or 0)
           unit = int(os.environ["SHARD"])
@@ -261,6 +291,9 @@ jobs:
               handle.write(f"FUNDAMENTAL_WORK_UNIT_COUNT={work_unit_count}\n")
               handle.write(f"CANCELLED_RUN_CACHE_KEY={bridge_cache_key}\n")
               handle.write(f"CANCELLED_RUN_SOURCE_COMMIT={bridge_progress_commit}\n")
+              gate_template = str(gate_bridge.get("cache_key_template") or "")
+              gate_cache_key = gate_template.format(unit=unit)
+              handle.write(f"GATE_BUG_PROGRESS_CACHE_KEY={gate_cache_key}\n")
           PY
       - name: Resolve reusable Fundamental work-unit identity
         run: |
@@ -305,14 +338,23 @@ jobs:
           fi
       - name: Restore durable V9 progress
         if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
+        id: durable_progress_restore
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/progress
           key: v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-
+      - name: Restore gate-bug-compatible V9 progress
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit != 'true' }}
+        id: gate_bug_progress_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/progress
+          key: ${{ env.GATE_BUG_PROGRESS_CACHE_KEY }}
+          fail-on-cache-miss: false
       - name: Restore cancelled-run mixed V8/V9 cache
-        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit != 'true' && steps.gate_bug_progress_restore.outputs.cache-hit != 'true' }}
         id: cancelled_bridge_restore
         uses: actions/cache/restore@v4
         with:
@@ -320,7 +362,7 @@ jobs:
           key: ${{ env.CANCELLED_RUN_CACHE_KEY }}
           fail-on-cache-miss: false
       - name: Migrate validated cancelled-run V9 checkpoints into durable progress
-        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.cancelled_bridge_restore.outputs.cache-hit == 'true' }}
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit != 'true' && steps.gate_bug_progress_restore.outputs.cache-hit != 'true' && steps.cancelled_bridge_restore.outputs.cache-hit == 'true' }}
         run: |
           python scripts/migrate_v4a_cancelled_fundamental_cache.py \
             --source-root .cache/capital_pit_v4a/derived/filings \
@@ -331,7 +373,7 @@ jobs:
             --progress-source-commit "${{ env.CANCELLED_RUN_SOURCE_COMMIT }}" \
             --out bundle-meta/cancelled-run-bridge.json
       - name: Restore legacy V8 fallback when cancelled-run cache is unavailable
-        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.cancelled_bridge_restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit != 'true' && steps.gate_bug_progress_restore.outputs.cache-hit != 'true' && steps.cancelled_bridge_restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/filings
