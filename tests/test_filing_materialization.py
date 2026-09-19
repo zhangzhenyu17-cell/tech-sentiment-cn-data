@@ -63,3 +63,68 @@ def test_numeric_financial_filing_title_excludes_non_primary_report_variants():
     assert predicate("贵州茅台2022年年度报告摘要") is False
     assert predicate("关于贵州茅台2022年年度报告的问询函回复") is False
     assert predicate("贵州茅台2022年度审计报告") is False
+
+
+def _announcement(title: str, when: str, announcement_id: str) -> dict[str, str]:
+    return {
+        "代码": "688012",
+        "简称": "中微公司",
+        "公告标题": title,
+        "公告时间": when,
+        "公告链接": (
+            "https://www.cninfo.com.cn/new/disclosure/detail?"
+            f"stockCode=688012&announcementId={announcement_id}&orgId=gssh0600688"
+        ),
+        "公告附件链接": f"https://static.cninfo.com.cn/finalpage/2020-04-29/{announcement_id}.PDF",
+    }
+
+
+def test_same_time_body_and_complete_report_prefers_complete_carrier():
+    raw = pd.DataFrame(
+        [
+            _announcement("2020年第一季度报告正文", "2020-04-29 00:00:00", "1207671800"),
+            _announcement("2020年第一季度报告", "2020-04-29 00:00:00", "1207671801"),
+        ]
+    )
+    selected = filing_materialization._select_primary_numeric_filing_candidates(raw)
+
+    assert list(selected["公告标题"]) == ["2020年第一季度报告"]
+    assert "1207671801" in selected.iloc[0]["公告链接"]
+
+
+def test_same_time_body_and_full_report_prefers_full_carrier():
+    raw = pd.DataFrame(
+        [
+            _announcement("2020年第一季度报告正文", "2020-04-29 00:00:00", "body"),
+            _announcement("2020年第一季度报告全文", "2020-04-29 00:00:00", "full"),
+        ]
+    )
+    selected = filing_materialization._select_primary_numeric_filing_candidates(raw)
+
+    assert list(selected["公告标题"]) == ["2020年第一季度报告全文"]
+
+
+def test_body_report_is_retained_when_no_complete_carrier_exists():
+    raw = pd.DataFrame(
+        [
+            _announcement("2020年第一季度报告正文", "2020-04-29 00:00:00", "body"),
+        ]
+    )
+    selected = filing_materialization._select_primary_numeric_filing_candidates(raw)
+
+    assert list(selected["公告标题"]) == ["2020年第一季度报告正文"]
+
+
+def test_revision_identity_is_not_collapsed_with_original_title_family():
+    raw = pd.DataFrame(
+        [
+            _announcement("2020年第一季度报告", "2020-04-29 00:00:00", "original"),
+            _announcement("2020年第一季度报告（修订版）", "2020-04-29 00:00:00", "revision"),
+        ]
+    )
+    selected = filing_materialization._select_primary_numeric_filing_candidates(raw)
+
+    assert set(selected["公告标题"]) == {
+        "2020年第一季度报告",
+        "2020年第一季度报告（修订版）",
+    }
