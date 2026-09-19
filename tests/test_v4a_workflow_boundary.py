@@ -143,7 +143,7 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
     assert "Restore immutable completed work unit" in text
     assert "Publish immutable completed work unit" in text
     assert "v4a-stage-bundles-v1" in text
-    assert "requires full group assembly" in text
+    assert "persistent work-unit must require full group assembly" in text
 
     progress_cache_lines = "\n".join(
         line for line in text.splitlines() if "v4a-fund-progress-" in line
