@@ -66,7 +66,7 @@ After Shared succeeds, the following may be run independently and in parallel:
 - `v4a-03-financing`
 - `v4a-04-issuer-source` with `source=cninfo`
 - `v4a-04-issuer-source` with `source=sse`
-- `v4a-04-issuer-source` with `source=szse`
+- `v4a-04b-issuer-szse-migration` for the frozen 300114 -> 302132 same-security migration window
 - `v4a-06-fundamental-earnings`
 - `v4a-07-prices`
 - `v4a-08-policy`
@@ -74,6 +74,17 @@ After Shared succeeds, the following may be run independently and in parallel:
 CNINFO, SSE, and SZSE issuer archives are deliberately separate persistent
 bundles. A transport failure in one issuer source must not invalidate the other
 two.
+
+For the current frozen window, SZSE must use `v4a-04b-issuer-szse-migration`.
+The frozen scope contains the same listed security across the official
+`300114` -> `302132` code/name migration effective 2025-02-17. The migration
+workflow keeps the canonical SZSE announcement endpoint, pagination proof,
+official document-host checks, and qualification gate unchanged. It only
+partitions that explicitly frozen same-security identity at the effective date.
+It does not add an evidence source, change evidence eligibility, change
+PIT/no-lookahead semantics, or read future outcomes. The legacy
+`v4a-04-issuer-source source=szse` path remains fail-closed for this window and
+must not be used as the canonical SZSE producer.
 
 Fundamental/Earnings and Prices retain bounded four-shard parallelism internally
 but publish one persistent group bundle after all shards succeed.
@@ -132,6 +143,7 @@ Examples:
 
 - Policy fix: rerun Policy -> Derived -> Finalizer.
 - SSE issuer fix: rerun Issuer Source(SSE) -> Issuer Aggregate -> Derived -> Finalizer.
+- SZSE code-migration fix: rerun Issuer SZSE Migration -> Issuer Aggregate -> Derived -> Finalizer.
 - Price fix: rerun Prices -> Derived -> Finalizer.
 - Capital fix: rerun Capital -> Finalizer.
 - Financing fix: rerun Financing -> Finalizer.
@@ -173,6 +185,12 @@ Cross-commit reuse is provided only by a successfully sealed persistent stage
 bundle whose producer fingerprint and upstream bundle identities are revalidated.
 
 The immutable release bundle is the formal reusable inter-workflow handoff.
+
+For interrupted producer work, exact-commit cache reuse is intentionally
+separate from cross-commit persistent-bundle reuse. If an expensive stage times
+out after saving checkpoints, resume it from the same source commit so its
+producer-local cache remains eligible; do not edit that producer merely to
+increase a timeout before attempting the saved checkpoint.
 
 ## Trigger policy
 
