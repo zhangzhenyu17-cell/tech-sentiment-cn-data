@@ -294,7 +294,7 @@ def materialize_fundamental_state_evidence(
                     "contract_id": CONTRACT_ID,
                     "formula_version": FORMULA_VERSION,
                     "filing_parser_version": FILING_PARSER_VERSION,
-                    "selection_semantics": "LATEST_AVAILABLE_DATE_THEN_LATEST_OFFICIAL_PUBLICATION_TIMESTAMP",
+                    "selection_semantics": "LATEST_AVAILABLE_DATE_THEN_OFFICIAL_PUBLICATION_TIMESTAMP_THEN_EXPLICIT_REVISION_TITLE_THEN_SEMANTIC_EQUIVALENCE_FAIL_ON_CONFLICT",
                     "prior_comparable_semantics": "EXACT_SAME_REPORT_PERIOD_ONE_CALENDAR_YEAR_EARLIER",
                     "append_only": True,
                     "later_restatements_do_not_rewrite_earlier_as_of_state": True,
