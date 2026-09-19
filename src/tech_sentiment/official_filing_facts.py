@@ -780,12 +780,10 @@ def build_filing_fact_rows(
 
 
 _EXPLICIT_FILING_REVISION_MARKERS = (
-    "修订版",
-    "修订稿",
-    "更正版",
-    "更正后",
-    "修正版",
-    "更新版",
+    "修订",
+    "更正",
+    "修正",
+    "更新",
 )
 
 
@@ -865,9 +863,17 @@ def latest_filing_fact_as_of(
             identities = sorted(
                 f"{row.document_id}/{row.revision_id}" for row in candidates.itertuples()
             )
+            titles = sorted(
+                {
+                    f"{row.document_id}:{getattr(row, 'filing_title', '')}"
+                    for row in candidates.itertuples()
+                }
+            )
             raise ValueError(
                 "ambiguous same-availability filing revisions with conflicting facts: "
-                + ",".join(identities)
+                f"entity={entity_id};period_end={pd.Timestamp(period_end).date()};"
+                f"fact_type={fact_type};documents={','.join(identities)};"
+                f"titles={' | '.join(titles)}"
             )
 
     return candidates.iloc[0].drop(

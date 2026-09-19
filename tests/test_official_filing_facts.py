@@ -479,6 +479,88 @@ def test_same_timestamp_explicit_revision_title_supersedes_original_without_id_o
     assert payload["yoy_change"] == pytest.approx(0.1)
 
 
+def test_same_timestamp_update_after_title_is_explicit_revision():
+    original = _facts(
+        "2024年年度报告",
+        "2025-04-21",
+        "z_original",
+        100.0,
+        10.0,
+        published="2025-04-21 10:00:00",
+    )
+    revision = _facts(
+        "2024年年度报告（更新后）",
+        "2025-04-21",
+        "a_updated",
+        110.0,
+        11.0,
+        published="2025-04-21 10:00:00",
+    )
+    current = _facts(
+        "2025年年度报告",
+        "2026-04-20",
+        "current",
+        121.0,
+        12.1,
+        published="2026-04-20 10:00:00",
+    )
+    original["filing_title"] = "2024年年度报告"
+    revision["filing_title"] = "2024年年度报告（更新后）"
+    current["filing_title"] = "2025年年度报告"
+
+    evidence = derive_fundamental_trend_evidence(
+        pd.concat([original, revision, current], ignore_index=True)
+    )
+    revenue = evidence[
+        (evidence["evidence_type"] == "REVENUE_TREND")
+        & (evidence["document_id"] == "current")
+    ].iloc[0]
+    payload = json.loads(revenue["evidence_payload"])
+    assert payload["prior_document_id"] == "a_updated"
+    assert payload["yoy_change"] == pytest.approx(0.1)
+
+
+def test_same_timestamp_revision_after_title_is_explicit_revision():
+    original = _facts(
+        "2024年年度报告",
+        "2025-04-21",
+        "z_original",
+        100.0,
+        10.0,
+        published="2025-04-21 10:00:00",
+    )
+    revision = _facts(
+        "2024年年度报告（修订后）",
+        "2025-04-21",
+        "a_revised",
+        110.0,
+        11.0,
+        published="2025-04-21 10:00:00",
+    )
+    current = _facts(
+        "2025年年度报告",
+        "2026-04-20",
+        "current",
+        121.0,
+        12.1,
+        published="2026-04-20 10:00:00",
+    )
+    original["filing_title"] = "2024年年度报告"
+    revision["filing_title"] = "2024年年度报告（修订后）"
+    current["filing_title"] = "2025年年度报告"
+
+    evidence = derive_fundamental_trend_evidence(
+        pd.concat([original, revision, current], ignore_index=True)
+    )
+    revenue = evidence[
+        (evidence["evidence_type"] == "REVENUE_TREND")
+        & (evidence["document_id"] == "current")
+    ].iloc[0]
+    payload = json.loads(revenue["evidence_payload"])
+    assert payload["prior_document_id"] == "a_revised"
+    assert payload["yoy_change"] == pytest.approx(0.1)
+
+
 def test_same_timestamp_semantically_equivalent_facts_use_stable_provenance_only():
     first = _facts(
         "2024年年度报告",
