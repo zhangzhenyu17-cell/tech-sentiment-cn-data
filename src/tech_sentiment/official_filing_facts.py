@@ -98,19 +98,39 @@ FILING_PRESENTATION_UNKNOWN = "UNKNOWN"
 
 
 def classify_official_filing_presentation(text: object) -> str:
-    """Classify the official PDF's own report-title carrier from its leading text."""
+    """Classify the official PDF's own report-title carrier from its leading text.
+
+    Historical PDFs can render a generic running header such as
+    "2021年第一季度报告" before the actual cover/title carrier
+    "2021年第一季度报告正文". A first-match-only classifier therefore
+    misclassifies BODY as FULL. Explicit presentation markers in the leading
+    title region take precedence over a preceding generic header. Conflicting
+    explicit markers remain UNKNOWN rather than guessing.
+    """
 
     compact = re.sub(r"\s+", "", str(text or ""))[:5000]
-    match = _FILING_PRESENTATION_TITLE_RE.search(compact)
-    if match is None:
+    matches = list(_FILING_PRESENTATION_TITLE_RE.finditer(compact))
+    if not matches:
         return FILING_PRESENTATION_UNKNOWN
-    variant = str(match.group("variant") or "")
-    if variant == "摘要":
-        return FILING_PRESENTATION_SUMMARY
-    if variant == "正文":
-        return FILING_PRESENTATION_BODY
-    return FILING_PRESENTATION_FULL
 
+    # Presentation markers that identify the carrier appear on the cover/title
+    # region. Limit explicit-marker precedence to the leading region so later
+    # references/table-of-contents text cannot relabel a full report.
+    leading = compact[:1200]
+    explicit = {
+        str(match.group("variant") or "")
+        for match in _FILING_PRESENTATION_TITLE_RE.finditer(leading)
+        if str(match.group("variant") or "")
+    }
+    if len(explicit) > 1:
+        return FILING_PRESENTATION_UNKNOWN
+    if explicit == {"摘要"}:
+        return FILING_PRESENTATION_SUMMARY
+    if explicit == {"正文"}:
+        return FILING_PRESENTATION_BODY
+    if explicit == {"全文"}:
+        return FILING_PRESENTATION_FULL
+    return FILING_PRESENTATION_FULL
 
 
 @dataclass(frozen=True)
