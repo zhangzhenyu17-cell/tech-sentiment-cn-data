@@ -157,7 +157,7 @@ def test_derived_uses_identity_strict_phase_checkpoint_resume():
     assert "--checkpoint-dir .cache/capital_pit_v4a/derived/assembly" in text
     script = Path("scripts/assemble_v4a_derived_pit.py").read_text(encoding="utf-8")
     assert "v4a-derived-phase-checkpoint-v1" in script
-    for phase in ("fundamental", "valuation", "review", "pit_audit", "final"):
+    for phase in ("fundamental", "valuation", "review", "pit_audit"):
         assert f'"{phase}"' in script
     for identity_field in (
         "symbols_sha256",
@@ -168,6 +168,8 @@ def test_derived_uses_identity_strict_phase_checkpoint_resume():
         "price_receipt_sha256",
     ):
         assert identity_field in script
+    checkpoint_identity_block = script.split("def _checkpoint_identity(", 1)[1].split("def _prepare_checkpoint(", 1)[0]
+    assert '"source_commit": args.source_commit' not in checkpoint_identity_block
 
 
 def test_final_workflow_identity_is_preserved_for_private_intake():
