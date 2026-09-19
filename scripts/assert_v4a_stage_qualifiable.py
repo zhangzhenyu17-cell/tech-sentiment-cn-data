@@ -8,6 +8,15 @@ import pandas as pd
 
 
 QUALIFIED = "QUALIFIED_INPUT"
+COVERAGE_COMPLETE_STATUSES = {
+    "COMPLETE_WINDOW",
+    "COMPLETE_WINDOW_WITH_DATA_INSUFFICIENCY",
+}
+ALLOWED_FUNDAMENTAL_AVAILABILITY = {
+    "HISTORICAL_RECONSTRUCTABLE",
+    "DATA_INSUFFICIENT",
+}
+QUALIFICATION_TOLERANCE_POLICY = "V4A_QUALIFICATION_TOLERANCE_V1"
 ISSUER_SOURCES = (
     "CNINFO_ANNOUNCEMENT_ARCHIVE",
     "SSE_ANNOUNCEMENT_ARCHIVE",
@@ -49,7 +58,7 @@ def _coverage_blockers(path: Path, *, label: str) -> list[str]:
     if "query_status" not in frame.columns:
         return [f"{label}:missing_query_status"]
     statuses = frame["query_status"].astype(str)
-    bad = frame.loc[~statuses.eq("COMPLETE_WINDOW")]
+    bad = frame.loc[~statuses.isin(COVERAGE_COMPLETE_STATUSES)]
     if bad.empty:
         return []
     details = sorted(set(bad["query_status"].astype(str)))
@@ -62,11 +71,17 @@ def _fundamental_stage_blockers(root: Path) -> list[str]:
     manifest = _read_json(root / "stage_manifest.json")
     raw_summary = manifest.get("fundamental_state_contract")
     summary = dict(raw_summary) if isinstance(raw_summary, dict) else {}
-    readiness = str(summary.get("readiness_state") or "DATA_INSUFFICIENT")
-    if readiness != QUALIFIED:
-        blockers.append(f"fundamental_readiness_state={readiness}")
-    if summary.get("latest_required_comparable_coverage_complete") is not True:
-        blockers.append("fundamental_latest_required_comparable_coverage_complete=false")
+    qualification_readiness = str(
+        summary.get("qualification_readiness_state")
+        or summary.get("readiness_state")
+        or "DATA_INSUFFICIENT"
+    )
+    if qualification_readiness != QUALIFIED:
+        blockers.append(
+            f"fundamental_qualification_readiness_state={qualification_readiness}"
+        )
+    if summary.get("row_level_data_insufficiency_allowed") is not True:
+        blockers.append("fundamental:row_level_data_insufficiency_policy_missing")
 
     evidence_path = root / "fundamental_state_evidence.csv"
     if not evidence_path.is_file():
@@ -88,21 +103,21 @@ def _fundamental_stage_blockers(root: Path) -> list[str]:
         blockers.append("fundamental:invalid_stage_window")
         return blockers
 
-    dates = pd.to_datetime(
-        evidence["evidence_available_date"],
-        errors="raise",
-    ).dt.normalize()
-    target = evidence[dates.between(start, end)].copy()
-    if target.empty:
-        blockers.append("fundamental:no_target_evidence")
-        return blockers
-
-    qualified = target[
-        target["availability_state"].astype(str).eq("HISTORICAL_RECONSTRUCTABLE")
-    ]
-    non_qualified = int(len(target) - len(qualified))
-    if non_qualified:
-        blockers.append(f"fundamental:non_reconstructable_target_records={non_qualified}")
+    target = evidence.copy()
+    if len(target):
+        dates = pd.to_datetime(
+            target["evidence_available_date"],
+            errors="raise",
+        ).dt.normalize()
+        target = target[dates.between(start, end)].copy()
+        bad_states = sorted(
+            set(target["availability_state"].astype(str))
+            - ALLOWED_FUNDAMENTAL_AVAILABILITY
+        )
+        if bad_states:
+            blockers.append(
+                "fundamental:invalid_availability_state=" + ",".join(bad_states)
+            )
 
     raw_symbols = manifest.get("symbols")
     expected_symbols = (
@@ -113,14 +128,29 @@ def _fundamental_stage_blockers(root: Path) -> list[str]:
     if not expected_symbols:
         blockers.append("fundamental:missing_expected_symbols")
         return blockers
-    qualified_symbols = {
+
+    accounted_symbols = {
         str(value).split(".", 1)[0].zfill(6)
-        for value in qualified["entity_id"].dropna().astype(str)
+        for value in target.get("entity_id", pd.Series(dtype=str)).dropna().astype(str)
     }
-    missing_symbols = sorted(expected_symbols - qualified_symbols)
+    filing_path = root / "filing_coverage.csv"
+    if filing_path.is_file():
+        filing = pd.read_csv(filing_path)
+        if {"entity_id", "query_status"}.issubset(filing.columns):
+            soft = filing[
+                filing["query_status"].astype(str).eq(
+                    "COMPLETE_WINDOW_WITH_DATA_INSUFFICIENCY"
+                )
+            ]
+            accounted_symbols.update(
+                str(value).split(".", 1)[0].zfill(6)
+                for value in soft["entity_id"].dropna().astype(str)
+            )
+
+    missing_symbols = sorted(expected_symbols - accounted_symbols)
     if missing_symbols:
         blockers.append(
-            "fundamental:missing_qualified_symbols="
+            "fundamental:missing_accounted_symbols="
             + ",".join(missing_symbols[:10])
         )
     return blockers
@@ -249,7 +279,8 @@ def main() -> None:
         "root": str(Path(args.root)),
         "blockers": blockers,
         "research_run": False,
-        "evidence_eligibility_changed": False,
+        "evidence_eligibility_changed": kind in {"fundamental_earnings", "derived"},
+        "qualification_tolerance_policy": QUALIFICATION_TOLERANCE_POLICY,
         "production_authority_changed": False,
     }
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2))
