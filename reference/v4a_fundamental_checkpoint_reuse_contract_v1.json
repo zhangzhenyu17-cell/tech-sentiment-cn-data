@@ -16,7 +16,7 @@
     35384571822,
     35419103373
   ],
-  "reuse_reason": "The V9 parser repair preserves the same official CNINFO source, document identity, PIT/no-lookahead rules, evidence eligibility, research scope, and trading/production boundaries. Legacy V8 query/document checkpoints may be restored, but a legacy parsed filing document is reused only when all frozen core Fundamental State facts are already present. Incomplete legacy parsed documents are re-downloaded from the exact official attachment, must match the legacy checkpoint document SHA256, and are then reparsed under V9. No substitute document, inferred unit, future outcome, or eligibility relaxation is allowed.",
+  "reuse_reason": "The V9 parser repair preserves the same official CNINFO source, document identity, PIT/no-lookahead rules, evidence eligibility, research scope, and trading/production boundaries. Legacy V8 query/document checkpoints may be restored, but a legacy parsed filing document is reused only when all frozen core Fundamental State facts are already present. Incomplete legacy parsed documents are re-downloaded from the exact official attachment, must match the legacy checkpoint document SHA256, and are then reparsed under V9. No substitute document, inferred unit, future outcome, or eligibility relaxation is allowed. Durable progress is isolated from legacy V8 caches: 16 bounded work units restore a read-only legacy shard cache plus a separate V9 progress cache. Each completed work unit saves only its V9 progress store under a frozen generation identity, so workflow-only changes such as timeout adjustments do not invalidate completed engineering progress. Partial progress remains non-evidence and never grants qualification.",
   "acquisition_semantics_changed": false,
   "parser_semantics_changed": true,
   "checkpoint_schema_changed": false,
@@ -61,5 +61,66 @@
     "hard_download_or_identity_failures_remain_failed": true
   },
   "evidence_qualification_changed": true,
-  "evidence_qualification_change_contract": "reference/v4a_qualification_tolerance_contract_v1.json"
+  "evidence_qualification_change_contract": "reference/v4a_qualification_tolerance_contract_v1.json",
+  "progress_cache_policy": {
+    "mode": "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1",
+    "generation_id": "fundamental-v9-tolerance-v1",
+    "progress_checkpoint_source_commit": "2ef3ee784c7e6ced5801cf35b6a5113a68e9ab6a",
+    "work_unit_count": 16,
+    "legacy_source_shard_count": 4,
+    "legacy_store_read_only": true,
+    "current_progress_store_write_only_for_new_checkpoints": true,
+    "save_after_each_completed_work_unit": true,
+    "cache_key_independent_of_workflow_source_commit": true,
+    "cache_key_fields": [
+      "generation_id",
+      "semantic_fingerprint",
+      "qualification_start_date",
+      "qualification_end_date",
+      "work_unit_index"
+    ],
+    "allowed_cross_commit_change_scope": [
+      "workflow timeout",
+      "runner orchestration",
+      "cache plumbing",
+      "non-semantic CI changes"
+    ],
+    "semantic_code_change_requires_new_generation_id": true,
+    "parser_version_change_requires_new_generation_id": true,
+    "qualification_contract_change_requires_new_generation_id": true,
+    "formal_evidence_handoff": false,
+    "formal_stage_bundle_required_for_evidence_handoff": true,
+    "partial_progress_never_grants_qualification": true,
+    "partial_failed_work_unit_cache_allowed": true,
+    "partial_failed_work_unit_cache_never_formal_evidence": true,
+    "max_recompute_loss_scope": "AT_MOST_ONE_IN_PROGRESS_WORK_UNIT_PER_ACTIVE_RUNNER",
+    "completed_work_unit_persistence": "IMMUTABLE_RELEASE_BUNDLE_AFTER_QUALIFICATION_GATE",
+    "failed_or_incomplete_work_unit_persistence": "ACTIONS_CACHE_ENGINEERING_PROGRESS_ONLY_NOT_FORMAL_EVIDENCE"
+  },
+  "persistent_work_unit_bundle_policy": {
+    "schema_version": "v4a-fundamental-progress-unit-v1",
+    "release_tag": "v4a-stage-bundles-v1",
+    "restore_before_materialization": true,
+    "publish_only_after_work_unit_qualification_gate": true,
+    "immutable_no_overwrite": true,
+    "compatibility_requires": [
+      "generation_id",
+      "qualification_window",
+      "work_unit_index_and_count",
+      "exact_symbol_set",
+      "semantic_producer_fingerprint",
+      "shared_bundle_identity"
+    ],
+    "semantic_fingerprint_excludes": [
+      ".github/workflows/v4a-fundamental-earnings.yml"
+    ],
+    "excluded_workflow_changes_may_include": [
+      "timeout-minutes",
+      "runner orchestration",
+      "cache restore/save plumbing"
+    ],
+    "formal_evidence_handoff": false,
+    "requires_full_group_assembly": true,
+    "partial_progress_never_grants_qualification": true
+  }
 }

@@ -159,64 +159,89 @@ def materialize_cninfo_earnings_directions(
     source_commit: str,
     checkpoint_dir: str | Path,
     checkpoint_source_commit: str | None = None,
+    legacy_checkpoint_dir: str | Path | None = None,
+    progress_checkpoint_source_commit: str | None = None,
 ) -> EarningsDirectionMaterializationResult:
     start = pd.Timestamp(query_start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
     calendar = _real_trading_calendar(trading_dates)
     store = ImmutableCheckpointStore(checkpoint_dir)
+    legacy_store = (
+        ImmutableCheckpointStore(legacy_checkpoint_dir)
+        if legacy_checkpoint_dir is not None
+        else store
+    )
     checkpoint_commit = str(checkpoint_source_commit or source_commit)
+    progress_commit = str(progress_checkpoint_source_commit or source_commit)
     unique_symbols = sorted({str(value).zfill(6) for value in symbols})
     rows: list[dict[str, object]] = []
     coverage_rows: list[dict[str, object]] = []
     errors: list[dict[str, str]] = []
     unclassified: list[dict[str, object]] = []
     resumed_docs = 0
+    resumed_progress_queries = 0
+    reused_legacy_queries = 0
     reused_legacy_docs = 0
     executed_docs = 0
 
     for symbol in unique_symbols:
         entity = _entity_id(symbol)
-        query_identity = _symbol_query_identity(
+        progress_query_identity = _symbol_query_identity(
+            source_commit=progress_commit,
+            symbol=symbol,
+            query_start=str(start.date()),
+            query_end=str(end.date()),
+        )
+        legacy_query_identity = _symbol_query_identity(
             source_commit=checkpoint_commit,
             symbol=symbol,
             query_start=str(start.date()),
             query_end=str(end.date()),
         )
-        loaded_query = store.load(query_identity)
+        loaded_query = store.load(progress_query_identity)
         if loaded_query is not None:
             raw = loaded_query.frames["announcements"]
+            resumed_progress_queries += 1
         else:
-            try:
-                raw = fetch_cninfo_announcements_direct(
-                    symbol=symbol,
-                    start_date=start.strftime("%Y%m%d"),
-                    end_date=end.strftime("%Y%m%d"),
-                )
-                store.save(
-                    query_identity,
-                    frames={"announcements": raw},
-                    metadata={"entity_id": entity},
-                )
-            except Exception as exc:
-                errors.append(
-                    {
-                        "entity_id": entity,
-                        "document_id": "QUERY",
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
-                )
-                coverage_rows.append(
-                    {
-                        "source_identity": CNINFO_SOURCE_ID,
-                        "entity_id": entity,
-                        "coverage_start": start,
-                        "coverage_end": end,
-                        "query_status": "FAILED",
-                        "forecast_documents": 0,
-                        "direction_documents": 0,
-                    }
-                )
-                continue
+            loaded_legacy_query = legacy_store.load(legacy_query_identity)
+            if loaded_legacy_query is not None:
+                raw = loaded_legacy_query.frames["announcements"]
+                reused_legacy_queries += 1
+            else:
+                try:
+                    raw = fetch_cninfo_announcements_direct(
+                        symbol=symbol,
+                        start_date=start.strftime("%Y%m%d"),
+                        end_date=end.strftime("%Y%m%d"),
+                    )
+                    store.save(
+                        progress_query_identity,
+                        frames={"announcements": raw},
+                        metadata={
+                            "entity_id": entity,
+                            "progress_checkpoint_source_commit": progress_commit,
+                        },
+                    )
+                except Exception as exc:
+                    errors.append(
+                        {
+                            "entity_id": entity,
+                            "document_id": "QUERY",
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
+                    coverage_rows.append(
+                        {
+                            "source_identity": CNINFO_SOURCE_ID,
+                            "entity_id": entity,
+                            "coverage_start": start,
+                            "coverage_end": end,
+                            "query_status": "FAILED",
+                            "forecast_documents": 0,
+                            "direction_documents": 0,
+                        }
+                    )
+                    continue
 
         candidates = raw[
             raw["公告标题"].map(classify_cninfo_title).eq("ISSUER_EARNINGS_FORECAST")
@@ -242,7 +267,7 @@ def materialize_cninfo_earnings_directions(
                 if not attachment:
                     raise ValueError("earnings forecast lacks immutable attachment URL")
                 current_identity = _direction_document_identity(
-                    source_commit=str(source_commit),
+                    source_commit=progress_commit,
                     symbol=symbol,
                     document_id=document_id,
                     attachment_url=attachment,
@@ -257,7 +282,9 @@ def materialize_cninfo_earnings_directions(
                 )
                 loaded_current = store.load(current_identity)
                 loaded_legacy = (
-                    None if loaded_current is not None else store.load(legacy_identity)
+                    None
+                    if loaded_current is not None
+                    else legacy_store.load(legacy_identity)
                 )
                 classification_state = ""
                 metadata: dict[str, object] = {}
@@ -318,6 +345,8 @@ def materialize_cninfo_earnings_directions(
                         "document_retrieval_url": downloaded.retrieval_url or downloaded.url,
                         "document_sha256": downloaded.sha256,
                         "classification_state": classification_state,
+                        "progress_checkpoint_source_commit": progress_commit,
+                        "legacy_checkpoint_source_commit": checkpoint_commit,
                         "title": str(announcement["公告标题"]),
                         "evidence_available_date": str(available_date.date()),
                     }
@@ -404,6 +433,12 @@ def materialize_cninfo_earnings_directions(
         "end_date": str(end.date()),
         "symbols": len(unique_symbols),
         "checkpoint_source_commit": checkpoint_commit,
+        "progress_checkpoint_source_commit": progress_commit,
+        "checkpoint_store_mode": (
+            "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1"
+            if legacy_checkpoint_dir is not None
+            else "SINGLE_STORE_COMPATIBILITY_MODE"
+        ),
         "checkpoint_reuse_mode": (
             "CURRENT_SOURCE_COMMIT"
             if checkpoint_commit == str(source_commit)
@@ -422,6 +457,8 @@ def materialize_cninfo_earnings_directions(
             "PARTIAL_COVERAGE" if len(coverage) else "DATA_INSUFFICIENT"
         ),
         "resumed_documents": resumed_docs,
+        "resumed_progress_queries": resumed_progress_queries,
+        "reused_legacy_queries": reused_legacy_queries,
         "reused_legacy_direction_documents": reused_legacy_docs,
         "executed_documents": executed_docs,
         "unknown_is_not_not_down": True,

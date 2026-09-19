@@ -29,7 +29,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -159,68 +159,212 @@ jobs:
               raise SystemExit(
                   "qualification tolerance V1 is authorized only for its frozen window"
               )
+          progress = contract.get("progress_cache_policy") or {}
+          if progress.get("mode") != "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1":
+              raise SystemExit("fundamental progress cache mode mismatch")
+          if progress.get("save_after_each_completed_work_unit") is not True:
+              raise SystemExit("fundamental progress cache must save each completed work unit")
+          if progress.get("cache_key_independent_of_workflow_source_commit") is not True:
+              raise SystemExit("fundamental progress cache must survive workflow-only commits")
+          if progress.get("semantic_code_change_requires_new_generation_id") is not True:
+              raise SystemExit("fundamental progress generation safety missing")
+          if progress.get("formal_evidence_handoff") is not False:
+              raise SystemExit("partial progress cache cannot be formal evidence")
+          if progress.get("partial_progress_never_grants_qualification") is not True:
+              raise SystemExit("partial progress cache qualification boundary missing")
+          if progress.get("partial_failed_work_unit_cache_allowed") is not True:
+              raise SystemExit("failed work-unit progress persistence policy missing")
+          if progress.get("partial_failed_work_unit_cache_never_formal_evidence") is not True:
+              raise SystemExit("failed work-unit progress cannot be formal evidence")
+
+          persistent = contract.get("persistent_work_unit_bundle_policy") or {}
+          if persistent.get("schema_version") != "v4a-fundamental-progress-unit-v1":
+              raise SystemExit("persistent work-unit schema mismatch")
+          if persistent.get("release_tag") != "v4a-stage-bundles-v1":
+              raise SystemExit("persistent work-unit release mismatch")
+          if persistent.get("restore_before_materialization") is not True:
+              raise SystemExit("persistent work-unit restore policy missing")
+          if persistent.get("publish_only_after_work_unit_qualification_gate") is not True:
+              raise SystemExit("persistent work-unit gate policy missing")
+          if persistent.get("immutable_no_overwrite") is not True:
+              raise SystemExit("persistent work-unit immutability missing")
+          if persistent.get("formal_evidence_handoff") is not False:
+              raise SystemExit("persistent work-unit cannot grant formal evidence")
+          if persistent.get("requires_full_group_assembly") is not True:
+              raise SystemExit("persistent work-unit must require full group assembly")
+          if persistent.get("partial_progress_never_grants_qualification") is not True:
+              raise SystemExit("persistent work-unit qualification boundary missing")
+
+          work_unit_count = int(progress.get("work_unit_count") or 0)
+          legacy_source_shard_count = int(progress.get("legacy_source_shard_count") or 0)
+          unit = int(os.environ["SHARD"])
+          if work_unit_count != 16 or not (0 <= unit < work_unit_count):
+              raise SystemExit("fundamental work-unit contract mismatch")
+          if legacy_source_shard_count != 4:
+              raise SystemExit("fundamental legacy shard-count contract mismatch")
+          legacy_source_shard = unit % legacy_source_shard_count
+
           if exact_window:
               checkpoint_commit = str(contract["legacy_checkpoint_source_commit"])
               compatibility = str(contract["legacy_stage_compatibility_key"])
               legacy_prefix = (
                   f"v4a-fundamental-{compatibility}-{checkpoint_commit}-"
-                  f"{os.environ['SHARD']}-"
+                  f"{legacy_source_shard}-"
               )
           else:
               checkpoint_commit = os.environ["CURRENT_SHA"]
               legacy_prefix = "v4a-fundamental-disabled-legacy-checkpoint-reuse-"
 
+          progress_id = str(progress.get("generation_id") or "")
+          progress_commit = str(progress.get("progress_checkpoint_source_commit") or "")
+          if not progress_id or len(progress_commit) != 40:
+              raise SystemExit("fundamental progress cache identity incomplete")
+
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as handle:
               handle.write(f"FILING_CHECKPOINT_SOURCE_COMMIT={checkpoint_commit}\n")
               handle.write(f"LEGACY_FILING_CACHE_PREFIX={legacy_prefix}\n")
+              handle.write(f"LEGACY_SOURCE_SHARD={legacy_source_shard}\n")
+              handle.write(f"PROGRESS_CACHE_ID={progress_id}\n")
+              handle.write(f"PROGRESS_CHECKPOINT_SOURCE_COMMIT={progress_commit}\n")
+              handle.write(f"FUNDAMENTAL_WORK_UNIT_COUNT={work_unit_count}\n")
           PY
-      - name: Restore filing checkpoints
+      - name: Resolve reusable Fundamental work-unit identity
+        run: |
+          mkdir -p bundle-meta
+          python scripts/v4a_fundamental_progress_bundle.py key \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --shared-manifest bundle-meta/shared.json \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --unit-index "${{ matrix.shard }}" \
+            --unit-count "${{ env.FUNDAMENTAL_WORK_UNIT_COUNT }}" \
+            --out bundle-meta/work-unit-key.json
+          echo "WORK_UNIT_ASSET_BASE=$(python -c 'import json; print(json.load(open("bundle-meta/work-unit-key.json"))["asset_base"])')" >> "$GITHUB_ENV"
+          echo "PROGRESS_SEMANTIC_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/work-unit-key.json"))["semantic_fingerprint"][:20])')" >> "$GITHUB_ENV"
+      - name: Restore immutable completed work unit
+        id: work_unit_restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/work-unit
+          if bash scripts/download_v4a_release_bundle.sh \
+            v4a-stage-bundles-v1 "${{ env.WORK_UNIT_ASSET_BASE }}" bundle/work-unit; then
+            mkdir -p "stage-shard/${{ matrix.shard }}"
+            python scripts/v4a_fundamental_progress_bundle.py verify \
+              --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+              --shared-manifest bundle-meta/shared.json \
+              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+              --unit-index "${{ matrix.shard }}" \
+              --unit-count "${{ env.FUNDAMENTAL_WORK_UNIT_COUNT }}" \
+              --archive "bundle/work-unit/${{ env.WORK_UNIT_ASSET_BASE }}.tar.gz" \
+              --manifest "bundle/work-unit/${{ env.WORK_UNIT_ASSET_BASE }}.manifest.json" \
+              --extract-to "stage-shard/${{ matrix.shard }}"
+            python scripts/v4a_fundamental_progress_bundle.py rebase \
+              --stage-root "stage-shard/${{ matrix.shard }}" \
+              --manifest "bundle/work-unit/${{ env.WORK_UNIT_ASSET_BASE }}.manifest.json" \
+              --source-commit "${{ github.sha }}" \
+              --out bundle-meta/work-unit-rebase.json
+            echo "reused=true" >> "$GITHUB_OUTPUT"
+          else
+            rm -rf bundle/work-unit "stage-shard/${{ matrix.shard }}"
+            mkdir -p "stage-shard/${{ matrix.shard }}"
+            echo "reused=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Restore durable V9 progress
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/progress
+          key: v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-
+      - name: Restore legacy V8 checkpoints at original cache path
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/filings
-          key: v4a-fundamental-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-fund-legacy-readonly-${{ github.run_id }}-${{ matrix.shard }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-fundamental-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-
             ${{ env.LEGACY_FILING_CACHE_PREFIX }}
+      - name: Isolate restored legacy V8 checkpoints read-only
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
+        run: |
+          rm -rf .cache/capital_pit_v4a/derived/legacy
+          if [[ -d .cache/capital_pit_v4a/derived/filings ]]; then
+            mv .cache/capital_pit_v4a/derived/filings .cache/capital_pit_v4a/derived/legacy
+          else
+            mkdir -p .cache/capital_pit_v4a/derived/legacy
+          fi
+          mkdir -p .cache/capital_pit_v4a/derived/progress
       - name: Materialize fundamental/earnings shard
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
         id: materialize
         run: |
-          mkdir -p "stage-shard/${{ matrix.shard }}" .cache/capital_pit_v4a/derived/filings
+          mkdir -p "stage-shard/${{ matrix.shard }}" \
+            .cache/capital_pit_v4a/derived/progress \
+            .cache/capital_pit_v4a/derived/legacy
           python scripts/materialize_v4a_fundamental_earnings_shard.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --calendar-csv stage/shared/trading_calendar.csv \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --source-commit "${{ github.sha }}" \
             --filing-checkpoint-source-commit "${{ env.FILING_CHECKPOINT_SOURCE_COMMIT }}" \
-            --shard-index "${{ matrix.shard }}" --shard-count 4 \
-            --checkpoint-dir .cache/capital_pit_v4a/derived/filings \
+            --progress-checkpoint-source-commit "${{ env.PROGRESS_CHECKPOINT_SOURCE_COMMIT }}" \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count "${{ env.FUNDAMENTAL_WORK_UNIT_COUNT }}" \
+            --checkpoint-dir .cache/capital_pit_v4a/derived/progress \
+            --legacy-checkpoint-dir .cache/capital_pit_v4a/derived/legacy \
             --out-dir "stage-shard/${{ matrix.shard }}"
-      - name: Save filing checkpoints
-        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+      - name: Save durable V9 work-unit progress
+        if: ${{ always() && steps.work_unit_restore.outputs.reused != 'true' && steps.materialize.outcome != 'skipped' }}
         uses: actions/cache/save@v4
         with:
-          path: .cache/capital_pit_v4a/derived/filings
-          key: v4a-fundamental-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .cache/capital_pit_v4a/derived/progress
+          key: v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal shard
-        if: ${{ success() }}
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && success() }}
         run: |
           python scripts/write_v4a_stage_receipt.py --root "stage-shard/${{ matrix.shard }}" \
-            --stage-kind fundamental_earnings --stage-id "fundamental-${{ matrix.shard }}-of-4" \
+            --stage-kind fundamental_earnings --stage-id "fundamental-${{ matrix.shard }}-of-16" \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --out "stage-shard/${{ matrix.shard }}/receipt.json"
-      - name: Preserve shard diagnostics
-        if: ${{ success() }}
+      - name: Preserve work-unit diagnostics before qualification gate
+        if: ${{ always() && steps.work_unit_restore.outputs.reused != 'true' && steps.materialize.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
-          name: v4a-fundamental-shard-${{ matrix.shard }}-${{ github.run_id }}
+          name: v4a-fundamental-diagnostics-${{ matrix.shard }}-${{ github.run_id }}
           path: stage-shard/${{ matrix.shard }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
       - name: Qualification gate
         run: |
           python scripts/assert_v4a_stage_qualifiable.py --kind fundamental_earnings \
             --root "stage-shard/${{ matrix.shard }}"
+      - name: Publish immutable completed work unit
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && success() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "dist-work-unit/${{ matrix.shard }}"
+          python scripts/v4a_fundamental_progress_bundle.py package \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --shared-manifest bundle-meta/shared.json \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --unit-index "${{ matrix.shard }}" \
+            --unit-count "${{ env.FUNDAMENTAL_WORK_UNIT_COUNT }}" \
+            --stage-root "stage-shard/${{ matrix.shard }}" \
+            --out-dir "dist-work-unit/${{ matrix.shard }}" \
+            --out "dist-work-unit/${{ matrix.shard }}/package.json"
+          BASE="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset_base"])' "dist-work-unit/${{ matrix.shard }}/package.json")"
+          bash scripts/publish_v4a_release_bundle.sh \
+            v4a-stage-bundles-v1 "dist-work-unit/${{ matrix.shard }}" "$BASE"
+      - name: Upload qualified current-run work unit
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-fundamental-shard-${{ matrix.shard }}-${{ github.run_id }}
+          path: stage-shard/${{ matrix.shard }}
+          if-no-files-found: error
+          retention-days: 90
 
   package:
     needs: shards

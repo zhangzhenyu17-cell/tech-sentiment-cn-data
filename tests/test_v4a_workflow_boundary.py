@@ -102,7 +102,6 @@ def test_stage_cache_namespaces_remain_exact_commit_and_stage_compatible():
         "v4a-financing.yml",
         "v4a-issuer-source.yml",
         "v4a-issuer-szse-migration.yml",
-        "v4a-fundamental-earnings.yml",
         "v4a-prices.yml",
         "v4a-policy.yml",
     )
@@ -118,6 +117,44 @@ def test_stage_cache_namespaces_remain_exact_commit_and_stage_compatible():
         assert "STAGE_COMPAT" in cache_lines
         assert "github.sha" in cache_lines
 
+
+def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handoff():
+    text = _text(WORKFLOW_DIR / "v4a-fundamental-earnings.yml")
+    assert "max-parallel: 4" in text
+    assert (
+        "shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]"
+        in text
+    )
+    assert "FUNDAMENTAL_WORK_UNIT_COUNT" in text
+    assert "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1" in text
+    assert "Restore durable V9 progress" in text
+    assert "Restore legacy V8 checkpoints at original cache path" in text
+    assert "Isolate restored legacy V8 checkpoints read-only" in text
+    assert "Save durable V9 work-unit progress" in text
+    assert ".cache/capital_pit_v4a/derived/progress" in text
+    assert ".cache/capital_pit_v4a/derived/legacy" in text
+    assert "--legacy-checkpoint-dir" in text
+    assert "--progress-checkpoint-source-commit" in text
+    assert "FUNDAMENTAL_WORK_UNIT_COUNT" in text
+    assert "partial progress cache cannot be formal evidence" in text
+    assert "v4a_fundamental_progress_bundle.py key" in text
+    assert "v4a_fundamental_progress_bundle.py verify" in text
+    assert "v4a_fundamental_progress_bundle.py rebase" in text
+    assert "v4a_fundamental_progress_bundle.py package" in text
+    assert "Restore immutable completed work unit" in text
+    assert "Publish immutable completed work unit" in text
+    assert "v4a-stage-bundles-v1" in text
+    assert "persistent work-unit must require full group assembly" in text
+
+    progress_cache_lines = "\n".join(
+        line for line in text.splitlines() if "v4a-fund-progress-" in line
+    )
+    assert "PROGRESS_CACHE_ID" in progress_cache_lines
+    assert "PROGRESS_SEMANTIC_KEY" in progress_cache_lines
+    assert "inputs.start_date" in progress_cache_lines
+    assert "inputs.end_date" in progress_cache_lines
+    assert "matrix.shard" in progress_cache_lines
+    assert "github.sha" not in progress_cache_lines
 
 def test_derived_workflow_consumes_only_verified_persistent_upstreams():
     text = _text(WORKFLOW_DIR / "v4a-derived.yml")
