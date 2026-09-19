@@ -141,6 +141,35 @@
       "archive_sha256": "1c284766cd1edf134b134355d955068e89182e63c7a9e743246b8f77cc6b1eb8",
       "archive_bytes": 59232,
       "stage_receipt_sha256": "e45cd1f8ce23cfac9955ee07e844050a609525f70abd1b3ce8f00d2004745741"
+    },
+    "fundamental": {
+      "source_run_id": 35451946515,
+      "run_attempt": 1,
+      "source_commit": "f55033f31e00bfed5bda798929dc5dccecbceac7",
+      "stage_kind": "fundamental_group",
+      "stage_id": "fundamental-all",
+      "asset_base": "v4a-fundamental-20220104-20260917-56e8c44ca678668bfc17",
+      "producer_fingerprint": "12b1e086c74d75ed0f7a018fffb66c2d8c18bab36e3e92ab544264105e6fd78c",
+      "compatibility_key": "56e8c44ca678668bfc17fd7ef5da5a9c32503dcbac03eb86fa3963ecd0cf751b",
+      "bundle_identity": "f558db45af7a9e8b5e69dad1275f98e93e6ee49c09914fa591edd4348cfde4c4",
+      "archive_sha256": "c1df2ec495657f52cf34935feb5ab94c7159f43e4cbf6f24bb8fbcf43ffdb54e",
+      "archive_bytes": 4384918,
+      "stage_receipt_sha256": "2b27a25584e22521811ceebfdc873363d6a8fc43cf82d1b442d8ced121b91770"
     }
+  },
+  "stage_allowed_producer_drifts": {
+    "fundamental": [
+      {
+        "path": "src/tech_sentiment/v4a_persistent_stage.py",
+        "source_sha256": "8d14c01b31007ef68e2d3a8e5ea1e3b36256ddd4eefbcd13dab9045dae9acfa7",
+        "source_bytes": 20123,
+        "current_sha256": "d7b77125fcd85c67ef19aa9067acc9bbaf3ccba2a58390519fb71f0f2644cd02",
+        "current_bytes": 20269,
+        "classification": "DERIVED_ONLY_COMPATIBILITY_IDENTITY_BINDING",
+        "fundamental_materialization_semantics_changed": false,
+        "fundamental_qualification_semantics_changed": false,
+        "pit_no_lookahead_semantics_changed": false
+      }
+    ]
   }
 }
