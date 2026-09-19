@@ -98,6 +98,78 @@ def test_all_v4a_workflows_are_manual_only():
             assert forbidden not in text, (path, forbidden)
 
 
+def test_all_v4a_jobs_use_maximum_six_hour_hard_ceiling():
+    for path in ALL_V4A_WORKFLOWS:
+        text = _text(path)
+        timeouts = re.findall(r"timeout-minutes:\\s*(\\d+)", text)
+        assert timeouts, path
+        assert set(timeouts) == {"360"}, (path, timeouts)
+
+
+def test_checkpointed_long_materializers_reserve_save_window_before_hard_timeout():
+    required = {
+        "v4a-capital.yml": "qualify_capital_inputs.py",
+        "v4a-financing.yml": "materialize_financing_history.py",
+        "v4a-issuer-source.yml": "materialize_pit_evidence.py",
+        "v4a-issuer-szse-migration.yml": "materialize_v4a_szse_issuer.py",
+        "v4a-fundamental-earnings.yml": "materialize_v4a_fundamental_earnings_shard.py",
+        "v4a-prices.yml": "materialize_v4a_price_shard.py",
+        "v4a-policy.yml": "materialize_v4a_policy_stage.py",
+        "v4a-derived.yml": "assemble_v4a_derived_pit.py",
+    }
+    for name, materializer in required.items():
+        text = _text(WORKFLOW_DIR / name)
+        assert (
+            f"timeout --signal=TERM --kill-after=2m 330m python scripts/{materializer}"
+            in text
+        ), name
+        assert "actions/cache/restore@v4" in text, name
+        assert "actions/cache/save@v4" in text, name
+
+
+def test_non_fundamental_checkpoint_keys_use_semantic_progress_identity_not_workflow_sha():
+    for name in (
+        "v4a-capital.yml",
+        "v4a-financing.yml",
+        "v4a-issuer-source.yml",
+        "v4a-issuer-szse-migration.yml",
+        "v4a-prices.yml",
+        "v4a-policy.yml",
+        "v4a-derived.yml",
+    ):
+        text = _text(WORKFLOW_DIR / name)
+        assert "v4a_persistent_stage_bundle.py progress-key" in text, name
+        assert "PROGRESS_KEY" in text, name
+        cache_lines = "\n".join(
+            line
+            for line in text.splitlines()
+            if "progress-v1-" in line and ("key:" in line or line.strip().startswith("v4a-"))
+        )
+        assert "github.sha" not in cache_lines, (name, cache_lines)
+
+
+def test_derived_uses_identity_strict_phase_checkpoint_resume():
+    text = _text(WORKFLOW_DIR / "v4a-derived.yml")
+    assert "Resolve Derived semantic progress identity" in text
+    assert "Restore Derived phase checkpoints" in text
+    assert "Save Derived phase checkpoints" in text
+    assert ".cache/capital_pit_v4a/derived/assembly" in text
+    assert "--checkpoint-dir .cache/capital_pit_v4a/derived/assembly" in text
+    script = Path("scripts/assemble_v4a_derived_pit.py").read_text(encoding="utf-8")
+    assert "v4a-derived-phase-checkpoint-v1" in script
+    for phase in ("fundamental", "valuation", "review", "pit_audit", "final"):
+        assert f'"{phase}"' in script
+    for identity_field in (
+        "symbols_sha256",
+        "calendar_sha256",
+        "issuer_receipt_sha256",
+        "policy_receipt_sha256",
+        "fundamental_receipt_sha256",
+        "price_receipt_sha256",
+    ):
+        assert identity_field in script
+
+
 def test_final_workflow_identity_is_preserved_for_private_intake():
     text = _text(FINAL)
     assert text.startswith("name: qualify-capital-inputs\n")
