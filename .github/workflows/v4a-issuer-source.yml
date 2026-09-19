@@ -34,7 +34,7 @@ jobs:
   cninfo:
     if: ${{ inputs.source == 'cninfo' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       max-parallel: 4
@@ -118,7 +118,7 @@ jobs:
   sse:
     if: ${{ inputs.source == 'sse' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -193,7 +193,7 @@ jobs:
   szse:
     if: ${{ inputs.source == 'szse' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -267,7 +267,7 @@ jobs:
     if: ${{ always() && ((inputs.source == 'cninfo' && needs.cninfo.result == 'success') || (inputs.source == 'sse' && needs.sse.result == 'success') || (inputs.source == 'szse' && needs.szse.result == 'success')) }}
     needs: [cninfo, sse, szse]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
