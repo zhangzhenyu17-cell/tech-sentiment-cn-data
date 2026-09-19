@@ -78,9 +78,8 @@ jobs:
               raise SystemExit("fundamental checkpoint reuse contract schema mismatch")
           if contract.get("status") != "FROZEN_ENGINEERING_CHECKPOINT_REUSE":
               raise SystemExit("fundamental checkpoint reuse contract is not frozen")
-          boundary_flags = (
+          hard_boundary_flags = (
               "acquisition_semantics_changed",
-              "parser_semantics_changed",
               "checkpoint_schema_changed",
               "evidence_source_eligibility_changed",
               "pit_no_lookahead_semantics_changed",
@@ -89,8 +88,23 @@ jobs:
               "production_authority_changed",
               "trading_authority_changed",
           )
-          if any(bool(contract.get(key)) for key in boundary_flags):
+          if any(bool(contract.get(key)) for key in hard_boundary_flags):
               raise SystemExit("fundamental checkpoint reuse contract boundary drift")
+
+          if bool(contract.get("parser_semantics_changed")):
+              upgrade = contract.get("parser_upgrade_policy") or {}
+              if not isinstance(upgrade, dict):
+                  raise SystemExit("fundamental parser upgrade policy missing")
+              if upgrade.get("mode") != "SELECTIVE_REPARSE_INCOMPLETE_LEGACY_DOCUMENTS":
+                  raise SystemExit("fundamental parser upgrade mode mismatch")
+              if upgrade.get("exact_legacy_document_sha256_required") is not True:
+                  raise SystemExit("fundamental parser upgrade must require legacy SHA256")
+              if upgrade.get("unit_inference_allowed") is not False:
+                  raise SystemExit("fundamental parser upgrade cannot infer units")
+              if upgrade.get("substitute_document_allowed") is not False:
+                  raise SystemExit("fundamental parser upgrade cannot substitute documents")
+              if upgrade.get("evidence_eligibility_changed") is not False:
+                  raise SystemExit("fundamental parser upgrade cannot change evidence eligibility")
 
           window = contract.get("qualification_window") or {}
           exact_window = (
