@@ -54,18 +54,22 @@ jobs:
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-key.json
           echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/source-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+          python scripts/v4a_persistent_stage_bundle.py progress-key \
+            --family issuer_szse --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-progress-key.json
+          echo "PROGRESS_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/source-progress-key.json"))["progress_key"])' )" >> "$GITHUB_ENV"
       - name: Restore SZSE migration checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-szse-migration-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-szse-migration-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-issuer-szse-migration-${{ env.STAGE_COMPAT }}-${{ github.sha }}-
+            v4a-issuer-szse-migration-progress-v1-${{ env.PROGRESS_KEY }}-
       - name: Materialize SZSE issuer archive with frozen code migration
         id: materialize
         run: |
           mkdir -p stage-source/szse .cache/capital_pit_v4a/issuer
-          python scripts/materialize_v4a_szse_issuer.py \
+          timeout --signal=TERM --kill-after=2m 330m python scripts/materialize_v4a_szse_issuer.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
@@ -77,7 +81,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-szse-migration-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-szse-migration-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal SZSE shard
         if: ${{ success() }}
         run: |
