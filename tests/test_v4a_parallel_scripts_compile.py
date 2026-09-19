@@ -12,6 +12,7 @@ PARALLEL_SCRIPTS = (
     "scripts/materialize_v4a_policy_stage.py",
     "scripts/assemble_v4a_derived_pit.py",
     "scripts/v4a_persistent_stage_bundle.py",
+    "scripts/v4a_fundamental_progress_bundle.py",
     "scripts/build_v4a_stage_lineage_summary.py",
 )
 
