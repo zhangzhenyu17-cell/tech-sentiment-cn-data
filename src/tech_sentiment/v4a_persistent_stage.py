@@ -92,11 +92,15 @@ STAGE_SPECS: dict[str, StageSpec] = {
         stage_kind="issuer_source_group",
         stage_id="issuer-szse-all",
         entrypoints=(
+            "scripts/materialize_v4a_szse_issuer.py",
             "scripts/materialize_pit_evidence.py",
             "scripts/assert_v4a_stage_qualifiable.py",
             "scripts/write_v4a_stage_receipt.py",
         ),
-        extra_files=(".github/workflows/v4a-issuer-source.yml",),
+        extra_files=(
+            ".github/workflows/v4a-issuer-szse-migration.yml",
+            "reference/v4a_szse_security_code_migration_contract_v1.json",
+        ),
     ),
     "issuer_aggregate": StageSpec(
         family="issuer_aggregate",
@@ -366,6 +370,36 @@ def _deterministic_tar(archive_path: Path, *, root: Path, files: Iterable[Path])
                         archive.addfile(info, handle)
 
 
+_SZSE_MIGRATION_MARKER = "v4a_szse_security_code_migration_contract_v1.json"
+
+
+def _validate_family_stage_contract(root: Path, family: str) -> None:
+    if family != "issuer_szse":
+        return
+    marker = root / "shards" / "szse" / _SZSE_MIGRATION_MARKER
+    if not marker.is_file():
+        raise ValueError(
+            "issuer_szse stage missing frozen same-security code-migration contract"
+        )
+    payload = json.loads(marker.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != "v4a-szse-security-code-migration-v1":
+        raise ValueError("issuer_szse code-migration contract schema mismatch")
+    if payload.get("status") != "FROZEN_ENGINEERING_IDENTITY_ALIAS":
+        raise ValueError("issuer_szse code-migration contract status mismatch")
+    if payload.get("same_listed_security_identity_only") is not True:
+        raise ValueError("issuer_szse migration must remain same-security only")
+    for key in (
+        "evidence_source_eligibility_changed",
+        "pit_no_lookahead_semantics_changed",
+        "research_scope_changed",
+        "future_outcomes_used",
+        "production_authority_changed",
+        "trading_authority_changed",
+    ):
+        if payload.get(key) is not False:
+            raise ValueError(f"issuer_szse code-migration boundary drift: {key}")
+
+
 def package_stage_bundle(
     *,
     repo_root: str | Path,
@@ -381,6 +415,7 @@ def package_stage_bundle(
         raise ValueError(f"unknown V4-A stage family: {family}")
     spec = STAGE_SPECS[family]
     root = Path(stage_root).resolve()
+    _validate_family_stage_contract(root, family)
     receipt_path = root / "receipt.json"
     receipt = verify_stage_receipt(
         root=root,
@@ -485,6 +520,7 @@ def verify_and_extract_stage_bundle(
     if target.exists() and any(target.iterdir()):
         raise ValueError(f"persistent stage extraction target is not empty: {target}")
     _safe_extract(archive, target)
+    _validate_family_stage_contract(target, family)
     original_commit = str(manifest.get("original_source_commit") or "")
     if not original_commit:
         raise ValueError("persistent stage original source commit missing")
