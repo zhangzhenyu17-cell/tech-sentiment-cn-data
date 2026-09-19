@@ -8,6 +8,11 @@ import pytest
 
 import tech_sentiment.official_filing_facts as filing_module
 from tech_sentiment.official_filing_facts import (
+    FILING_PRESENTATION_BODY,
+    FILING_PRESENTATION_FULL,
+    FILING_PRESENTATION_SUMMARY,
+    classify_official_filing_presentation,
+    latest_filing_fact_as_of,
     download_official_document,
     build_filing_fact_rows,
     derive_fundamental_trend_evidence,
@@ -641,6 +646,61 @@ def test_same_timestamp_conflicting_unmarked_facts_remain_fail_closed():
         derive_fundamental_trend_evidence(
             pd.concat([first, second, current], ignore_index=True)
         )
+
+
+def test_official_pdf_title_classifies_summary_body_and_full_carriers():
+    assert (
+        classify_official_filing_presentation(
+            "公司代码：688002 烟台睿创微纳技术股份有限公司 2020 年年度报告摘要"
+        )
+        == FILING_PRESENTATION_SUMMARY
+    )
+    assert (
+        classify_official_filing_presentation(
+            "中微半导体设备（上海）股份有限公司 2020 年第一季度报告正文"
+        )
+        == FILING_PRESENTATION_BODY
+    )
+    assert (
+        classify_official_filing_presentation(
+            "中微半导体设备（上海）股份有限公司 2020 年第一季度报告"
+        )
+        == FILING_PRESENTATION_FULL
+    )
+
+
+def test_same_timestamp_full_carrier_beats_summary_when_facts_conflict():
+    summary = _facts(
+        "2020年年度报告",
+        "2021-04-28",
+        "summary_doc",
+        100.0,
+        10.0,
+        published="2021-04-28 00:00:00",
+    )
+    full = _facts(
+        "2020年年度报告",
+        "2021-04-28",
+        "full_doc",
+        120.0,
+        12.0,
+        published="2021-04-28 00:00:00",
+    )
+    summary["filing_title"] = "烟台睿创微纳技术股份有限公司2020年年度报告"
+    full["filing_title"] = "2020年年度报告"
+    summary["document_presentation_variant"] = FILING_PRESENTATION_SUMMARY
+    full["document_presentation_variant"] = FILING_PRESENTATION_FULL
+
+    selected = latest_filing_fact_as_of(
+        pd.concat([summary, full], ignore_index=True),
+        entity_id="600000.SH",
+        fact_type="OPERATING_REVENUE",
+        period_end=pd.Timestamp("2020-12-31"),
+        as_of=pd.Timestamp("2021-04-28"),
+    )
+    assert selected is not None
+    assert selected["document_id"] == "full_doc"
+    assert selected["value"] == pytest.approx(120.0)
 
 
 class _FakeResponse:
