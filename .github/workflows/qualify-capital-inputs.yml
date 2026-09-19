@@ -172,6 +172,8 @@ jobs:
           cp -a stage/derived/pit_evidence_materialization/. output/pit_evidence_materialization/
           cp reference/v4a_fundamental_pit_state_contract_v1.json \
             output/pit_evidence_materialization/fundamental_pit_state_contract_v1.json
+          cp reference/v4a_qualification_tolerance_contract_v1.json \
+            output/pit_evidence_materialization/v4a_qualification_tolerance_contract_v1.json
 
       - name: Build persistent-stage lineage receipt summary
         run: |
