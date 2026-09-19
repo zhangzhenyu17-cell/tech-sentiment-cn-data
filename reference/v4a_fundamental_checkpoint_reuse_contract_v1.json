@@ -16,7 +16,7 @@
     35384571822,
     35419103373
   ],
-  "reuse_reason": "The repair changes only post-acquisition same-publication-time revision resolution and adds filing_title to the assembled stage output from the already-cached official announcement index; acquisition endpoints, immutable document identity, PDF parsing, standardized filing fact extraction, issuer earnings direction classification, checkpoint payloads, and checkpoint schemas are unchanged.",
+  "reuse_reason": "The repair changes only post-acquisition deterministic filing-version selection and presentation-carrier resolution. Raw CNINFO announcement-index checkpoints, immutable document fact checkpoints, parser semantics, issuer earnings direction classification, checkpoint payloads, and checkpoint schemas are unchanged. For unresolved conflicting carriers only, exact official PDFs may be re-downloaded and must match the checkpoint document SHA256 before internal-title classification.",
   "acquisition_semantics_changed": false,
   "parser_semantics_changed": false,
   "checkpoint_schema_changed": false,
@@ -28,5 +28,8 @@
   "trading_authority_changed": false,
   "stage_output_revision_metadata_extended": true,
   "stage_output_revision_metadata_field": "filing_title",
-  "checkpoint_payload_modified": false
+  "checkpoint_payload_modified": false,
+  "stage_output_document_carrier_selection": "SAME_PUBLICATION_TITLE_FAMILY_PREFER_COMPLETE_OR_CANONICAL_OVER_BODY_KEEP_BODY_IF_SOLE",
+  "conflict_only_official_pdf_presentation_recheck": true,
+  "conflict_recheck_requires_exact_checkpoint_sha256": true
 }

@@ -14,7 +14,9 @@ from .official_filing_facts import (
     DERIVED_FUNDAMENTAL_SOURCE_ID,
     FILING_FACT_COLUMNS,
     FILING_PARSER_VERSION,
+    FILING_PRESENTATION_UNKNOWN,
     build_filing_fact_rows,
+    classify_official_filing_presentation,
     derive_fundamental_trend_evidence,
     download_official_document,
     extract_pdf_text,
@@ -80,6 +82,117 @@ def is_numeric_financial_filing_title(title: object) -> bool:
     ):
         return False
     return True
+
+
+def _numeric_filing_title_family(title: object) -> str:
+    """Collapse only presentation variants of the same public filing title."""
+
+    text = re.sub(r"\s+", "", str(title or ""))
+    return re.sub(r"(?:（?(?:正文|全文)）?)$", "", text)
+
+
+def _numeric_filing_variant_priority(title: object) -> int:
+    """Prefer the complete/canonical filing when body and full variants coexist."""
+
+    text = re.sub(r"\s+", "", str(title or ""))
+    return 0 if re.search(r"(?:（?正文）?)$", text) else 1
+
+
+def _select_primary_numeric_filing_candidates(raw: pd.DataFrame) -> pd.DataFrame:
+    """Remove duplicate presentation variants without dropping a sole body filing.
+
+    CNINFO historically publishes quarterly filings as both a short "正文"
+    document and a complete "报告"/"全文" document at the same official
+    publication timestamp. They are parallel presentation carriers, not filing
+    revisions. When both exist, standardized numeric facts must come from the
+    complete/canonical carrier. If only the body carrier exists, retain it so
+    historical coverage does not silently disappear.
+    """
+
+    candidates = raw[raw["公告标题"].map(is_numeric_financial_filing_title)].copy()
+    if candidates.empty:
+        return candidates
+    candidates["_filing_title_family"] = candidates["公告标题"].map(
+        _numeric_filing_title_family
+    )
+    candidates["_filing_variant_priority"] = candidates["公告标题"].map(
+        _numeric_filing_variant_priority
+    )
+    group_cols = ["公告时间", "_filing_title_family"]
+    best = candidates.groupby(group_cols, dropna=False)["_filing_variant_priority"].transform(
+        "max"
+    )
+    return candidates[candidates["_filing_variant_priority"].eq(best)].drop(
+        columns=["_filing_title_family", "_filing_variant_priority"]
+    )
+
+
+def _enrich_conflicting_presentation_variants(
+    facts: pd.DataFrame,
+) -> tuple[pd.DataFrame, int]:
+    """Recheck only unresolved conflicting documents against exact official bytes."""
+
+    if facts.empty:
+        return facts, 0
+    out = facts.copy()
+    if "document_presentation_variant" not in out.columns:
+        out["document_presentation_variant"] = ""
+    group_cols = [
+        "entity_id",
+        "period_end",
+        "fact_type",
+        "evidence_available_date",
+        "publication_timestamp",
+    ]
+    document_variants: dict[str, str] = {}
+    rechecked = 0
+    for _, group in out.groupby(group_cols, dropna=False, sort=False):
+        if group["document_id"].astype(str).nunique() < 2:
+            continue
+        signatures = {
+            (float(row.value), str(row.unit))
+            for row in group.itertuples()
+        }
+        if len(signatures) < 2:
+            continue
+        for document_id in sorted(group["document_id"].astype(str).unique()):
+            if document_id in document_variants:
+                continue
+            rows = out[out["document_id"].astype(str).eq(document_id)]
+            existing = {
+                str(value)
+                for value in rows["document_presentation_variant"].dropna().astype(str)
+                if str(value).strip()
+                and str(value) != FILING_PRESENTATION_UNKNOWN
+            }
+            if len(existing) == 1:
+                document_variants[document_id] = next(iter(existing))
+                continue
+            if len(existing) > 1:
+                raise ValueError(
+                    f"filing document presentation metadata conflict: {document_id}"
+                )
+            row = rows.iloc[0]
+            downloaded = download_official_document(str(row["document_url"]))
+            expected_sha = str(row["document_sha256"])
+            if downloaded.sha256 != expected_sha:
+                raise ValueError(
+                    "official filing bytes changed during conflict recheck: "
+                    f"{document_id}: expected={expected_sha} actual={downloaded.sha256}"
+                )
+            text = extract_pdf_text(downloaded.content)
+            variant = classify_official_filing_presentation(text)
+            if variant == FILING_PRESENTATION_UNKNOWN:
+                raise ValueError(
+                    f"official filing presentation cannot be classified: {document_id}"
+                )
+            document_variants[document_id] = variant
+            rechecked += 1
+
+    for document_id, variant in document_variants.items():
+        mask = out["document_id"].astype(str).eq(document_id)
+        out.loc[mask, "document_presentation_variant"] = variant
+    return out, rechecked
 
 
 def _symbol_query_identity(
@@ -201,7 +314,7 @@ def materialize_versioned_filing_facts(
                 )
                 continue
 
-        candidates = raw[raw["公告标题"].map(is_numeric_financial_filing_title)].copy()
+        candidates = _select_primary_numeric_filing_candidates(raw)
         financial_documents = 0
         parsed_documents = 0
         symbol_failed = False
@@ -238,12 +351,19 @@ def materialize_versioned_filing_facts(
                     attachment_url=attachment,
                 )
                 loaded_doc = store.load(doc_identity)
+                presentation_variant = ""
                 if loaded_doc is not None:
                     facts = loaded_doc.frames["facts"]
+                    metadata = loaded_doc.receipt.get("metadata")
+                    if isinstance(metadata, dict):
+                        presentation_variant = str(
+                            metadata.get("document_presentation_variant") or ""
+                        )
                     resumed_documents += 1
                 else:
                     downloaded = download_official_document(attachment)
                     text = extract_pdf_text(downloaded.content)
+                    presentation_variant = classify_official_filing_presentation(text)
                     facts = build_filing_fact_rows(
                         entity_id=entity,
                         title=str(announcement["公告标题"]),
@@ -269,6 +389,7 @@ def materialize_versioned_filing_facts(
                             "document_url": downloaded.url,
                             "document_retrieval_url": downloaded.retrieval_url,
                             "document_sha256": downloaded.sha256,
+                            "document_presentation_variant": presentation_variant,
                         },
                     )
                     executed_documents += 1
@@ -277,6 +398,7 @@ def materialize_versioned_filing_facts(
                         raise ValueError("filing facts checkpoint lacks publication_timestamp")
                     facts = facts.copy()
                     facts["filing_title"] = str(announcement["公告标题"])
+                    facts["document_presentation_variant"] = presentation_variant
                     fact_parts.append(facts)
                     parsed_documents += 1
             except Exception as exc:
@@ -330,6 +452,7 @@ def materialize_versioned_filing_facts(
         ).drop(columns=["publication_timestamp_order"]).drop_duplicates(
             ["entity_id", "document_id", "revision_id", "fact_type"], keep="last"
         ).reset_index(drop=True)
+    facts, presentation_recheck_documents = _enrich_conflicting_presentation_variants(facts)
     trends = derive_fundamental_trend_evidence(facts)
     coverage = pd.DataFrame(coverage_rows)
     complete_entities = int(
@@ -361,6 +484,11 @@ def materialize_versioned_filing_facts(
             else "PARTIAL_COVERAGE" if len(trends) else "DATA_INSUFFICIENT"
         ),
         "fundamental_state_mapping_state": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1_DEFINED_SEPARATELY",
+        "document_variant_selection": (
+            "ANNOUNCEMENT_TITLE_FAMILY_PREFER_COMPLETE_OR_CANONICAL_OVER_BODY_"
+            "THEN_CONFLICT_ONLY_OFFICIAL_PDF_INTERNAL_TITLE_SHA_VERIFIED"
+        ),
+        "presentation_conflict_recheck_documents": int(presentation_recheck_documents),
         "revision_ordering": (
             "EVIDENCE_AVAILABLE_DATE_THEN_OFFICIAL_PUBLICATION_TIMESTAMP_"
             "THEN_EXPLICIT_REVISION_TITLE_THEN_SEMANTIC_EQUIVALENCE_"
