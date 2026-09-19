@@ -1,6 +1,10 @@
 from pathlib import Path
 import json
+import os
 import re
+import subprocess
+import sys
+import textwrap
 
 
 WORKFLOW_DIR = Path(".github/workflows")
@@ -25,6 +29,64 @@ ALL_V4A_WORKFLOWS = STAGE_WORKFLOWS + (FINAL,)
 def _text(path: Path) -> str:
     assert path.is_file(), path
     return path.read_text(encoding="utf-8")
+
+
+def _fundamental_reuse_resolver_python() -> str:
+    text = _text(WORKFLOW_DIR / "v4a-fundamental-earnings.yml")
+    match = re.search(
+        r"      - name: Resolve frozen filing checkpoint reuse\n"
+        r".*?        run: \|\n"
+        r"          python - <<'PY'\n"
+        r"(?P<body>.*?)\n"
+        r"          PY\n",
+        text,
+        re.S,
+    )
+    assert match is not None
+    return textwrap.dedent(match.group("body"))
+
+
+def _run_fundamental_reuse_resolver(tmp_path: Path, *, current_ref: str):
+    env = os.environ.copy()
+    env.update(
+        {
+            "START_DATE": "2022-01-04",
+            "END_DATE": "2026-09-17",
+            "CURRENT_SHA": "b4e4e12599ee39a5ec67847d0f2530fe85488b38",
+            "CURRENT_REF": current_ref,
+            "SHARD": "0",
+            "GITHUB_ENV": str(tmp_path / "github-env"),
+        }
+    )
+    return subprocess.run(
+        [sys.executable, "-c", _fundamental_reuse_resolver_python()],
+        cwd=Path.cwd(),
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_fundamental_reuse_resolver_accepts_exact_recovery_cache_branch(tmp_path):
+    result = _run_fundamental_reuse_resolver(
+        tmp_path,
+        current_ref="refs/heads/v4a/fundamental-resume-295710",
+    )
+    assert result.returncode == 0, result.stderr
+    github_env = (tmp_path / "github-env").read_text(encoding="utf-8")
+    assert "PRESENTATION_CURRENT_PROGRESS_CACHE_KEY=" in github_env
+    assert "PRESENTATION_INTERMEDIATE_PROGRESS_CACHE_KEY=" in github_env
+    assert "PRESENTATION_PRIOR_PROGRESS_CACHE_KEY=" in github_env
+
+
+def test_fundamental_reuse_resolver_rejects_default_branch_cache_scope(tmp_path):
+    result = _run_fundamental_reuse_resolver(
+        tmp_path,
+        current_ref="refs/heads/main",
+    )
+    assert result.returncode != 0
+    assert "presentation progress caches are branch-scoped" in result.stderr
 
 
 def test_all_v4a_workflows_are_manual_only():
