@@ -239,6 +239,7 @@ jobs:
             --unit-count "${{ env.FUNDAMENTAL_WORK_UNIT_COUNT }}" \
             --out bundle-meta/work-unit-key.json
           echo "WORK_UNIT_ASSET_BASE=$(python -c 'import json; print(json.load(open("bundle-meta/work-unit-key.json"))["asset_base"])')" >> "$GITHUB_ENV"
+          echo "PROGRESS_SEMANTIC_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/work-unit-key.json"))["semantic_fingerprint"][:20])')" >> "$GITHUB_ENV"
       - name: Restore immutable completed work unit
         id: work_unit_restore
         env:
@@ -273,9 +274,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/progress
-          key: v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-
+            v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-
       - name: Restore read-only legacy V8 checkpoints
         if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
         uses: actions/cache/restore@v4
@@ -308,7 +309,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/derived/progress
-          key: v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal shard
         if: ${{ steps.work_unit_restore.outputs.reused != 'true' && success() }}
         run: |
