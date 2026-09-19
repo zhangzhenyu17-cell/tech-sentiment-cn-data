@@ -77,7 +77,7 @@ _NUMERIC_TOKEN_RE = re.compile(
 
 _FILING_PRESENTATION_TITLE_RE = re.compile(
     r"20\d{2}年(?:年度报告|半年度报告|第一季度报告|一季度报告|第三季度报告|三季度报告)"
-    r"(?P<variant>摘要|正文|全文)?"
+    r"(?:（?(?P<variant>摘要|正文|全文)）?)?"
 )
 FILING_PRESENTATION_FULL = "FULL_OR_CANONICAL"
 FILING_PRESENTATION_BODY = "BODY"
