@@ -72,6 +72,33 @@ def test_unknown_document_direction_is_not_treated_as_not_down(tmp_path, monkeyp
         checkpoint_dir=tmp_path,
     )
     assert result.evidence.empty
-    assert result.summary["readiness_state"] == "PARTIAL_COVERAGE"
+    assert result.summary["readiness_state"] == "QUALIFIED_INPUT"
     assert result.summary["unknown_is_not_not_down"] is True
+    assert result.summary["unclassified_documents"] == 1
+    assert result.errors.empty
+    assert len(result.unclassified) == 1
+    row = result.unclassified.iloc[0]
+    assert row["reason"] == "UNCLASSIFIED_NO_EXPLICIT_UNAMBIGUOUS_DIRECTION"
+    assert row["document_sha256"] == "b" * 64
+
+
+def test_download_failure_remains_hard_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "fetch_cninfo_announcements_direct", lambda **kwargs: _announcement())
+
+    def fail_download(url):
+        raise RuntimeError("network unavailable")
+
+    monkeypatch.setattr(module, "download_official_document", fail_download)
+
+    result = module.materialize_cninfo_earnings_directions(
+        ["600000"],
+        query_start_date="2025-01-01",
+        end_date="2026-01-06",
+        trading_dates=pd.to_datetime(["2026-01-05", "2026-01-06"]),
+        source_commit="abc123",
+        checkpoint_dir=tmp_path,
+    )
+    assert result.summary["readiness_state"] == "PARTIAL_COVERAGE"
     assert len(result.errors) == 1
+    assert result.unclassified.empty
+    assert result.coverage.iloc[0]["query_status"] == "FAILED"
