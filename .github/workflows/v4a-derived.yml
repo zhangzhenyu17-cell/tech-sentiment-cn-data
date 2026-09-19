@@ -255,14 +255,33 @@ jobs:
           cp -a inputs/fundamental/shards/. stage/fundamental/
           cp -a inputs/prices/shards/. stage/prices/
           cp -a inputs/policy/. stage/policy/
+      - name: Resolve Derived semantic progress identity
+        run: |
+          python scripts/v4a_persistent_stage_bundle.py progress-key --family derived \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json \
+            --input-manifest issuer=bundle-meta/issuer_aggregate.json \
+            --input-manifest fundamental=bundle-meta/fundamental.json \
+            --input-manifest prices=bundle-meta/prices.json \
+            --input-manifest policy=bundle-meta/policy.json \
+            --out bundle-meta/derived-progress-key.json
+          echo "PROGRESS_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/derived-progress-key.json"))["progress_key"])' )" >> "$GITHUB_ENV"
+      - name: Restore Derived phase checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/assembly
+          key: v4a-derived-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            v4a-derived-progress-v1-${{ env.PROGRESS_KEY }}-
       - name: Assemble derived PIT rails
+        id: assemble
         run: |
           ISSUER_COMMIT="$(python -c 'import json; print(json.load(open("bundle-meta/issuer_aggregate.json"))["original_source_commit"])' )"
           FUND_COMMIT="$(python -c 'import json; print(json.load(open("bundle-meta/fundamental.json"))["original_source_commit"])' )"
           PRICE_COMMIT="$(python -c 'import json; print(json.load(open("bundle-meta/prices.json"))["original_source_commit"])' )"
           POLICY_COMMIT="$(python -c 'import json; print(json.load(open("bundle-meta/policy.json"))["original_source_commit"])' )"
           mkdir -p stage/derived/pit_evidence_materialization
-          python scripts/assemble_v4a_derived_pit.py \
+          timeout --signal=TERM --kill-after=2m 330m python scripts/assemble_v4a_derived_pit.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --calendar-csv stage/shared/trading_calendar.csv \
             --issuer-dir stage/issuer_aggregate \
@@ -274,7 +293,14 @@ jobs:
             --fundamental-source-commit "$FUND_COMMIT" \
             --price-source-commit "$PRICE_COMMIT" \
             --policy-source-commit "$POLICY_COMMIT" \
+            --checkpoint-dir .cache/capital_pit_v4a/derived/assembly \
             --out-dir stage/derived/pit_evidence_materialization
+      - name: Save Derived phase checkpoints
+        if: ${{ always() && steps.assemble.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/assembly
+          key: v4a-derived-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal derived stage
         run: |
           python scripts/write_v4a_stage_receipt.py --root stage/derived --stage-kind derived --stage-id derived \
