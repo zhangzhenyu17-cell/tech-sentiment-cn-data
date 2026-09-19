@@ -257,6 +257,11 @@ jobs:
               --archive "bundle/work-unit/${{ env.WORK_UNIT_ASSET_BASE }}.tar.gz" \
               --manifest "bundle/work-unit/${{ env.WORK_UNIT_ASSET_BASE }}.manifest.json" \
               --extract-to "stage-shard/${{ matrix.shard }}"
+            python scripts/v4a_fundamental_progress_bundle.py rebase \
+              --stage-root "stage-shard/${{ matrix.shard }}" \
+              --manifest "bundle/work-unit/${{ env.WORK_UNIT_ASSET_BASE }}.manifest.json" \
+              --source-commit "${{ github.sha }}" \
+              --out bundle-meta/work-unit-rebase.json
             echo "reused=true" >> "$GITHUB_OUTPUT"
           else
             rm -rf bundle/work-unit "stage-shard/${{ matrix.shard }}"
