@@ -14,6 +14,10 @@ It does not change evidence eligibility, PIT/no-lookahead semantics, frozen
 scope, readiness thresholds, public/private security boundaries, Production
 authority, or trading authority.
 
+The default operating rules for any long-running execution are defined in
+[Long-Running Engineering Execution Protocol](long_running_engineering_execution_protocol.md).
+This V4-A runbook is the stage-specific application of that protocol.
+
 ## Persistent registry
 
 Reusable public-data stage bundles are published as immutable release assets
@@ -86,8 +90,15 @@ PIT/no-lookahead semantics, or read future outcomes. The legacy
 `v4a-04-issuer-source source=szse` path remains fail-closed for this window and
 must not be used as the canonical SZSE producer.
 
-Fundamental/Earnings and Prices retain bounded four-shard parallelism internally
-but publish one persistent group bundle after all shards succeed.
+Prices retains bounded four-shard parallelism internally.
+
+Fundamental/Earnings uses 16 deterministic work units with `max-parallel: 4`.
+Each unit persists durable engineering progress before its qualification gate.
+A unit that passes the gate immediately publishes an immutable reusable
+work-unit bundle; later runs restore compatible completed units before doing any
+materialization. Query/index caches and document/parser progress caches are
+restored independently. The final Fundamental group bundle is published only
+after all 16 units are present and verified.
 
 ### 3. Issuer aggregate
 
@@ -132,12 +143,19 @@ It must not query CNINFO, SSE, SZSE, CSRC, or other market-data providers.
 
 When a stage fails:
 
-1. keep every already-published successful stage bundle;
-2. diagnose and repair only the failed stage or its direct producer contract;
-3. run tests/CI for the code change;
-4. rerun only that manual stage;
-5. rerun only downstream aggregate stages whose upstream bundle identity changed;
-6. run the finalizer after the dependency chain is complete.
+1. keep every already-published successful stage bundle and completed work-unit bundle;
+2. inspect whether active units saved durable progress before assuming work was lost;
+3. classify the failure as deterministic code/orchestration, provider transport,
+   parser/layout, qualification, performance, or publication/aggregation;
+4. diagnose and repair only the failed stage or its direct producer contract;
+5. add a regression test for the exact deterministic failure path;
+6. run tests/CI for the code change;
+7. assess whether the change is semantic or operational-only;
+8. if a non-semantic change invalidates progress identity, use only an exact,
+   audited, expiring compatibility bridge;
+9. rerun only the manual stage/work units that are not already immutably complete;
+10. rerun only downstream aggregate stages whose upstream bundle identity changed;
+11. run the finalizer after the dependency chain is complete.
 
 Examples:
 
@@ -173,24 +191,38 @@ Every final lineage row records:
 The finalizer commit remains the canonical public artifact source commit. Earlier
 stage commits are execution lineage, not an alternative finalizer identity.
 
-## Cache policy
+## Cache and progress policy
 
-GitHub Actions cache is producer-local acceleration only. It is not a canonical
+GitHub Actions cache is engineering acceleration only. It is not a canonical
 cross-stage data bus and is never sufficient evidence for final qualification.
 
-Cache keys bind both the stage compatibility identity and the exact repository
-source commit. Producer checkpoints therefore never bridge code revisions.
+The formal reusable handoff is an immutable release bundle whose compatibility,
+upstream identities, receipt, and hashes are revalidated.
 
-Cross-commit reuse is provided only by a successfully sealed persistent stage
-bundle whose producer fingerprint and upstream bundle identities are revalidated.
+Long-running Fundamental work uses layered engineering resume state:
 
-The immutable release bundle is the formal reusable inter-workflow handoff.
+1. immutable completed work-unit bundle;
+2. current semantic-generation durable progress;
+3. exact audited compatibility bridge for a proven non-semantic repair;
+4. read-only legacy/query/index cache;
+5. provider recomputation.
 
-For interrupted producer work, exact-commit cache reuse is intentionally
-separate from cross-commit persistent-bundle reuse. If an expensive stage times
-out after saving checkpoints, resume it from the same source commit so its
-producer-local cache remains eligible; do not edit that producer merely to
-increase a timeout before attempting the saved checkpoint.
+Query/index caches and document/parser progress caches are independent assets.
+A hit in one layer must not suppress another layer merely because both are
+implemented with GitHub Actions cache.
+
+Cross-commit progress reuse is allowed only through an explicit frozen
+compatibility rule that identifies the exact old run/commit/fingerprint/window
+and proves that materialization, checkpoint, PIT, evidence, and qualification
+semantics did not change. Such a bridge remains engineering-only, grants no
+qualification, fails closed on mismatch, and has a removal condition.
+
+Operational changes such as timeout or cache orchestration must not silently
+weaken semantic fingerprinting. Semantic changes require a new compatible
+generation or fresh computation.
+
+After cancellation, inspect the actual cache-save outcomes of every active work
+unit before deciding what the replacement run must recompute.
 
 ## Trigger policy
 
