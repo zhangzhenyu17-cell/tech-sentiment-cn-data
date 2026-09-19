@@ -231,25 +231,39 @@ jobs:
             --archive "bundle/issuer_aggregate/${BASE}.tar.gz" \
             --manifest bundle-meta/issuer_aggregate.json --extract-to lineage/issuer_aggregate
 
-      - name: Download and verify Fundamental and Prices bundles
+      - name: Download and exact-verify frozen Fundamental bundle
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for family in fundamental prices; do
-            mkdir -p "bundle/${family}" "lineage/${family}"
-            python scripts/v4a_persistent_stage_bundle.py key --family "$family" \
-              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
-              --input-manifest shared=bundle-meta/shared.json --out "bundle-meta/${family}-key.json"
-            base="$(python -c "import json; print(json.load(open('bundle-meta/${family}-key.json'))['asset_base'])")"
-            bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$base" "bundle/${family}"
-            cp "bundle/${family}/${base}.manifest.json" "bundle-meta/${family}.json"
-            python scripts/v4a_persistent_stage_bundle.py verify --family "$family" \
-              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
-              --input-manifest shared=bundle-meta/shared.json \
-              --archive "bundle/${family}/${base}.tar.gz" --manifest "bundle-meta/${family}.json" \
-              --extract-to "lineage/${family}"
-          done
+          mkdir -p bundle/fundamental lineage/fundamental
+          BASE="$(python -c 'import json; print(json.load(open("reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json"))["downstream_stages"]["fundamental"]["asset_base"])')"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/fundamental
+          cp "bundle/fundamental/${BASE}.manifest.json" bundle-meta/fundamental.json
+          python scripts/verify_v4a_frozen_stage_compatibility.py \
+            --family fundamental \
+            --contract reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json \
+            --manifest bundle-meta/fundamental.json \
+            --archive "bundle/fundamental/${BASE}.tar.gz" \
+            --shared-manifest bundle-meta/shared.json \
+            --extract-to lineage/fundamental \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}"
 
+      - name: Download and verify Prices bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/prices lineage/prices
+          python scripts/v4a_persistent_stage_bundle.py key --family prices \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/prices-key.json
+          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/prices-key.json"))["asset_base"])')"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/prices
+          cp "bundle/prices/${BASE}.manifest.json" bundle-meta/prices.json
+          python scripts/v4a_persistent_stage_bundle.py verify --family prices \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json \
+            --archive "bundle/prices/${BASE}.tar.gz" --manifest bundle-meta/prices.json \
+            --extract-to lineage/prices
       - name: Download and exact-verify frozen Policy bundle
         env:
           GH_TOKEN: ${{ github.token }}
