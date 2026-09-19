@@ -353,8 +353,8 @@ jobs:
           path: .cache/capital_pit_v4a/derived/progress
           key: ${{ env.GATE_BUG_PROGRESS_CACHE_KEY }}
           fail-on-cache-miss: false
-      - name: Restore cancelled-run mixed V8/V9 cache
-        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit != 'true' && steps.gate_bug_progress_restore.outputs.cache-hit != 'true' }}
+      - name: Restore cancelled-run mixed V8/V9 cache for legacy queries
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
         id: cancelled_bridge_restore
         uses: actions/cache/restore@v4
         with:
@@ -373,7 +373,7 @@ jobs:
             --progress-source-commit "${{ env.CANCELLED_RUN_SOURCE_COMMIT }}" \
             --out bundle-meta/cancelled-run-bridge.json
       - name: Restore legacy V8 fallback when cancelled-run cache is unavailable
-        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit != 'true' && steps.gate_bug_progress_restore.outputs.cache-hit != 'true' && steps.cancelled_bridge_restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.cancelled_bridge_restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/filings
