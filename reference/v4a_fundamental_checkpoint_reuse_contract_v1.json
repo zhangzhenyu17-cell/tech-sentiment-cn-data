@@ -188,8 +188,6 @@
     "schema_version": "v4a-presentation-classifier-progress-bridge-v1",
     "status": "FROZEN_ONE_TIME_ENGINEERING_COMPATIBILITY",
     "source_generation_id": "fundamental-v9-tolerance-v1",
-    "source_semantic_fingerprint": "e77232e9d11a5739a3010794d6cd6c7c58046b1dc8bd76fbae46a4d3309808f3",
-    "source_semantic_key": "e77232e9d11a5739a301",
     "source_window": {
       "start_date": "2022-01-04",
       "end_date": "2026-09-17"
@@ -199,15 +197,53 @@
       {
         "run_id": 35444225741,
         "run_attempt": 1,
-        "cache_key_template": "v4a-fund-progress-fundamental-v9-tolerance-v1-e77232e9d11a5739a301-2022-01-04-2026-09-17-{unit}-35444225741-1"
+        "source_commit": "b905c91c3ca46d8d3d2758d8f11f968d72552d8f",
+        "source_semantic_fingerprint": "8caa5609ace700126e47e439c596e368e5a1e8d456881061b2167b62167581b5",
+        "source_semantic_key": "8caa5609ace700126e47",
+        "cache_key_template": "v4a-fund-progress-fundamental-v9-tolerance-v1-8caa5609ace700126e47-2022-01-04-2026-09-17-{unit}-35444225741-1",
+        "save_scope": "EXACT_PER_UNIT_CACHE_WHERE_SAVE_DURABLE_V9_WORK_UNIT_PROGRESS_SUCCEEDED"
+      },
+      {
+        "run_id": 35440581921,
+        "run_attempt": 1,
+        "source_commit": "d2385d1cdfe0561c7bd3a9515468ba1d37e6261c",
+        "source_semantic_fingerprint": "8caa5609ace700126e47e439c596e368e5a1e8d456881061b2167b62167581b5",
+        "source_semantic_key": "8caa5609ace700126e47",
+        "cache_key_template": "v4a-fund-progress-fundamental-v9-tolerance-v1-8caa5609ace700126e47-2022-01-04-2026-09-17-{unit}-35440581921-1",
+        "verified_saved_units": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "completed_materialization_units": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "partial_cancelled_materialization_units": [
+          4,
+          5,
+          6,
+          7
+        ]
       },
       {
         "run_id": 35438201372,
         "run_attempt": 1,
-        "cache_key_template": "v4a-fund-progress-fundamental-v9-tolerance-v1-e77232e9d11a5739a301-2022-01-04-2026-09-17-{unit}-35438201372-1"
+        "source_commit": "69e515090bbb0728b8771aa1581a5909eb9d3613",
+        "source_semantic_fingerprint": "e77232e9d11a5739a3010794d6cd6c7c58046b1dc8bd76fbae46a4d3309808f3",
+        "source_semantic_key": "e77232e9d11a5739a301",
+        "cache_key_template": "v4a-fund-progress-fundamental-v9-tolerance-v1-e77232e9d11a5739a301-2022-01-04-2026-09-17-{unit}-35438201372-1",
+        "save_scope": "EXACT_PER_UNIT_CACHE_WHERE_SAVE_DURABLE_V9_WORK_UNIT_PROGRESS_SUCCEEDED"
       }
     ],
-    "compatibility_reason": "The correction changes only presentation-carrier classification and conflict recheck behavior. Parsed filing facts, query identities, document identities, exact document SHA256 bindings, PIT availability, evidence eligibility, frozen qualification tolerance, scope, and source window are unchanged. Old engineering checkpoints may be reused only because any same-time conflicting filing presentation is now re-proven from the exact official bytes and checkpoint SHA before selection; stale presentation metadata is not trusted.",
+    "compatibility_reason": "The correction changes only presentation-carrier classification and conflict recheck behavior. Parsed filing facts, query identities, document identities, exact document SHA256 bindings, PIT availability, evidence eligibility, frozen qualification tolerance, scope, and source window are unchanged. Run 35444225741 and run 35440581921 use semantic fingerprint 8caa5609...; the latter differs from run 35438201372 only by qualification-gate/cache-orchestration engineering changes, not filing/earnings materialization semantics. Old engineering checkpoints may be reused only from these exact run/fingerprint/cache identities because any same-time conflicting filing presentation is now re-proven from the exact official bytes and checkpoint SHA before selection; stale presentation metadata is not trusted.",
     "parsed_fact_extraction_semantics_changed": false,
     "query_checkpoint_semantics_changed": false,
     "document_checkpoint_identity_changed": false,

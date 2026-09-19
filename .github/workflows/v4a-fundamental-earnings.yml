@@ -261,11 +261,51 @@ jobs:
               != "FROZEN_ONE_TIME_ENGINEERING_COMPATIBILITY"
           ):
               raise SystemExit("presentation classifier progress bridge is not frozen")
-          if (
-              presentation_bridge.get("source_semantic_fingerprint")
-              != "e77232e9d11a5739a3010794d6cd6c7c58046b1dc8bd76fbae46a4d3309808f3"
-          ):
-              raise SystemExit("presentation classifier source fingerprint mismatch")
+          source_runs = presentation_bridge.get("exact_source_runs") or []
+          source_identities = [
+              (
+                  int(item.get("run_id") or 0),
+                  int(item.get("run_attempt") or 0),
+                  str(item.get("source_commit") or ""),
+                  str(item.get("source_semantic_fingerprint") or ""),
+                  str(item.get("source_semantic_key") or ""),
+              )
+              for item in source_runs
+          ]
+          expected_source_identities = [
+              (
+                  35444225741,
+                  1,
+                  "b905c91c3ca46d8d3d2758d8f11f968d72552d8f",
+                  "8caa5609ace700126e47e439c596e368e5a1e8d456881061b2167b62167581b5",
+                  "8caa5609ace700126e47",
+              ),
+              (
+                  35440581921,
+                  1,
+                  "d2385d1cdfe0561c7bd3a9515468ba1d37e6261c",
+                  "8caa5609ace700126e47e439c596e368e5a1e8d456881061b2167b62167581b5",
+                  "8caa5609ace700126e47",
+              ),
+              (
+                  35438201372,
+                  1,
+                  "69e515090bbb0728b8771aa1581a5909eb9d3613",
+                  "e77232e9d11a5739a3010794d6cd6c7c58046b1dc8bd76fbae46a4d3309808f3",
+                  "e77232e9d11a5739a301",
+              ),
+          ]
+          if source_identities != expected_source_identities:
+              raise SystemExit("presentation progress bridge exact source identity mismatch")
+          for item in source_runs:
+              expected_template = (
+                  f"v4a-fund-progress-{presentation_bridge['source_generation_id']}-"
+                  f"{item['source_semantic_key']}-{presentation_bridge['source_window']['start_date']}-"
+                  f"{presentation_bridge['source_window']['end_date']}-{{unit}}-"
+                  f"{item['run_id']}-{item['run_attempt']}"
+              )
+              if str(item.get("cache_key_template") or "") != expected_template:
+                  raise SystemExit("presentation progress bridge cache template mismatch")
           if presentation_bridge.get("presentation_classifier_semantics_changed") is not True:
               raise SystemExit("presentation classifier semantic change not disclosed")
           if (
@@ -292,13 +332,6 @@ jobs:
           ):
               if presentation_bridge.get(key) is not False:
                   raise SystemExit(f"presentation progress bridge boundary drift: {key}")
-          source_runs = presentation_bridge.get("exact_source_runs") or []
-          if [int(item.get("run_id") or 0) for item in source_runs] != [
-              35444225741,
-              35438201372,
-          ]:
-              raise SystemExit("presentation progress bridge source runs mismatch")
-
           work_unit_count = int(progress.get("work_unit_count") or 0)
           legacy_source_shard_count = int(progress.get("legacy_source_shard_count") or 0)
           unit = int(os.environ["SHARD"])
@@ -342,9 +375,13 @@ jobs:
               handle.write(f"CANCELLED_RUN_SOURCE_COMMIT={bridge_progress_commit}\n")
               source_runs = presentation_bridge.get("exact_source_runs") or []
               current_template = str(source_runs[0].get("cache_key_template") or "")
-              prior_template = str(source_runs[1].get("cache_key_template") or "")
+              intermediate_template = str(source_runs[1].get("cache_key_template") or "")
+              prior_template = str(source_runs[2].get("cache_key_template") or "")
               handle.write(
                   f"PRESENTATION_CURRENT_PROGRESS_CACHE_KEY={current_template.format(unit=unit)}\n"
+              )
+              handle.write(
+                  f"PRESENTATION_INTERMEDIATE_PROGRESS_CACHE_KEY={intermediate_template.format(unit=unit)}\n"
               )
               handle.write(
                   f"PRESENTATION_PRIOR_PROGRESS_CACHE_KEY={prior_template.format(unit=unit)}\n"
@@ -401,15 +438,23 @@ jobs:
           restore-keys: |
             v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-
       - name: Restore presentation-fix-compatible current-run V9 progress
-        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit == '' }}
         id: presentation_current_progress_restore
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/progress
           key: ${{ env.PRESENTATION_CURRENT_PROGRESS_CACHE_KEY }}
           fail-on-cache-miss: false
+      - name: Restore presentation-fix-compatible intermediate V9 progress
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit == '' && steps.presentation_current_progress_restore.outputs.cache-hit == '' }}
+        id: presentation_intermediate_progress_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/capital_pit_v4a/derived/progress
+          key: ${{ env.PRESENTATION_INTERMEDIATE_PROGRESS_CACHE_KEY }}
+          fail-on-cache-miss: false
       - name: Restore presentation-fix-compatible prior V9 progress
-        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit != 'true' && steps.presentation_current_progress_restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit == '' && steps.presentation_current_progress_restore.outputs.cache-hit == '' && steps.presentation_intermediate_progress_restore.outputs.cache-hit == '' }}
         id: presentation_prior_progress_restore
         uses: actions/cache/restore@v4
         with:
@@ -425,7 +470,7 @@ jobs:
           key: ${{ env.CANCELLED_RUN_CACHE_KEY }}
           fail-on-cache-miss: false
       - name: Migrate validated cancelled-run V9 checkpoints into durable progress
-        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit != 'true' && steps.presentation_current_progress_restore.outputs.cache-hit != 'true' && steps.presentation_prior_progress_restore.outputs.cache-hit != 'true' && steps.cancelled_bridge_restore.outputs.cache-hit == 'true' }}
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && steps.durable_progress_restore.outputs.cache-hit == '' && steps.presentation_current_progress_restore.outputs.cache-hit == '' && steps.presentation_intermediate_progress_restore.outputs.cache-hit == '' && steps.presentation_prior_progress_restore.outputs.cache-hit == '' && steps.cancelled_bridge_restore.outputs.cache-hit == 'true' }}
         run: |
           python scripts/migrate_v4a_cancelled_fundamental_cache.py \
             --source-root .cache/capital_pit_v4a/derived/filings \

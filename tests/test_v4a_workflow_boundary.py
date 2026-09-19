@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import re
 
 
@@ -129,12 +130,17 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
     assert "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1" in text
     assert "Restore durable V9 progress" in text
     assert "Restore presentation-fix-compatible current-run V9 progress" in text
+    assert "Restore presentation-fix-compatible intermediate V9 progress" in text
     assert "Restore presentation-fix-compatible prior V9 progress" in text
     assert "PRESENTATION_CURRENT_PROGRESS_CACHE_KEY" in text
+    assert "PRESENTATION_INTERMEDIATE_PROGRESS_CACHE_KEY" in text
     assert "PRESENTATION_PRIOR_PROGRESS_CACHE_KEY" in text
     assert "35444225741" in text
+    assert "35440581921" in text
     assert "35438201372" in text
+    assert "8caa5609ace700126e47e439c596e368e5a1e8d456881061b2167b62167581b5" in text
     assert "e77232e9d11a5739a3010794d6cd6c7c58046b1dc8bd76fbae46a4d3309808f3" in text
+    assert "steps.durable_progress_restore.outputs.cache-hit == ''" in text
     assert "Restore cancelled-run mixed V8/V9 cache for legacy queries" in text
     assert (
         "if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}\n"
@@ -164,6 +170,48 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
     assert "persistent work-unit must require full group assembly" in text
     assert "old immutable work units cannot bridge presentation semantics" in text
     assert "presentation conflict reproof invariant missing" in text
+
+    contract = json.loads(
+        Path("reference/v4a_fundamental_checkpoint_reuse_contract_v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    bridge = contract["presentation_classifier_progress_bridge"]
+    assert [
+        (
+            item["run_id"],
+            item["run_attempt"],
+            item["source_commit"],
+            item["source_semantic_fingerprint"],
+            item["source_semantic_key"],
+        )
+        for item in bridge["exact_source_runs"]
+    ] == [
+        (
+            35444225741,
+            1,
+            "b905c91c3ca46d8d3d2758d8f11f968d72552d8f",
+            "8caa5609ace700126e47e439c596e368e5a1e8d456881061b2167b62167581b5",
+            "8caa5609ace700126e47",
+        ),
+        (
+            35440581921,
+            1,
+            "d2385d1cdfe0561c7bd3a9515468ba1d37e6261c",
+            "8caa5609ace700126e47e439c596e368e5a1e8d456881061b2167b62167581b5",
+            "8caa5609ace700126e47",
+        ),
+        (
+            35438201372,
+            1,
+            "69e515090bbb0728b8771aa1581a5909eb9d3613",
+            "e77232e9d11a5739a3010794d6cd6c7c58046b1dc8bd76fbae46a4d3309808f3",
+            "e77232e9d11a5739a301",
+        ),
+    ]
+    assert bridge["exact_source_runs"][1]["verified_saved_units"] == list(range(8))
+    assert bridge["exact_source_runs"][1]["completed_materialization_units"] == [0, 1, 2, 3]
+    assert bridge["exact_source_runs"][1]["partial_cancelled_materialization_units"] == [4, 5, 6, 7]
 
     progress_cache_lines = "\n".join(
         line for line in text.splitlines() if "v4a-fund-progress-" in line
