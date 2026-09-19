@@ -128,6 +128,10 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
     assert "FUNDAMENTAL_WORK_UNIT_COUNT" in text
     assert "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1" in text
     assert "Restore durable V9 progress" in text
+    assert "Restore gate-bug-compatible V9 progress" in text
+    assert "GATE_BUG_PROGRESS_CACHE_KEY" in text
+    assert "35438201372" in text
+    assert "e77232e9d11a5739a3010794d6cd6c7c58046b1dc8bd76fbae46a4d3309808f3" in text
     assert "Restore cancelled-run mixed V8/V9 cache" in text
     assert "Migrate validated cancelled-run V9 checkpoints into durable progress" in text
     assert "Restore legacy V8 fallback when cancelled-run cache is unavailable" in text
