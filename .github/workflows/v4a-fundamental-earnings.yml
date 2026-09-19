@@ -206,7 +206,43 @@ jobs:
               handle.write(f"PROGRESS_CHECKPOINT_SOURCE_COMMIT={progress_commit}\n")
               handle.write(f"FUNDAMENTAL_WORK_UNIT_COUNT={work_unit_count}\n")
           PY
+      - name: Resolve reusable Fundamental work-unit identity
+        run: |
+          mkdir -p bundle-meta
+          python scripts/v4a_fundamental_progress_bundle.py key \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --shared-manifest bundle-meta/shared.json \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --unit-index "${{ matrix.shard }}" \
+            --unit-count "${{ env.FUNDAMENTAL_WORK_UNIT_COUNT }}" \
+            --out bundle-meta/work-unit-key.json
+          echo "WORK_UNIT_ASSET_BASE=$(python -c 'import json; print(json.load(open("bundle-meta/work-unit-key.json"))["asset_base"])')" >> "$GITHUB_ENV"
+      - name: Restore immutable completed work unit
+        id: work_unit_restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/work-unit
+          if bash scripts/download_v4a_release_bundle.sh \
+            v4a-stage-bundles-v1 "${{ env.WORK_UNIT_ASSET_BASE }}" bundle/work-unit; then
+            mkdir -p "stage-shard/${{ matrix.shard }}"
+            python scripts/v4a_fundamental_progress_bundle.py verify \
+              --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+              --shared-manifest bundle-meta/shared.json \
+              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+              --unit-index "${{ matrix.shard }}" \
+              --unit-count "${{ env.FUNDAMENTAL_WORK_UNIT_COUNT }}" \
+              --archive "bundle/work-unit/${{ env.WORK_UNIT_ASSET_BASE }}.tar.gz" \
+              --manifest "bundle/work-unit/${{ env.WORK_UNIT_ASSET_BASE }}.manifest.json" \
+              --extract-to "stage-shard/${{ matrix.shard }}"
+            echo "reused=true" >> "$GITHUB_OUTPUT"
+          else
+            rm -rf bundle/work-unit "stage-shard/${{ matrix.shard }}"
+            mkdir -p "stage-shard/${{ matrix.shard }}"
+            echo "reused=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Restore durable V9 progress
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/progress
@@ -214,6 +250,7 @@ jobs:
           restore-keys: |
             v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-
       - name: Restore read-only legacy V8 checkpoints
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/legacy
@@ -221,6 +258,7 @@ jobs:
           restore-keys: |
             ${{ env.LEGACY_FILING_CACHE_PREFIX }}
       - name: Materialize fundamental/earnings shard
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
         id: materialize
         run: |
           mkdir -p "stage-shard/${{ matrix.shard }}" \
@@ -239,31 +277,56 @@ jobs:
             --legacy-checkpoint-dir .cache/capital_pit_v4a/derived/legacy \
             --out-dir "stage-shard/${{ matrix.shard }}"
       - name: Save durable V9 work-unit progress
-        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        if: ${{ always() && steps.work_unit_restore.outputs.reused != 'true' && steps.materialize.outcome != 'skipped' }}
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/derived/progress
           key: v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal shard
-        if: ${{ success() }}
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && success() }}
         run: |
           python scripts/write_v4a_stage_receipt.py --root "stage-shard/${{ matrix.shard }}" \
             --stage-kind fundamental_earnings --stage-id "fundamental-${{ matrix.shard }}-of-16" \
             --source-commit "${{ github.sha }}" \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --out "stage-shard/${{ matrix.shard }}/receipt.json"
-      - name: Preserve shard diagnostics
-        if: ${{ success() }}
+      - name: Preserve work-unit diagnostics before qualification gate
+        if: ${{ always() && steps.work_unit_restore.outputs.reused != 'true' && steps.materialize.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
-          name: v4a-fundamental-shard-${{ matrix.shard }}-${{ github.run_id }}
+          name: v4a-fundamental-diagnostics-${{ matrix.shard }}-${{ github.run_id }}
           path: stage-shard/${{ matrix.shard }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
       - name: Qualification gate
         run: |
           python scripts/assert_v4a_stage_qualifiable.py --kind fundamental_earnings \
             --root "stage-shard/${{ matrix.shard }}"
+      - name: Publish immutable completed work unit
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' && success() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "dist-work-unit/${{ matrix.shard }}"
+          python scripts/v4a_fundamental_progress_bundle.py package \
+            --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
+            --shared-manifest bundle-meta/shared.json \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --unit-index "${{ matrix.shard }}" \
+            --unit-count "${{ env.FUNDAMENTAL_WORK_UNIT_COUNT }}" \
+            --stage-root "stage-shard/${{ matrix.shard }}" \
+            --out-dir "dist-work-unit/${{ matrix.shard }}" \
+            --out "dist-work-unit/${{ matrix.shard }}/package.json"
+          BASE="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["asset_base"])' "dist-work-unit/${{ matrix.shard }}/package.json")"
+          bash scripts/publish_v4a_release_bundle.sh \
+            v4a-stage-bundles-v1 "dist-work-unit/${{ matrix.shard }}" "$BASE"
+      - name: Upload qualified current-run work unit
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4a-fundamental-shard-${{ matrix.shard }}-${{ github.run_id }}
+          path: stage-shard/${{ matrix.shard }}
+          if-no-files-found: error
+          retention-days: 90
 
   package:
     needs: shards
