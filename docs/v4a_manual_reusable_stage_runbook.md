@@ -132,12 +132,13 @@ upstream stage-receipt hashes. Completed phases are persisted independently:
 - Fundamental/Earnings aggregation and state derivation;
 - Price aggregation plus trailing valuation;
 - major-negative coverage/review;
-- PIT replay audit;
-- final assembled output tree.
+- PIT replay audit.
 
 A phase is resumable only after its completed-phase marker is atomically written.
-Partial files without the marker are ignored. This checkpoint state is
-engineering-only and never grants qualification.
+Partial files without the marker are ignored. The final assembled output tree is
+always rebuilt for the current workflow commit so its source identity is never
+reused from an older operational commit. Checkpoint state is engineering-only
+and never grants qualification.
 ### 5. Canonical public finalizer
 
 Workflow: `qualify-capital-inputs`
