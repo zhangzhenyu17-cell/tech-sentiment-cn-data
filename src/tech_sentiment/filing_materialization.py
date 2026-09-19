@@ -276,7 +276,7 @@ def materialize_versioned_filing_facts(
                     if "publication_timestamp" not in facts.columns:
                         raise ValueError("filing facts checkpoint lacks publication_timestamp")
                     facts = facts.copy()
-                    facts["_filing_title"] = str(announcement["公告标题"])
+                    facts["filing_title"] = str(announcement["公告标题"])
                     fact_parts.append(facts)
                     parsed_documents += 1
             except Exception as exc:
@@ -331,7 +331,6 @@ def materialize_versioned_filing_facts(
             ["entity_id", "document_id", "revision_id", "fact_type"], keep="last"
         ).reset_index(drop=True)
     trends = derive_fundamental_trend_evidence(facts)
-    facts = facts.drop(columns=["_filing_title"], errors="ignore")
     coverage = pd.DataFrame(coverage_rows)
     complete_entities = int(
         coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").sum()
