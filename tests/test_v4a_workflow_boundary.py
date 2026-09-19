@@ -170,6 +170,9 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
     assert "persistent work-unit must require full group assembly" in text
     assert "old immutable work units cannot bridge presentation semantics" in text
     assert "presentation conflict reproof invariant missing" in text
+    assert "CURRENT_REF: ${{ github.ref }}" in text
+    assert "presentation progress caches are branch-scoped" in text
+    assert "v4a/fundamental-resume-295710" in text
 
     contract = json.loads(
         Path("reference/v4a_fundamental_checkpoint_reuse_contract_v1.json").read_text(
@@ -177,6 +180,11 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
         )
     )
     bridge = contract["presentation_classifier_progress_bridge"]
+    assert bridge["cache_scope_branch"] == "v4a/fundamental-resume-295710"
+    assert bridge["cache_scope_ref"] == "refs/heads/v4a/fundamental-resume-295710"
+    assert bridge["require_same_branch_recovery_until_v2_immutable_complete"] is True
+    assert bridge["default_branch_direct_restore_assumed"] is False
+    assert bridge["workflow_only_branch_guard_removal_allowed_after_v2_immutable_complete"] is True
     assert [
         (
             item["run_id"],

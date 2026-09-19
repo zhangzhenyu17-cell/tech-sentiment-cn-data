@@ -62,6 +62,7 @@ jobs:
           START_DATE: ${{ inputs.start_date }}
           END_DATE: ${{ inputs.end_date }}
           CURRENT_SHA: ${{ github.sha }}
+          CURRENT_REF: ${{ github.ref }}
           SHARD: ${{ matrix.shard }}
         run: |
           python - <<'PY'
@@ -319,6 +320,21 @@ jobs:
               raise SystemExit("presentation bridge must be engineering progress only")
           if presentation_bridge.get("immutable_completed_work_unit_reuse_allowed") is not False:
               raise SystemExit("old immutable work units cannot bridge presentation semantics")
+          cache_scope_branch = str(presentation_bridge.get("cache_scope_branch") or "")
+          cache_scope_ref = str(presentation_bridge.get("cache_scope_ref") or "")
+          if cache_scope_branch != "v4a/fundamental-resume-295710":
+              raise SystemExit("presentation bridge cache-scope branch drift")
+          if cache_scope_ref != f"refs/heads/{cache_scope_branch}":
+              raise SystemExit("presentation bridge cache-scope ref drift")
+          if presentation_bridge.get("require_same_branch_recovery_until_v2_immutable_complete") is not True:
+              raise SystemExit("presentation bridge same-branch recovery invariant missing")
+          if presentation_bridge.get("default_branch_direct_restore_assumed") is not False:
+              raise SystemExit("presentation bridge cannot assume feature cache visibility from main")
+          if os.environ["CURRENT_REF"] != cache_scope_ref:
+              raise SystemExit(
+                  "presentation progress caches are branch-scoped; dispatch this recovery run "
+                  f"from {cache_scope_branch}, after fast-forwarding that branch to the intended main commit"
+              )
           for key in (
               "parsed_fact_extraction_semantics_changed",
               "query_checkpoint_semantics_changed",

@@ -259,6 +259,12 @@
     "pit_no_lookahead_semantics_changed": false,
     "production_authority_changed": false,
     "trading_authority_changed": false,
-    "removal_condition": "MAY_BE_REMOVED_AFTER_ALL_16_WORK_UNITS_HAVE_IMMUTABLE_BUNDLES_UNDER_FUNDAMENTAL_V9_PRESENTATION_RECHECK_V2"
+    "removal_condition": "MAY_BE_REMOVED_AFTER_ALL_16_WORK_UNITS_HAVE_IMMUTABLE_BUNDLES_UNDER_FUNDAMENTAL_V9_PRESENTATION_RECHECK_V2",
+    "cache_scope_branch": "v4a/fundamental-resume-295710",
+    "cache_scope_ref": "refs/heads/v4a/fundamental-resume-295710",
+    "cache_scope_reason": "GitHub Actions caches are branch-scoped. The exact source progress caches were created on v4a/fundamental-resume-295710 and are not readable by a workflow_dispatch run started directly from main. Recovery runs must execute on the same recovery branch until all 16 work units have immutable bundles under fundamental-v9-presentation-recheck-v2.",
+    "require_same_branch_recovery_until_v2_immutable_complete": true,
+    "default_branch_direct_restore_assumed": false,
+    "workflow_only_branch_guard_removal_allowed_after_v2_immutable_complete": true
   }
 }
