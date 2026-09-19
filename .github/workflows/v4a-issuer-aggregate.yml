@@ -236,6 +236,7 @@ jobs:
           for key in (
               "family",
               "stage_id",
+              "asset_base",
               "original_source_commit",
               "producer_fingerprint",
               "compatibility_key",
