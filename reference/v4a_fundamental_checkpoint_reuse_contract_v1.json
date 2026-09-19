@@ -16,7 +16,7 @@
     35384571822,
     35419103373
   ],
-  "reuse_reason": "The repair changes only post-acquisition same-publication-time revision resolution; acquisition endpoints, immutable document identity, PDF parsing, standardized filing fact extraction, issuer earnings direction classification, and checkpoint schemas are unchanged.",
+  "reuse_reason": "The repair changes only post-acquisition same-publication-time revision resolution and adds filing_title to the assembled stage output from the already-cached official announcement index; acquisition endpoints, immutable document identity, PDF parsing, standardized filing fact extraction, issuer earnings direction classification, checkpoint payloads, and checkpoint schemas are unchanged.",
   "acquisition_semantics_changed": false,
   "parser_semantics_changed": false,
   "checkpoint_schema_changed": false,
@@ -25,5 +25,8 @@
   "research_scope_changed": false,
   "future_outcomes_used": false,
   "production_authority_changed": false,
-  "trading_authority_changed": false
+  "trading_authority_changed": false,
+  "stage_output_revision_metadata_extended": true,
+  "stage_output_revision_metadata_field": "filing_title",
+  "checkpoint_payload_modified": false
 }
