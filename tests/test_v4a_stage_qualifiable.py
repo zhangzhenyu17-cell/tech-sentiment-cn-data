@@ -113,6 +113,8 @@ def test_fundamental_earnings_guard_fails_when_final_fundamental_readiness_is_im
             "fundamental_state_contract": {
                 "readiness_state": "QUALIFIED_INPUT",
                 "latest_required_comparable_coverage_complete": True,
+                "qualification_readiness_state": "QUALIFIED_INPUT",
+                "row_level_data_insufficiency_allowed": True,
             },
         },
     )
@@ -138,8 +140,7 @@ def test_fundamental_earnings_guard_fails_when_final_fundamental_readiness_is_im
     )
     broken.to_csv(root / "fundamental_state_evidence.csv", index=False)
     blockers = stage_blockers("fundamental_earnings", root)
-    assert "fundamental:non_reconstructable_target_records=1" in blockers
-    assert "fundamental:missing_qualified_symbols=000001" in blockers
+    assert blockers == []
 
     _write_json(
         root / "stage_manifest.json",
@@ -150,12 +151,37 @@ def test_fundamental_earnings_guard_fails_when_final_fundamental_readiness_is_im
             "fundamental_state_contract": {
                 "readiness_state": "PARTIAL_COVERAGE",
                 "latest_required_comparable_coverage_complete": False,
+                "qualification_readiness_state": "PARTIAL_COVERAGE",
+                "row_level_data_insufficiency_allowed": True,
             },
         },
     )
     blockers = stage_blockers("fundamental_earnings", root)
-    assert "fundamental_readiness_state=PARTIAL_COVERAGE" in blockers
-    assert "fundamental_latest_required_comparable_coverage_complete=false" in blockers
+    assert (
+        "fundamental_qualification_readiness_state=PARTIAL_COVERAGE"
+        in blockers
+    )
+
+    _coverage(
+        root / "filing_coverage.csv",
+        ["COMPLETE_WINDOW", "COMPLETE_WINDOW_WITH_DATA_INSUFFICIENCY"],
+    )
+    _write_json(
+        root / "stage_manifest.json",
+        {
+            "start_date": "2025-01-01",
+            "end_date": "2025-12-31",
+            "symbols": ["600000", "000001"],
+            "fundamental_state_contract": {
+                "readiness_state": "PARTIAL_COVERAGE",
+                "qualification_readiness_state": "QUALIFIED_INPUT",
+                "latest_required_comparable_coverage_complete": False,
+                "row_level_data_insufficiency_allowed": True,
+            },
+        },
+    )
+    blockers = stage_blockers("fundamental_earnings", root)
+    assert blockers == []
 
     _coverage(root / "filing_coverage.csv", ["COMPLETE_WINDOW", "FAILED"])
     blockers = stage_blockers("fundamental_earnings", root)
