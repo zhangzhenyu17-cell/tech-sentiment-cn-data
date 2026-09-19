@@ -54,6 +54,11 @@ def main() -> None:
     parser.add_argument("--shard-index", type=int, required=True)
     parser.add_argument("--shard-count", type=int, required=True)
     parser.add_argument("--checkpoint-dir", required=True)
+    parser.add_argument(
+        "--filing-checkpoint-source-commit",
+        default=None,
+        help="Optional frozen legacy source commit used only to address immutable filing checkpoints.",
+    )
     parser.add_argument("--out-dir", required=True)
     args = parser.parse_args()
 
@@ -77,6 +82,7 @@ def main() -> None:
         source_commit=args.source_commit,
         checkpoint_dir=checkpoint / "filings",
         warmup_years=2,
+        checkpoint_source_commit=args.filing_checkpoint_source_commit,
     )
     fundamental = materialize_fundamental_state_evidence(
         filings.facts,
@@ -121,6 +127,9 @@ def main() -> None:
         "symbols": symbols,
         "symbol_count": len(symbols),
         "filing_materialization": filings.summary,
+        "filing_checkpoint_source_commit": (
+            args.filing_checkpoint_source_commit or args.source_commit
+        ),
         "fundamental_state_contract": fundamental.summary,
         "earnings_materialization": earnings.summary,
         "future_prices_or_returns_used": False,
