@@ -74,6 +74,7 @@
     "cache_key_independent_of_workflow_source_commit": true,
     "cache_key_fields": [
       "generation_id",
+      "semantic_producer_fingerprint",
       "qualification_start_date",
       "qualification_end_date",
       "work_unit_index"
