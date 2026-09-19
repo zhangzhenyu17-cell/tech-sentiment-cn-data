@@ -133,7 +133,12 @@ def _valuation_readiness(
     target_end: pd.Timestamp,
 ) -> tuple[str, dict[str, object]]:
     if rail.empty:
-        return "DATA_INSUFFICIENT", {"eligible_rows": 0, "usable_rows": 0, "coverage": 0.0}
+        return "DATA_INSUFFICIENT", {
+            "eligible_rows": 0,
+            "usable_rows": 0,
+            "row_level_data_insufficient_rows": 0,
+            "coverage": 0.0,
+        }
     target = rail[pd.to_datetime(rail["date"]).dt.normalize().between(target_start, target_end)]
     eligible = target[target["valuation_reference_date_20d"].notna()]
     usable = eligible[
@@ -144,17 +149,22 @@ def _valuation_readiness(
     ]
     eligible_rows = int(len(eligible))
     usable_rows = int(len(usable))
+    insufficient_rows = int(eligible_rows - usable_rows)
     coverage = usable_rows / eligible_rows if eligible_rows else 0.0
     state = (
         "QUALIFIED_INPUT"
-        if eligible_rows and usable_rows == eligible_rows
-        else "PARTIAL_COVERAGE" if usable_rows
+        if eligible_rows and usable_rows > 0
         else "DATA_INSUFFICIENT"
     )
     return state, {
         "eligible_rows": eligible_rows,
         "usable_rows": usable_rows,
+        "row_level_data_insufficient_rows": insufficient_rows,
         "coverage": coverage,
+        "qualification_mode": (
+            "SOURCE_PIPELINE_QUALIFIED_WITH_EXPLICIT_ROW_LEVEL_DATA_INSUFFICIENCY"
+        ),
+        "missing_valuation_rows_emit_no_evidence": True,
         "eligibility_rule": "TARGET_ROWS_WITH_EXACT_REAL_TRADING_CALENDAR_T_MINUS_20_REFERENCE_DATE",
         "missing_endpoint_fill": False,
     }
@@ -165,33 +175,65 @@ def _fundamental_readiness(
     *,
     target_start: pd.Timestamp,
     target_end: pd.Timestamp,
-    expected_entities: int,
+    expected_entities: set[str],
+    filing_coverage: pd.DataFrame,
 ) -> tuple[str, dict[str, object]]:
-    if evidence.empty:
-        return "DATA_INSUFFICIENT", {
-            "target_records": 0,
-            "qualified_records": 0,
-            "qualified_entities": 0,
-            "expected_entities": expected_entities,
-        }
-    dates = pd.to_datetime(evidence["evidence_available_date"], errors="raise").dt.normalize()
-    target = evidence[dates.between(target_start, target_end)]
+    target = evidence.copy()
+    if len(target):
+        dates = pd.to_datetime(
+            target["evidence_available_date"], errors="raise"
+        ).dt.normalize()
+        target = target[dates.between(target_start, target_end)].copy()
+    allowed = {"HISTORICAL_RECONSTRUCTABLE", "DATA_INSUFFICIENT"}
+    bad_states = (
+        sorted(set(target["availability_state"].astype(str)) - allowed)
+        if len(target)
+        else []
+    )
+    if bad_states:
+        raise ValueError(
+            "fundamental evidence has invalid availability states: "
+            + ",".join(bad_states)
+        )
     qualified = target[
         target["availability_state"].astype(str).eq("HISTORICAL_RECONSTRUCTABLE")
-    ]
-    entities = int(qualified["entity_id"].astype(str).nunique()) if len(qualified) else 0
-    all_target_qualified = bool(len(target)) and len(qualified) == len(target)
+    ] if len(target) else target
+    insufficient = target[
+        target["availability_state"].astype(str).eq("DATA_INSUFFICIENT")
+    ] if len(target) else target
+    accounted = (
+        set(target["entity_id"].dropna().astype(str))
+        if len(target)
+        else set()
+    )
+    if {"entity_id", "query_status"}.issubset(filing_coverage.columns):
+        soft = filing_coverage[
+            filing_coverage["query_status"].astype(str).eq(
+                "COMPLETE_WINDOW_WITH_DATA_INSUFFICIENCY"
+            )
+        ]
+        accounted.update(soft["entity_id"].dropna().astype(str))
+    missing_accounted = sorted(expected_entities - accounted)
     state = (
         "QUALIFIED_INPUT"
-        if all_target_qualified and entities == expected_entities
+        if not missing_accounted and len(qualified) > 0
         else "PARTIAL_COVERAGE" if len(qualified)
         else "DATA_INSUFFICIENT"
     )
     return state, {
         "target_records": int(len(target)),
         "qualified_records": int(len(qualified)),
-        "qualified_entities": entities,
-        "expected_entities": expected_entities,
+        "data_insufficient_records": int(len(insufficient)),
+        "qualified_entities": int(
+            qualified["entity_id"].astype(str).nunique()
+        ) if len(qualified) else 0,
+        "accounted_entities": int(len(accounted)),
+        "expected_entities": int(len(expected_entities)),
+        "missing_accounted_entities": missing_accounted,
+        "qualification_mode": (
+            "SOURCE_PIPELINE_QUALIFIED_WITH_EXPLICIT_ROW_LEVEL_DATA_INSUFFICIENCY"
+        ),
+        "data_insufficient_rows_emit_no_fundamental_state": True,
     }
 
 
@@ -365,6 +407,7 @@ def main() -> None:
     earnings_direction_parts: list[pd.DataFrame] = []
     earnings_evidence_parts: list[pd.DataFrame] = []
     earnings_coverage_parts: list[pd.DataFrame] = []
+    earnings_unclassified_parts: list[pd.DataFrame] = []
     filing_error_parts: list[pd.DataFrame] = []
     earnings_error_parts: list[pd.DataFrame] = []
     for stage in fundamental_dirs:
@@ -379,6 +422,9 @@ def main() -> None:
         if len(evidence):
             earnings_evidence_parts.append(validate_materialized_pit_records(evidence))
         earnings_coverage_parts.append(_read_csv(stage / "earnings_direction_coverage.csv"))
+        unclassified = _read_csv(stage / "earnings_direction_unclassified.csv")
+        if len(unclassified):
+            earnings_unclassified_parts.append(unclassified)
         ferr = _read_csv(stage / "filing_errors.csv")
         if len(ferr):
             filing_error_parts.append(ferr)
@@ -415,7 +461,8 @@ def main() -> None:
         fundamental_evidence,
         target_start=target_start,
         target_end=target_end,
-        expected_entities=len(expected_entities),
+        expected_entities=expected_entities,
+        filing_coverage=filing_coverage,
     )
 
     earnings_directions = (
@@ -429,6 +476,10 @@ def main() -> None:
             pd.concat(earnings_evidence_parts, ignore_index=True, sort=False)
         )
         if earnings_evidence_parts else pd.DataFrame()
+    )
+    earnings_unclassified = (
+        pd.concat(earnings_unclassified_parts, ignore_index=True, sort=False)
+        if earnings_unclassified_parts else pd.DataFrame()
     )
     earnings_coverage = pd.concat(earnings_coverage_parts, ignore_index=True, sort=False)
     if earnings_coverage.empty or earnings_coverage.duplicated(["entity_id"]).any():
@@ -552,13 +603,27 @@ def main() -> None:
     source_states["OFFICIAL_POLICY_AND_REGULATORY_NOTICE_ARCHIVE"] = str(
         policy_summary.get("readiness_state") or "DATA_INSUFFICIENT"
     )
-    filing_complete = int(filing_coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").sum())
+    filing_complete_statuses = {
+        "COMPLETE_WINDOW",
+        "COMPLETE_WINDOW_WITH_DATA_INSUFFICIENCY",
+    }
+    filing_complete = int(
+        filing_coverage["query_status"].astype(str).isin(
+            filing_complete_statuses
+        ).sum()
+    )
+    filing_soft_insufficient = int(
+        filing_coverage["query_status"].astype(str).eq(
+            "COMPLETE_WINDOW_WITH_DATA_INSUFFICIENCY"
+        ).sum()
+    )
     filing_summary = {
         "source_identity": DERIVED_FUNDAMENTAL_SOURCE_ID,
         "target_start_date": args.start_date,
         "end_date": args.end_date,
         "symbols": len(expected_symbols),
         "complete_entities": filing_complete,
+        "soft_data_insufficient_entities": filing_soft_insufficient,
         "filing_fact_rows": int(len(facts)),
         "derived_trend_records": int(len(trends)),
         "numerical_trend_materialization_state": (
@@ -586,9 +651,12 @@ def main() -> None:
             pd.to_numeric(earnings_coverage.get("direction_documents", 0), errors="coerce").fillna(0).sum()
         ),
         "canonical_evidence_records": int(len(earnings_evidence)),
+        "unclassified_documents": int(len(earnings_unclassified)),
         "source_window_and_direction_extraction_complete": earnings_complete,
         "readiness_state": earnings_state,
         "unknown_is_not_not_down": True,
+        "unclassified_never_emits_direction_evidence": True,
+        "row_level_data_insufficiency_allowed": True,
         "numeric_threshold_used": False,
         "price_or_return_used": False,
         "parallel_shards": len(fundamental_dirs),
@@ -660,6 +728,9 @@ def main() -> None:
     earnings_directions.to_csv(out / "earnings_direction.csv", index=False)
     earnings_evidence.to_csv(out / "earnings_direction_evidence.csv", index=False)
     earnings_coverage.to_csv(out / "earnings_direction_coverage.csv", index=False)
+    earnings_unclassified.to_csv(
+        out / "earnings_direction_unclassified.csv", index=False
+    )
     prices.to_csv(out / "pit_stock_prices.csv", index=False)
     price_coverage.to_csv(out / "pit_stock_price_coverage.csv", index=False)
     (
