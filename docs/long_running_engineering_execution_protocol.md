@@ -23,7 +23,13 @@ Recent long runs exposed a recurring failure pattern:
 6. a qualification CLI path was not tested even though its helper functions were;
 7. a later engineering fix changed the semantic fingerprint even though the
    materialization semantics had not changed;
-8. cancellation decisions were made without first proving what would persist.
+8. cancellation decisions were made without first proving what would persist;
+9. exact cache keys were correct but still unreadable because the replacement run
+   started from a different Git ref than the branch that created the cache;
+10. a restore bridge was initially verified only structurally, not by executing
+    the actual workflow resolver path;
+11. real recovery performance was not considered proven until counters showed
+    zero provider queries and zero document re-download/reparse work.
 
 The protocol below makes those failure modes first-class design constraints.
 
@@ -107,6 +113,39 @@ Preferred order:
 
 A cache hit at one layer must not suppress a different independent cache layer
 unless the workflow proves the suppressed layer is unnecessary.
+
+## Cache visibility is part of the restore identity
+
+A cache key is not sufficient proof that a cache is reusable. GitHub Actions
+cache visibility is also constrained by Git ref/branch scope.
+
+For every cache-backed recovery plan, record and validate:
+
+- the exact branch/ref that created the cache;
+- the exact run id and run attempt;
+- the source commit;
+- the semantic generation and fingerprint/key;
+- the date window and work-unit identity;
+- whether the intended replacement run can actually read that cache from its
+  dispatch ref.
+
+If reusable caches were created on a recovery branch, the preferred procedure is:
+
+1. finish or harvest the current run;
+2. verify progress-save outcomes;
+3. fast-forward the recovery branch to the intended latest main commit when the
+   history is linear and the update is safe;
+4. dispatch the replacement run from that same recovery branch;
+5. fail fast before materialization if the workflow is launched from a ref that
+   cannot access the required recovery caches.
+
+Do not solve cache-scope visibility by copying data blindly between branches or
+by weakening cache identity checks.
+
+A branch/ref guard is orchestration-only when it changes no materialization,
+PIT, evidence, qualification, model, Production, or trading semantics. Such a
+guard should be execution-tested with both the allowed-ref success path and the
+wrong-ref fail-fast path.
 
 ## Separate semantic identity from operational configuration
 
@@ -197,8 +236,12 @@ Before expensive scale-out after a data-path or orchestration change:
 - representative provider path is exercised;
 - exact production selector/identity logic is reused;
 - cache restore path is exercised;
+- cache branch/ref visibility is explicitly verified when recovery depends on
+  GitHub Actions cache;
 - cancellation/save behavior is known;
 - qualification CLI entrypoint is executed in a test, not only helper functions;
+- any workflow-inline restore/resolver guard that controls expensive execution is
+  executed in a regression test, not only inspected as YAML text;
 - immutable publication and re-download verification are tested when changed.
 
 For a workflow-only orchestration change, do not rerun historical research to
@@ -242,6 +285,20 @@ For every work unit, preserve:
 
 A failure that cannot be diagnosed without rerunning the provider path is an
 observability defect.
+
+A recovery run is not considered operationally validated merely because cache
+restore steps are green. Confirm the expensive path was actually avoided using
+counters. For a fully resumed unit, the preferred proof is:
+
+- provider/source query executed count = 0;
+- document download/parse executed count = 0;
+- resumed query/document counts are non-zero and plausible for the unit;
+- qualification is rerun under the current semantics;
+- the current-generation immutable unit is published after the gate.
+
+If a semantic repair requires targeted re-proof, non-zero work is acceptable
+only for the explicitly affected subset and should be visible in a dedicated
+counter such as presentation-conflict recheck documents.
 
 ## Failure classification and response
 
@@ -379,7 +436,8 @@ estimate from observed throughput.
 
 An engineering compatibility bridge is exceptional and must include:
 
-- source run id;
+- source run id and run attempt;
+- source branch/ref and its cache-visibility relationship to the replacement run;
 - source commit;
 - old semantic fingerprint/key;
 - exact date window;
