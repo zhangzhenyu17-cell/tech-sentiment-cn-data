@@ -163,6 +163,7 @@ STAGE_SPECS: dict[str, StageSpec] = {
             ".github/workflows/v4a-derived.yml",
             "reference/v4a_fundamental_pit_state_contract_v1.json",
             "reference/v4a_qualification_tolerance_contract_v1.json",
+            "reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json",
         ),
     ),
 }
