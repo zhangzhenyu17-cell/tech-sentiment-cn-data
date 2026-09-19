@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 import tech_sentiment.earnings_materialization as module
+from tech_sentiment.immutable_checkpoint import ImmutableCheckpointStore
 from tech_sentiment.official_filing_facts import DownloadedOfficialDocument
 
 
@@ -102,3 +103,91 @@ def test_download_failure_remains_hard_failure(tmp_path, monkeypatch):
     assert len(result.errors) == 1
     assert result.unclassified.empty
     assert result.coverage.iloc[0]["query_status"] == "FAILED"
+
+
+def test_unknown_direction_progress_checkpoint_survives_runtime_commit_change(
+    tmp_path,
+    monkeypatch,
+):
+    legacy_commit = "1" * 40
+    progress_commit = "2" * 40
+    legacy_root = tmp_path / "legacy"
+    progress_root = tmp_path / "progress"
+    legacy_store = ImmutableCheckpointStore(legacy_root)
+
+    raw = _announcement()
+    legacy_query = module._symbol_query_identity(
+        source_commit=legacy_commit,
+        symbol="600000",
+        query_start="2025-01-01",
+        query_end="2026-01-06",
+    )
+    legacy_store.save(
+        legacy_query,
+        frames={"announcements": raw},
+        metadata={"entity_id": "600000.SH"},
+    )
+
+    monkeypatch.setattr(
+        module,
+        "fetch_cninfo_announcements_direct",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy query checkpoint should be reused")
+        ),
+    )
+    downloads = {"count": 0}
+
+    def download(url):
+        downloads["count"] += 1
+        return DownloadedOfficialDocument(
+            url=url,
+            sha256="c" * 64,
+            content=b"pdf",
+        )
+
+    monkeypatch.setattr(module, "download_official_document", download)
+    monkeypatch.setattr(
+        module,
+        "extract_pdf_text",
+        lambda content: "公司预计本期经营情况存在不确定性",
+    )
+
+    first = module.materialize_cninfo_earnings_directions(
+        ["600000"],
+        query_start_date="2025-01-01",
+        end_date="2026-01-06",
+        trading_dates=pd.to_datetime(["2026-01-05", "2026-01-06"]),
+        source_commit="3" * 40,
+        checkpoint_source_commit=legacy_commit,
+        progress_checkpoint_source_commit=progress_commit,
+        checkpoint_dir=progress_root,
+        legacy_checkpoint_dir=legacy_root,
+    )
+    assert downloads["count"] == 1
+    assert first.summary["checkpoint_store_mode"] == (
+        "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1"
+    )
+    assert first.summary["reused_legacy_queries"] == 1
+    assert first.summary["unclassified_documents"] == 1
+
+    monkeypatch.setattr(
+        module,
+        "download_official_document",
+        lambda url: (_ for _ in ()).throw(
+            AssertionError("durable earnings progress should avoid re-download")
+        ),
+    )
+    second = module.materialize_cninfo_earnings_directions(
+        ["600000"],
+        query_start_date="2025-01-01",
+        end_date="2026-01-06",
+        trading_dates=pd.to_datetime(["2026-01-05", "2026-01-06"]),
+        source_commit="4" * 40,
+        checkpoint_source_commit=legacy_commit,
+        progress_checkpoint_source_commit=progress_commit,
+        checkpoint_dir=progress_root,
+        legacy_checkpoint_dir=legacy_root,
+    )
+    assert second.summary["resumed_documents"] == 1
+    assert second.summary["unclassified_documents"] == 1
+    assert second.errors.empty
