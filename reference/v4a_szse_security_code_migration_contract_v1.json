@@ -1,0 +1,22 @@
+{
+  "schema_version": "v4a-szse-security-code-migration-v1",
+  "status": "FROZEN_ENGINEERING_IDENTITY_ALIAS",
+  "migrations": [
+    {
+      "old_code": "300114",
+      "new_code": "302132",
+      "effective_date": "2025-02-17",
+      "old_name": "中航电测",
+      "new_name": "中航成飞",
+      "source_reference": "data/reference/chinext50_adjustments_2022_2026.csv",
+      "source_url": "https://www.cnindex.com.cn/zh_information/notices_news/2025/202502/P020250212310734081331.pdf"
+    }
+  ],
+  "same_listed_security_identity_only": true,
+  "evidence_source_eligibility_changed": false,
+  "pit_no_lookahead_semantics_changed": false,
+  "research_scope_changed": false,
+  "future_outcomes_used": false,
+  "production_authority_changed": false,
+  "trading_authority_changed": false
+}

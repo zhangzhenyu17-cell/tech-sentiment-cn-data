@@ -7,6 +7,7 @@ PARALLEL_SCRIPTS = (
     "scripts/verify_v4a_stage_receipt.py",
     "scripts/aggregate_v4a_issuer_shards.py",
     "scripts/materialize_v4a_fundamental_earnings_shard.py",
+    "scripts/materialize_v4a_szse_issuer.py",
     "scripts/materialize_v4a_price_shard.py",
     "scripts/materialize_v4a_policy_stage.py",
     "scripts/assemble_v4a_derived_pit.py",

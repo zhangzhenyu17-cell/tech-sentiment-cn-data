@@ -218,3 +218,43 @@ def test_input_manifest_identity_participates_in_compatibility_key(
         input_manifests={"shared": input_manifest},
     )
     assert first["compatibility_key"] != second["compatibility_key"]
+
+
+def _write_szse_migration_marker(root: Path, **overrides: object) -> Path:
+    marker = root / "shards" / "szse" / persistent._SZSE_MIGRATION_MARKER
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": "v4a-szse-security-code-migration-v1",
+        "status": "FROZEN_ENGINEERING_IDENTITY_ALIAS",
+        "same_listed_security_identity_only": True,
+        "evidence_source_eligibility_changed": False,
+        "pit_no_lookahead_semantics_changed": False,
+        "research_scope_changed": False,
+        "future_outcomes_used": False,
+        "production_authority_changed": False,
+        "trading_authority_changed": False,
+    }
+    payload.update(overrides)
+    marker.write_text(json.dumps(payload), encoding="utf-8")
+    return marker
+
+
+def test_szse_bundle_contract_requires_frozen_same_security_marker(tmp_path):
+    root = tmp_path / "issuer"
+    root.mkdir()
+    with pytest.raises(ValueError, match="missing frozen"):
+        persistent._validate_family_stage_contract(root, "issuer_szse")
+
+    _write_szse_migration_marker(root)
+    persistent._validate_family_stage_contract(root, "issuer_szse")
+
+
+def test_szse_bundle_contract_rejects_boundary_drift(tmp_path):
+    root = tmp_path / "issuer"
+    root.mkdir()
+    _write_szse_migration_marker(
+        root,
+        evidence_source_eligibility_changed=True,
+    )
+    with pytest.raises(ValueError, match="boundary drift"):
+        persistent._validate_family_stage_contract(root, "issuer_szse")
