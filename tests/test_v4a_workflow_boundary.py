@@ -101,7 +101,7 @@ def test_all_v4a_workflows_are_manual_only():
 def test_all_v4a_jobs_use_maximum_six_hour_hard_ceiling():
     for path in ALL_V4A_WORKFLOWS:
         text = _text(path)
-        timeouts = re.findall(r"timeout-minutes:\\s*(\\d+)", text)
+        timeouts = re.findall(r"timeout-minutes:\s*(\d+)", text)
         assert timeouts, path
         assert set(timeouts) == {"360"}, (path, timeouts)
 
