@@ -249,15 +249,15 @@ def test_pdf_text_uses_pymupdf_when_other_text_engines_lose_explicit_unit(monkey
     assert facts["NET_PROFIT_PARENT"] == 62_716_443_738.27
 
 
-def test_three_line_spaced_non_yuan_unit_still_fails_closed():
+def test_three_line_spaced_explicit_wanyuan_unit_is_normalized_to_cny():
     text = """
     单 位 ：
     人 民 币
     万 元
     营业收入 10 9
     """
-    with pytest.raises(ValueError, match="non-yuan unit"):
-        extract_standard_filing_facts(text)
+    facts = extract_standard_filing_facts(text)
+    assert facts["OPERATING_REVENUE"] == 100_000.0
 
 def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
     text = """
@@ -276,8 +276,8 @@ def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
     assert facts["BASIC_EPS"] == 1.2
     assert "NONEXISTENT" not in facts
 
-    with pytest.raises(ValueError, match="non-yuan unit"):
-        extract_standard_filing_facts("单位：万元\n营业收入 10 9")
+    scaled = extract_standard_filing_facts("单位：万元\n营业收入 10 9")
+    assert scaled["OPERATING_REVENUE"] == 100_000.0
 
 
 
@@ -296,13 +296,13 @@ def test_explicit_yuan_unit_tolerates_pdf_layout_whitespace_and_line_wrap():
     assert facts["NET_PROFIT_MARGIN"] == pytest.approx(0.1)
 
 
-def test_spaced_non_yuan_unit_remains_fail_closed():
+def test_spaced_explicit_wanyuan_unit_is_normalized_to_cny():
     text = """
     单 位 ： 万 元
     营业收入 10 9
     """
-    with pytest.raises(ValueError, match="non-yuan unit"):
-        extract_standard_filing_facts(text)
+    facts = extract_standard_filing_facts(text)
+    assert facts["OPERATING_REVENUE"] == 100_000.0
 
 def test_standard_filing_facts_handle_real_sse_wrapped_600519_layout():
     # Representative pypdf layout from the official 600519 2023 annual report:
@@ -335,14 +335,67 @@ def test_standard_filing_facts_handle_real_sse_wrapped_600519_layout():
     )
 
 
-def test_wrapped_non_yuan_fact_still_fails_closed():
+def test_wrapped_explicit_wanyuan_fact_is_normalized_to_cny():
     text = """
     单位：万元 币种：人民币
     归属于上市公司
     股东的净利润 10 9
     """
-    with pytest.raises(ValueError, match="non-yuan unit"):
-        extract_standard_filing_facts(text)
+    facts = extract_standard_filing_facts(text)
+    assert facts["NET_PROFIT_PARENT"] == 100_000.0
+
+
+def test_explicit_amount_units_normalize_to_cny_without_inference():
+    cases = [
+        ("千元", 1_000.0),
+        ("万元", 10_000.0),
+        ("百万元", 1_000_000.0),
+        ("亿元", 100_000_000.0),
+    ]
+    for unit, scale in cases:
+        facts = extract_standard_filing_facts(
+            f"""
+            主要会计数据 单位：人民币{unit} 币种：人民币
+            营业收入 12.5 10.0
+            归属于母公司所有者的净利润 1.25 1.0
+            经营活动产生的现金流量净额 2.5 2.0
+            基本每股收益（元/股） 0.50 0.40
+            """
+        )
+        assert facts["OPERATING_REVENUE"] == pytest.approx(12.5 * scale)
+        assert facts["NET_PROFIT_PARENT"] == pytest.approx(1.25 * scale)
+        assert facts["OPERATING_CASH_FLOW_NET"] == pytest.approx(2.5 * scale)
+        assert facts["BASIC_EPS"] == pytest.approx(0.50)
+        assert facts["NET_PROFIT_MARGIN"] == pytest.approx(0.1)
+
+
+def test_long_wrapped_parent_profit_label_is_reconstructed_without_cross_row_inference():
+    text = """
+    单位：元 币种：人民币
+    归属于
+    母公司
+    所有者的
+    净
+    利润
+    123.00 100.00
+    营业收入 1,000.00 900.00
+    """
+    facts = extract_standard_filing_facts(text)
+    assert facts["NET_PROFIT_PARENT"] == pytest.approx(123.0)
+    assert facts["OPERATING_REVENUE"] == pytest.approx(1_000.0)
+
+
+def test_explicit_qianyuan_unit_split_across_five_lines_is_detected():
+    text = """
+    单
+    位：
+    人民
+    币千
+    元
+    营业收入 12.5 10.0
+    """
+    facts = extract_standard_filing_facts(text)
+    assert facts["OPERATING_REVENUE"] == pytest.approx(12_500.0)
 
 
 def _facts(

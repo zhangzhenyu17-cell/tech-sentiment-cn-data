@@ -167,6 +167,7 @@ def _support_identity(rows: Mapping[str, Mapping[str, object]]) -> list[dict[str
                 "revision_id": str(row["revision_id"]),
                 "publication_timestamp": str(row["publication_timestamp"]),
                 "document_sha256": str(row["document_sha256"]),
+                "parser_version": str(row.get("parser_version") or ""),
                 "source_identity": str(row["source_identity"]),
                 "provider": str(row["provider"]),
             }
@@ -294,6 +295,7 @@ def materialize_fundamental_state_evidence(
                     "contract_id": CONTRACT_ID,
                     "formula_version": FORMULA_VERSION,
                     "filing_parser_version": FILING_PARSER_VERSION,
+                    "support_rows_carry_actual_parser_version": True,
                     "selection_semantics": "LATEST_AVAILABLE_DATE_THEN_OFFICIAL_PUBLICATION_TIMESTAMP_THEN_EXPLICIT_REVISION_TITLE_THEN_SEMANTIC_EQUIVALENCE_FAIL_ON_CONFLICT",
                     "prior_comparable_semantics": "EXACT_SAME_REPORT_PERIOD_ONE_CALENDAR_YEAR_EARLIER",
                     "append_only": True,

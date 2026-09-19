@@ -24,7 +24,8 @@ from .pit_public_materialization import (
 
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
-FILING_PARSER_VERSION = "official-filing-facts-v8-unicode-multiengine-safe-units-revision-time"
+LEGACY_FILING_PARSER_VERSION = "official-filing-facts-v8-unicode-multiengine-safe-units-revision-time"
+FILING_PARSER_VERSION = "official-filing-facts-v9-explicit-unit-scaling-layout-labels"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -61,6 +62,7 @@ _FACT_LABELS: dict[str, tuple[str, ...]] = {
     "NET_PROFIT_PARENT": (
         "归属于上市公司股东的净利润",
         "归属于母公司股东的净利润",
+        "归属于母公司所有者的净利润",
     ),
     "OPERATING_CASH_FLOW_NET": ("经营活动产生的现金流量净额",),
     "TOTAL_ASSETS": ("总资产",),
@@ -70,7 +72,17 @@ _FACT_LABELS: dict[str, tuple[str, ...]] = {
     ),
     "BASIC_EPS": ("基本每股收益",),
 }
-_UNIT_RE = re.compile(r"单位:(?:人民币)?(百万元|万元|元)(?:$|币种|[,，;；])")
+_UNIT_RE = re.compile(
+    r"单位:(?:人民币)?(亿元|百万元|万元|千元|元)"
+    r"(?=$|币种|金额|[,:;()。])"
+)
+_AMOUNT_UNIT_SCALE = {
+    "元": 1.0,
+    "千元": 1_000.0,
+    "万元": 10_000.0,
+    "百万元": 1_000_000.0,
+    "亿元": 100_000_000.0,
+}
 _NUMERIC_TOKEN_RE = re.compile(
     r"(?<![\d.])(?:-?\d[\d,]*(?:\.\d+)?|\(\d[\d,]*(?:\.\d+)?\))(?![\d.])"
 )
@@ -549,8 +561,8 @@ def _nearest_explicit_unit(
     lines: list[str],
     index: int,
     *,
-    lookback: int = 12,
-    max_unit_lines: int = 3,
+    lookback: int = 20,
+    max_unit_lines: int = 5,
 ) -> str | None:
     """Return the nearest explicit table unit at or before a fact row.
 
@@ -574,7 +586,7 @@ def _nearest_explicit_unit(
 def _has_explicit_unit_declaration(
     lines: list[str],
     *,
-    max_unit_lines: int = 3,
+    max_unit_lines: int = 5,
 ) -> bool:
     for position in range(len(lines)):
         for span in range(1, max_unit_lines + 1):
@@ -590,7 +602,7 @@ def _logical_row_window(
     lines: list[str],
     index: int,
     *,
-    max_lines: int = 4,
+    max_lines: int = 6,
 ) -> str:
     """Rejoin one visually wrapped PDF table row without crossing into later values.
 
@@ -629,7 +641,7 @@ def _fragmented_label_value(
     index: int,
     labels: Iterable[str],
     *,
-    max_lines: int = 3,
+    max_lines: int = 6,
 ) -> float | None:
     """Recover a table row whose numeric cell splits the visual label itself.
 
@@ -662,19 +674,28 @@ def _fragmented_label_value(
             return float(value)
     return None
 
-def _first_yuan_value_after_label(lines: list[str], labels: Iterable[str]) -> float | None:
+def _first_amount_value_after_label(
+    lines: list[str],
+    labels: Iterable[str],
+) -> float | None:
+    """Extract a canonical CNY amount only from an explicit amount-unit context.
+
+    Explicit 元/千元/万元/百万元/亿元 declarations are deterministic source
+    metadata, so scaling them to CNY is normalization rather than inference.
+    Missing or unrecognized units remain fail-closed.
+    """
+
     for index in range(len(lines)):
         logical_row = _logical_row_window(lines, index)
         label_match = _wrapped_label_match(logical_row, labels)
         unit = _nearest_explicit_unit(lines, index)
-        if unit != "元":
-            # Missing/local non-yuan unit is not evidence for a canonical CNY
-            # amount. Keep searching for another explicit yuan table occurrence.
+        scale = _AMOUNT_UNIT_SCALE.get(str(unit or ""))
+        if scale is None:
             continue
         if label_match is None:
             fragmented = _fragmented_label_value(lines, index, labels)
             if fragmented is not None:
-                return fragmented
+                return float(fragmented) * scale
             continue
         # Preserve original whitespace after the label so adjacent numeric cells
         # can never be concatenated into one token.
@@ -685,7 +706,7 @@ def _first_yuan_value_after_label(lines: list[str], labels: Iterable[str]) -> fl
             except ValueError:
                 continue
             if pd.notna(value):
-                return float(value)
+                return float(value) * scale
     return None
 
 
@@ -713,16 +734,33 @@ def _first_basic_eps_value(lines: list[str], labels: Iterable[str]) -> float | N
 
     # Preserve the existing explicit-table-unit contract for legacy layouts in
     # which EPS shares the table's declared 单位：元 context.
-    return _first_yuan_value_after_label(lines, labels)
+    # EPS is a per-share amount and must never inherit 千元/万元/百万元 scaling.
+    for index in range(len(lines)):
+        logical_row = _logical_row_window(lines, index)
+        label_match = _wrapped_label_match(logical_row, labels)
+        if label_match is None:
+            continue
+        if _nearest_explicit_unit(lines, index) != "元":
+            continue
+        suffix = logical_row[label_match.end() :]
+        for token in _NUMERIC_TOKEN_RE.findall(suffix):
+            try:
+                value = _parse_numeric_token(token)
+            except ValueError:
+                continue
+            if pd.notna(value):
+                return float(value)
+    return None
 
 
 def extract_standard_filing_facts(text: str) -> dict[str, float]:
-    """Extract facts only from locally proven CNY-yuan table contexts.
+    """Extract facts only from locally proven explicit amount-unit contexts.
 
-    A document may legitimately contain unrelated tables in 万元/百万元. Those
-    tables no longer poison the whole document, but a target fact is accepted
-    only when its nearest bounded unit declaration is exactly 元/人民币元. The
-    parser never rescales a non-yuan table and never fills a missing fact.
+    A document may legitimately contain unrelated tables in different units.
+    A target amount is accepted only when its nearest bounded declaration is an
+    explicit supported CNY amount unit (元/千元/万元/百万元/亿元), then
+    deterministically normalized to CNY. Units are never inferred and missing
+    facts are never filled.
     """
 
     lines = _normalize_text_lines(text)
@@ -734,7 +772,7 @@ def extract_standard_filing_facts(text: str) -> dict[str, float]:
         value = (
             _first_basic_eps_value(lines, labels)
             if fact_type == "BASIC_EPS"
-            else _first_yuan_value_after_label(lines, labels)
+            else _first_amount_value_after_label(lines, labels)
         )
         if value is not None:
             facts[fact_type] = value
@@ -749,9 +787,9 @@ def extract_standard_filing_facts(text: str) -> dict[str, float]:
             if not contains_target:
                 continue
             unit = _nearest_explicit_unit(lines, index)
-            if unit in {"万元", "百万元"}:
+            if unit in _AMOUNT_UNIT_SCALE and unit != "元":
                 raise ValueError(
-                    "filing target fact uses non-yuan unit; parser refuses inferred scaling"
+                    "filing target fact has explicit supported amount unit but no parseable value"
                 )
         raise ValueError("filing has no target facts with locally proven CNY-yuan units")
     if "OPERATING_REVENUE" in facts and "NET_PROFIT_PARENT" in facts:
