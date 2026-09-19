@@ -124,6 +124,7 @@ STAGE_SPECS: dict[str, StageSpec] = {
         extra_files=(
             ".github/workflows/v4a-fundamental-earnings.yml",
             "reference/v4a_fundamental_pit_state_contract_v1.json",
+            "reference/v4a_fundamental_checkpoint_reuse_contract_v1.json",
         ),
     ),
     "prices": StageSpec(
