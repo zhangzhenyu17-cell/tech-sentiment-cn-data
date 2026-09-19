@@ -127,11 +127,13 @@ def materialize_cninfo_earnings_directions(
     trading_dates: Iterable[object],
     source_commit: str,
     checkpoint_dir: str | Path,
+    checkpoint_source_commit: str | None = None,
 ) -> EarningsDirectionMaterializationResult:
     start = pd.Timestamp(query_start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
     calendar = _real_trading_calendar(trading_dates)
     store = ImmutableCheckpointStore(checkpoint_dir)
+    checkpoint_commit = str(checkpoint_source_commit or source_commit)
     unique_symbols = sorted({str(value).zfill(6) for value in symbols})
     rows: list[dict[str, object]] = []
     coverage_rows: list[dict[str, object]] = []
@@ -142,7 +144,7 @@ def materialize_cninfo_earnings_directions(
     for symbol in unique_symbols:
         entity = _entity_id(symbol)
         query_identity = _symbol_query_identity(
-            source_commit=source_commit,
+            source_commit=checkpoint_commit,
             symbol=symbol,
             query_start=str(start.date()),
             query_end=str(end.date()),
@@ -207,7 +209,7 @@ def materialize_cninfo_earnings_directions(
                 if not attachment:
                     raise ValueError("earnings forecast lacks immutable attachment URL")
                 identity = _direction_document_identity(
-                    source_commit=source_commit,
+                    source_commit=checkpoint_commit,
                     symbol=symbol,
                     document_id=document_id,
                     attachment_url=attachment,
@@ -297,6 +299,12 @@ def materialize_cninfo_earnings_directions(
         "query_start_date": str(start.date()),
         "end_date": str(end.date()),
         "symbols": len(unique_symbols),
+        "checkpoint_source_commit": checkpoint_commit,
+        "checkpoint_reuse_mode": (
+            "CURRENT_SOURCE_COMMIT"
+            if checkpoint_commit == str(source_commit)
+            else "FROZEN_COMPATIBLE_LEGACY_SOURCE_COMMIT"
+        ),
         "forecast_documents": int(coverage["forecast_documents"].sum()) if len(coverage) else 0,
         "direction_documents": int(coverage["direction_documents"].sum()) if len(coverage) else 0,
         "canonical_evidence_records": int(len(evidence)),

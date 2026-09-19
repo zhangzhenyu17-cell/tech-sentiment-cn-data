@@ -57,6 +57,61 @@ jobs:
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --input-manifest shared=bundle-meta/shared.json --out bundle-meta/stage-key.json
           echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/stage-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+      - name: Resolve frozen filing checkpoint reuse
+        env:
+          START_DATE: ${{ inputs.start_date }}
+          END_DATE: ${{ inputs.end_date }}
+          CURRENT_SHA: ${{ github.sha }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          contract = json.loads(
+              Path("reference/v4a_fundamental_checkpoint_reuse_contract_v1.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if contract.get("schema_version") != "v4a-fundamental-checkpoint-reuse-v1":
+              raise SystemExit("fundamental checkpoint reuse contract schema mismatch")
+          if contract.get("status") != "FROZEN_ENGINEERING_CHECKPOINT_REUSE":
+              raise SystemExit("fundamental checkpoint reuse contract is not frozen")
+          boundary_flags = (
+              "acquisition_semantics_changed",
+              "parser_semantics_changed",
+              "checkpoint_schema_changed",
+              "evidence_source_eligibility_changed",
+              "pit_no_lookahead_semantics_changed",
+              "research_scope_changed",
+              "future_outcomes_used",
+              "production_authority_changed",
+              "trading_authority_changed",
+          )
+          if any(bool(contract.get(key)) for key in boundary_flags):
+              raise SystemExit("fundamental checkpoint reuse contract boundary drift")
+
+          window = contract.get("qualification_window") or {}
+          exact_window = (
+              os.environ["START_DATE"] == str(window.get("start_date"))
+              and os.environ["END_DATE"] == str(window.get("end_date"))
+          )
+          if exact_window:
+              checkpoint_commit = str(contract["legacy_checkpoint_source_commit"])
+              compatibility = str(contract["legacy_stage_compatibility_key"])
+              legacy_prefix = (
+                  f"v4a-fundamental-{compatibility}-{checkpoint_commit}-"
+                  f"{os.environ['SHARD']}-"
+              )
+          else:
+              checkpoint_commit = os.environ["CURRENT_SHA"]
+              legacy_prefix = "v4a-fundamental-disabled-legacy-checkpoint-reuse-"
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as handle:
+              handle.write(f"FILING_CHECKPOINT_SOURCE_COMMIT={checkpoint_commit}\n")
+              handle.write(f"LEGACY_FILING_CACHE_PREFIX={legacy_prefix}\n")
+          PY
       - name: Restore filing checkpoints
         uses: actions/cache/restore@v4
         with:
@@ -64,6 +119,7 @@ jobs:
           key: v4a-fundamental-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             v4a-fundamental-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-
+            ${{ env.LEGACY_FILING_CACHE_PREFIX }}
       - name: Materialize fundamental/earnings shard
         id: materialize
         run: |
@@ -73,6 +129,7 @@ jobs:
             --calendar-csv stage/shared/trading_calendar.csv \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --source-commit "${{ github.sha }}" \
+            --filing-checkpoint-source-commit "${{ env.FILING_CHECKPOINT_SOURCE_COMMIT }}" \
             --shard-index "${{ matrix.shard }}" --shard-count 4 \
             --checkpoint-dir .cache/capital_pit_v4a/derived/filings \
             --out-dir "stage-shard/${{ matrix.shard }}"

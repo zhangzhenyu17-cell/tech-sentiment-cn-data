@@ -779,6 +779,21 @@ def build_filing_fact_rows(
     return pd.DataFrame(rows, columns=list(FILING_FACT_COLUMNS))
 
 
+_EXPLICIT_FILING_REVISION_MARKERS = (
+    "修订版",
+    "修订稿",
+    "更正版",
+    "更正后",
+    "修正版",
+    "更新版",
+)
+
+
+def _explicit_filing_revision_priority(value: object) -> int:
+    text = re.sub(r"\s+", "", str(value or ""))
+    return int(any(marker in text for marker in _EXPLICIT_FILING_REVISION_MARKERS))
+
+
 def latest_filing_fact_as_of(
     facts: pd.DataFrame,
     *,
@@ -787,9 +802,25 @@ def latest_filing_fact_as_of(
     period_end: pd.Timestamp,
     as_of: pd.Timestamp,
 ) -> Mapping[str, object] | None:
-    """Select the latest genuinely knowable filing version, never by ID order."""
+    """Select the latest genuinely knowable filing version without hindsight.
 
-    required = {"publication_timestamp", "evidence_available_date", "document_id", "revision_id"}
+    Ordering is first by market-available date and official publication
+    timestamp. If multiple documents are published at the exact same timestamp,
+    an explicitly titled revision/correction may supersede the original because
+    that status is public at the same instant. Remaining ties are collapsed only
+    when the standardized fact value and unit are identical; document/revision
+    IDs are then used solely to choose a stable provenance representative, never
+    to infer chronology. Conflicting unresolved ties remain fail-closed.
+    """
+
+    required = {
+        "publication_timestamp",
+        "evidence_available_date",
+        "document_id",
+        "revision_id",
+        "value",
+        "unit",
+    }
     missing = required - set(facts.columns)
     if missing:
         raise ValueError(f"filing fact revision ordering missing columns: {sorted(missing)}")
@@ -810,16 +841,39 @@ def latest_filing_fact_as_of(
     latest_available = rows["evidence_available_date"].max()
     candidates = rows[rows["evidence_available_date"].eq(latest_available)].copy()
     latest_publication = candidates["publication_timestamp_order"].max()
-    candidates = candidates[candidates["publication_timestamp_order"].eq(latest_publication)]
+    candidates = candidates[candidates["publication_timestamp_order"].eq(latest_publication)].copy()
+
+    if len(candidates) != 1 and "_filing_title" in candidates.columns:
+        candidates["_explicit_revision_priority"] = candidates["_filing_title"].map(
+            _explicit_filing_revision_priority
+        )
+        max_priority = int(candidates["_explicit_revision_priority"].max())
+        candidates = candidates[
+            candidates["_explicit_revision_priority"].eq(max_priority)
+        ].copy()
+
     if len(candidates) != 1:
-        identities = sorted(
-            f"{row.document_id}/{row.revision_id}" for row in candidates.itertuples()
-        )
-        raise ValueError(
-            "ambiguous same-availability filing revisions without deterministic publication order: "
-            + ",".join(identities)
-        )
-    return candidates.iloc[0].drop(labels=["publication_timestamp_order"]).to_dict()
+        semantic_signatures = {
+            (float(row.value), str(row.unit))
+            for row in candidates.itertuples()
+        }
+        if len(semantic_signatures) == 1:
+            candidates = candidates.sort_values(
+                ["document_id", "revision_id"], kind="stable"
+            ).iloc[[0]].copy()
+        else:
+            identities = sorted(
+                f"{row.document_id}/{row.revision_id}" for row in candidates.itertuples()
+            )
+            raise ValueError(
+                "ambiguous same-availability filing revisions with conflicting facts: "
+                + ",".join(identities)
+            )
+
+    return candidates.iloc[0].drop(
+        labels=["publication_timestamp_order", "_explicit_revision_priority"],
+        errors="ignore",
+    ).to_dict()
 
 
 def derive_fundamental_trend_evidence(facts: pd.DataFrame) -> pd.DataFrame:

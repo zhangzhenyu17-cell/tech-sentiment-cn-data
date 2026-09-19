@@ -438,6 +438,129 @@ def test_same_close_date_revision_uses_official_publication_order_not_document_i
     assert payload["yoy_change"] == pytest.approx(0.1)
 
 
+def test_same_timestamp_explicit_revision_title_supersedes_original_without_id_order():
+    original = _facts(
+        "2024年年度报告",
+        "2025-04-21",
+        "z_original",
+        100.0,
+        10.0,
+        published="2025-04-21 10:00:00",
+    )
+    revision = _facts(
+        "2024年年度报告（修订版）",
+        "2025-04-21",
+        "a_revision",
+        110.0,
+        11.0,
+        published="2025-04-21 10:00:00",
+    )
+    current = _facts(
+        "2025年年度报告",
+        "2026-04-20",
+        "current",
+        121.0,
+        12.1,
+        published="2026-04-20 10:00:00",
+    )
+    original["_filing_title"] = "2024年年度报告"
+    revision["_filing_title"] = "2024年年度报告（修订版）"
+    current["_filing_title"] = "2025年年度报告"
+
+    evidence = derive_fundamental_trend_evidence(
+        pd.concat([original, revision, current], ignore_index=True)
+    )
+    revenue = evidence[
+        (evidence["evidence_type"] == "REVENUE_TREND")
+        & (evidence["document_id"] == "current")
+    ].iloc[0]
+    payload = json.loads(revenue["evidence_payload"])
+    assert payload["prior_document_id"] == "a_revision"
+    assert payload["yoy_change"] == pytest.approx(0.1)
+
+
+def test_same_timestamp_semantically_equivalent_facts_use_stable_provenance_only():
+    first = _facts(
+        "2024年年度报告",
+        "2025-04-21",
+        "z_equivalent",
+        100.0,
+        10.0,
+        published="2025-04-21 10:00:00",
+    )
+    second = _facts(
+        "2024年年度报告",
+        "2025-04-21",
+        "a_equivalent",
+        100.0,
+        10.0,
+        published="2025-04-21 10:00:00",
+    )
+    current = _facts(
+        "2025年年度报告",
+        "2026-04-20",
+        "current",
+        120.0,
+        12.0,
+        published="2026-04-20 10:00:00",
+    )
+    for frame, title in (
+        (first, "2024年年度报告"),
+        (second, "2024年年度报告"),
+        (current, "2025年年度报告"),
+    ):
+        frame["_filing_title"] = title
+
+    evidence = derive_fundamental_trend_evidence(
+        pd.concat([first, second, current], ignore_index=True)
+    )
+    revenue = evidence[
+        (evidence["evidence_type"] == "REVENUE_TREND")
+        & (evidence["document_id"] == "current")
+    ].iloc[0]
+    payload = json.loads(revenue["evidence_payload"])
+    assert payload["prior_document_id"] == "a_equivalent"
+    assert payload["yoy_change"] == pytest.approx(0.2)
+
+
+def test_same_timestamp_conflicting_unmarked_facts_remain_fail_closed():
+    first = _facts(
+        "2024年年度报告",
+        "2025-04-21",
+        "a_conflict",
+        100.0,
+        10.0,
+        published="2025-04-21 10:00:00",
+    )
+    second = _facts(
+        "2024年年度报告",
+        "2025-04-21",
+        "b_conflict",
+        110.0,
+        11.0,
+        published="2025-04-21 10:00:00",
+    )
+    current = _facts(
+        "2025年年度报告",
+        "2026-04-20",
+        "current",
+        121.0,
+        12.1,
+        published="2026-04-20 10:00:00",
+    )
+    for frame, title in (
+        (first, "2024年年度报告"),
+        (second, "2024年年度报告"),
+        (current, "2025年年度报告"),
+    ):
+        frame["_filing_title"] = title
+
+    with pytest.raises(ValueError, match="conflicting facts"):
+        derive_fundamental_trend_evidence(
+            pd.concat([first, second, current], ignore_index=True)
+        )
+
+
 class _FakeResponse:
     def __init__(self, content: bytes):
         self._content = content

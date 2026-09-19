@@ -129,6 +129,7 @@ def materialize_versioned_filing_facts(
     source_commit: str,
     checkpoint_dir: str | Path,
     warmup_years: int = 2,
+    checkpoint_source_commit: str | None = None,
 ) -> FilingMaterializationResult:
     """Reconstruct filing facts from exact versioned CNINFO attachments."""
 
@@ -141,6 +142,7 @@ def materialize_versioned_filing_facts(
     query_start = target_start - pd.DateOffset(years=warmup_years)
     calendar = _real_trading_calendar(trading_dates)
     store = ImmutableCheckpointStore(checkpoint_dir)
+    checkpoint_commit = str(checkpoint_source_commit or source_commit)
     unique_symbols = sorted({str(value).zfill(6) for value in symbols})
     if not unique_symbols:
         raise ValueError("at least one symbol is required")
@@ -156,7 +158,7 @@ def materialize_versioned_filing_facts(
     for symbol in unique_symbols:
         entity = _entity_id(symbol)
         query_identity = _symbol_query_identity(
-            source_commit=source_commit,
+            source_commit=checkpoint_commit,
             symbol=symbol,
             query_start=str(query_start.date()),
             query_end=str(end.date()),
@@ -230,7 +232,7 @@ def materialize_versioned_filing_facts(
             try:
                 document_id, _ = _parse_document_identity(announcement["公告链接"])
                 doc_identity = _document_identity(
-                    source_commit=source_commit,
+                    source_commit=checkpoint_commit,
                     symbol=symbol,
                     document_id=document_id,
                     attachment_url=attachment,
@@ -273,6 +275,8 @@ def materialize_versioned_filing_facts(
                 if len(facts):
                     if "publication_timestamp" not in facts.columns:
                         raise ValueError("filing facts checkpoint lacks publication_timestamp")
+                    facts = facts.copy()
+                    facts["_filing_title"] = str(announcement["公告标题"])
                     fact_parts.append(facts)
                     parsed_documents += 1
             except Exception as exc:
@@ -327,6 +331,7 @@ def materialize_versioned_filing_facts(
             ["entity_id", "document_id", "revision_id", "fact_type"], keep="last"
         ).reset_index(drop=True)
     trends = derive_fundamental_trend_evidence(facts)
+    facts = facts.drop(columns=["_filing_title"], errors="ignore")
     coverage = pd.DataFrame(coverage_rows)
     complete_entities = int(
         coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").sum()
@@ -337,6 +342,12 @@ def materialize_versioned_filing_facts(
         "query_warmup_start_date": str(query_start.date()),
         "end_date": str(end.date()),
         "warmup_years": int(warmup_years),
+        "checkpoint_source_commit": checkpoint_commit,
+        "checkpoint_reuse_mode": (
+            "CURRENT_SOURCE_COMMIT"
+            if checkpoint_commit == str(source_commit)
+            else "FROZEN_COMPATIBLE_LEGACY_SOURCE_COMMIT"
+        ),
         "symbols": len(unique_symbols),
         "complete_entities": complete_entities,
         "filing_fact_rows": int(len(facts)),
@@ -351,7 +362,11 @@ def materialize_versioned_filing_facts(
             else "PARTIAL_COVERAGE" if len(trends) else "DATA_INSUFFICIENT"
         ),
         "fundamental_state_mapping_state": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1_DEFINED_SEPARATELY",
-        "revision_ordering": "EVIDENCE_AVAILABLE_DATE_THEN_OFFICIAL_PUBLICATION_TIMESTAMP_FAIL_ON_AMBIGUOUS_TIE",
+        "revision_ordering": (
+            "EVIDENCE_AVAILABLE_DATE_THEN_OFFICIAL_PUBLICATION_TIMESTAMP_"
+            "THEN_EXPLICIT_REVISION_TITLE_THEN_SEMANTIC_EQUIVALENCE_"
+            "FAIL_ON_CONFLICT"
+        ),
         "fundamental_state_thresholds_invented": False,
         "future_prices_or_returns_used": False,
         "hindsight_backfill": False,
