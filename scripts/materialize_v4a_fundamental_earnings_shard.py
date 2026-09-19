@@ -96,6 +96,7 @@ def main() -> None:
         trading_dates=trading_dates,
         source_commit=args.source_commit,
         checkpoint_dir=checkpoint / "filings",
+        checkpoint_source_commit=args.filing_checkpoint_source_commit,
     )
 
     out = Path(args.out_dir)
