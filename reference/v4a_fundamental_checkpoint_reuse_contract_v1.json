@@ -1,0 +1,28 @@
+{
+  "schema_version": "v4a-fundamental-checkpoint-reuse-v1",
+  "status": "FROZEN_ENGINEERING_CHECKPOINT_REUSE",
+  "qualification_window": {
+    "start_date": "2022-01-04",
+    "end_date": "2026-09-17"
+  },
+  "legacy_checkpoint_source_commit": "29571066bbf69da5ba252982f71b592e07969314",
+  "legacy_stage_compatibility_key": "f0fe6deb6a377b2941da30e860d606a3e1fb61ea17bf92f631069f382879ecb5",
+  "checkpoint_scope": [
+    "CNINFO filing-index query checkpoints",
+    "immutable parsed filing-fact document checkpoints"
+  ],
+  "source_runs": [
+    35384571822,
+    35419103373
+  ],
+  "reuse_reason": "The repair changes only post-acquisition same-publication-time revision resolution; acquisition endpoints, immutable document identity, PDF parsing, standardized fact extraction, and checkpoint schemas are unchanged.",
+  "acquisition_semantics_changed": false,
+  "parser_semantics_changed": false,
+  "checkpoint_schema_changed": false,
+  "evidence_source_eligibility_changed": false,
+  "pit_no_lookahead_semantics_changed": false,
+  "research_scope_changed": false,
+  "future_outcomes_used": false,
+  "production_authority_changed": false,
+  "trading_authority_changed": false
+}
