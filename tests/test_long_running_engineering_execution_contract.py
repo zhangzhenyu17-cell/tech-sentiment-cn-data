@@ -104,7 +104,7 @@ def test_protocol_and_run_plan_cover_recent_long_run_failure_modes() -> None:
         "Code-change decision protocol during a live run",
         "Compatibility bridge requirements",
         "timeout is a **per-job safety ceiling**",
-        "immutable completed work-unit bundle",
+        "Immutable completed work-unit bundle",
     ):
         assert phrase in protocol
 
