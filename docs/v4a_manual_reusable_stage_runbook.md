@@ -224,6 +224,53 @@ generation or fresh computation.
 After cancellation, inspect the actual cache-save outcomes of every active work
 unit before deciding what the replacement run must recompute.
 
+### Fundamental recovery-branch procedure
+
+GitHub Actions cache visibility is branch/ref-scoped. The Fundamental durable
+progress used by the current presentation-classifier recovery chain was created
+on:
+
+`v4a/fundamental-resume-295710`
+
+Therefore, while the frozen presentation progress bridge remains active:
+
+1. do not dispatch the recovery run directly from `main`;
+2. verify the recovery branch can be fast-forwarded cleanly to the intended
+   latest `main` commit;
+3. fast-forward the recovery branch without force;
+4. dispatch `v4a-06-fundamental-earnings` manually from that recovery branch;
+5. require the workflow's pre-materialization branch guard to pass;
+6. verify the restore chain selects the newest readable exact progress before
+   older fallback layers;
+7. verify resume effectiveness from runtime counters, not only green cache steps.
+
+For a fully resumed unit, the expected performance proof is normally:
+
+- `executed_symbol_queries = 0`;
+- filing/earnings `executed_documents = 0`;
+- non-zero resumed query/document counts;
+- current semantic materialization completes;
+- qualification gate passes;
+- a new current-generation immutable work-unit bundle is published.
+
+The first real `fundamental-v9-presentation-recheck-v2` recovery run,
+`35451946515`, validated this path for units 0-2: the workflow restored the
+audited durable progress, executed zero provider symbol queries, executed zero
+new document downloads/parses, reran current-semantic materialization and
+qualification, and completed in roughly one minute per unit instead of the prior
+multi-tens-of-minutes provider/parser path.
+
+A targeted semantic repair may legitimately execute non-zero re-proof work only
+for the affected subset. For the 688122 presentation incident, the relevant
+proof is exact official-byte download plus checkpoint SHA verification before
+the corrected presentation classifier is allowed to resolve the conflicting
+carrier.
+
+After all 16 work units have immutable bundles under the current presentation
+generation, remove any one-time branch guard/bridge only through a separately
+reviewed workflow-only cleanup. Do not weaken the underlying semantic,
+qualification, PIT, or evidence contracts.
+
 ## Trigger policy
 
 Every V4-A workflow in this architecture is `workflow_dispatch` only.
