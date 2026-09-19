@@ -762,36 +762,63 @@ def main() -> None:
     if not isinstance(policy_summary, dict):
         raise ValueError("policy stage summary missing")
 
-    combined_parts = [
-        frame for frame in (
-            issuer_evidence,
-            trends,
-            fundamental_evidence,
-            earnings_evidence,
-            earnings_negative,
-            valuation_evidence,
-            policy_evidence,
+    if checkpoint_root is not None and checkpoint_state is not None and _phase_done(checkpoint_state, "review"):
+        phase_root = checkpoint_root / "review"
+        combined = _load_evidence_frame(phase_root / "pit_evidence_extended.csv")
+        coverage_ledger = _read_csv(phase_root / "major_negative_coverage_ledger.csv")
+        major_negative_review = _read_csv(phase_root / "major_negative_review.csv")
+        review_meta = _read_json(phase_root / "phase_metadata.json")
+        major_negative_summary = dict(review_meta["major_negative_summary"])
+    else:
+        combined_parts = [
+            frame for frame in (
+                issuer_evidence,
+                trends,
+                fundamental_evidence,
+                earnings_evidence,
+                earnings_negative,
+                valuation_evidence,
+                policy_evidence,
+            )
+            if frame is not None and len(frame)
+        ]
+        combined = (
+            validate_materialized_pit_records(
+                pd.concat(combined_parts, ignore_index=True, sort=False)
+            )
+            if combined_parts else pd.DataFrame()
         )
-        if frame is not None and len(frame)
-    ]
-    combined = (
-        validate_materialized_pit_records(pd.concat(combined_parts, ignore_index=True, sort=False))
-        if combined_parts else pd.DataFrame()
-    )
-    coverage_ledger = build_major_negative_coverage_ledger(
-        frozen_scope=scope,
-        issuer_coverage=issuer_coverage,
-        policy_coverage=policy_coverage,
-        start_date=target_start,
-        end_date=target_end,
-        nmpa_cde_coverage=None,
-        nmpa_cde_applicable_entities=(),
-    )
-    major_negative_review, major_negative_summary = review_major_negative_events(
-        coverage_ledger=coverage_ledger,
-        evidence_records=combined,
-    )
-    audit = audit_pit_replay(combined)
+        coverage_ledger = build_major_negative_coverage_ledger(
+            frozen_scope=scope,
+            issuer_coverage=issuer_coverage,
+            policy_coverage=policy_coverage,
+            start_date=target_start,
+            end_date=target_end,
+            nmpa_cde_coverage=None,
+            nmpa_cde_applicable_entities=(),
+        )
+        major_negative_review, major_negative_summary = review_major_negative_events(
+            coverage_ledger=coverage_ledger,
+            evidence_records=combined,
+        )
+        if checkpoint_root is not None and checkpoint_state is not None:
+            phase_root = checkpoint_root / "review"
+            _write_frame(phase_root / "pit_evidence_extended.csv", combined)
+            _write_frame(phase_root / "major_negative_coverage_ledger.csv", coverage_ledger)
+            _write_frame(phase_root / "major_negative_review.csv", major_negative_review)
+            _atomic_write_json(
+                phase_root / "phase_metadata.json",
+                {"major_negative_summary": major_negative_summary},
+            )
+            _mark_phase(checkpoint_root, checkpoint_state, "review")
+
+    if checkpoint_root is not None and checkpoint_state is not None and _phase_done(checkpoint_state, "pit_audit"):
+        audit = _read_json(checkpoint_root / "pit_audit" / "audit.json")
+    else:
+        audit = audit_pit_replay(combined)
+        if checkpoint_root is not None and checkpoint_state is not None:
+            _atomic_write_json(checkpoint_root / "pit_audit" / "audit.json", audit)
+            _mark_phase(checkpoint_root, checkpoint_state, "pit_audit")
 
     raw_source_states = issuer_manifest.get("source_states")
     source_states = dict(raw_source_states) if isinstance(raw_source_states, dict) else {}
