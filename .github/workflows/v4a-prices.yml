@@ -57,18 +57,22 @@ jobs:
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --input-manifest shared=bundle-meta/shared.json --out bundle-meta/stage-key.json
           echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/stage-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+          python scripts/v4a_persistent_stage_bundle.py progress-key \
+            --family prices --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/price-progress-key.json
+          echo "PROGRESS_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/price-progress-key.json"))["progress_key"])' )" >> "$GITHUB_ENV"
       - name: Restore price checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/prices
-          key: v4a-prices-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-prices-progress-v1-${{ env.PROGRESS_KEY }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-prices-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-
+            v4a-prices-progress-v1-${{ env.PROGRESS_KEY }}-${{ matrix.shard }}-
       - name: Materialize price shard
         id: materialize
         run: |
           mkdir -p "stage-shard/${{ matrix.shard }}" .cache/capital_pit_v4a/derived/prices
-          python scripts/materialize_v4a_price_shard.py \
+          timeout --signal=TERM --kill-after=2m 330m python scripts/materialize_v4a_price_shard.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --source-commit "${{ github.sha }}" \
@@ -80,7 +84,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/derived/prices
-          key: v4a-prices-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-prices-progress-v1-${{ env.PROGRESS_KEY }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal price shard
         if: ${{ success() }}
         run: |
