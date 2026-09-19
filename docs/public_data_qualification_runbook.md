@@ -15,6 +15,10 @@ Historical reference: preflight run `35368616602` proved the original five-way f
 
 This runbook is an engineering execution contract. It does not change evidence eligibility, PIT/no-lookahead semantics, research scope, model behavior, production authority, trading authority, or public/private security boundaries.
 
+The repository-wide default for planning, persistence, cancellation, compatibility
+bridges, monitoring, and acceptance of long-running work is
+[Long-Running Engineering Execution Protocol](long_running_engineering_execution_protocol.md).
+
 ## Operating principle
 
 A long-running qualification job should fail cheaply, diagnose precisely, resume narrowly, and only spend material compute after representative preflights prove that the current code/source contract is reachable.
