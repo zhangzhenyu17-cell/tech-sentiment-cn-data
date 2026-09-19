@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 import tech_sentiment.filing_materialization as filing_materialization
 from tech_sentiment.fundamental_pit_state import materialize_fundamental_state_evidence
@@ -128,3 +129,115 @@ def test_revision_identity_is_not_collapsed_with_original_title_family():
         "2020年第一季度报告",
         "2020年第一季度报告（修订版）",
     }
+
+
+def test_conflicting_cached_documents_recheck_exact_official_pdf_carriers(monkeypatch):
+    facts = pd.DataFrame(
+        [
+            {
+                "entity_id": "688002.SH",
+                "period_end": "2020-12-31",
+                "fact_type": "OPERATING_CASH_FLOW_NET",
+                "value": 100.0,
+                "unit": "CNY",
+                "evidence_available_date": "2021-04-28",
+                "publication_timestamp": "2021-04-28 00:00:00",
+                "document_id": "1209844800",
+                "document_url": "https://static.cninfo.com.cn/finalpage/2021-04-28/1209844800.PDF",
+                "document_sha256": "a" * 64,
+                "document_presentation_variant": "",
+            },
+            {
+                "entity_id": "688002.SH",
+                "period_end": "2020-12-31",
+                "fact_type": "OPERATING_CASH_FLOW_NET",
+                "value": 120.0,
+                "unit": "CNY",
+                "evidence_available_date": "2021-04-28",
+                "publication_timestamp": "2021-04-28 00:00:00",
+                "document_id": "1209844801",
+                "document_url": "https://static.cninfo.com.cn/finalpage/2021-04-28/1209844801.PDF",
+                "document_sha256": "b" * 64,
+                "document_presentation_variant": "",
+            },
+        ]
+    )
+
+    class Downloaded:
+        def __init__(self, url, sha256, content):
+            self.url = url
+            self.sha256 = sha256
+            self.content = content
+
+    def fake_download(url):
+        if url.endswith("1209844800.PDF"):
+            return Downloaded(url, "a" * 64, b"summary")
+        return Downloaded(url, "b" * 64, b"full")
+
+    def fake_extract(content):
+        if content == b"summary":
+            return "烟台睿创微纳技术股份有限公司 2020 年年度报告摘要"
+        return "烟台睿创微纳技术股份有限公司 2020 年年度报告"
+
+    monkeypatch.setattr(filing_materialization, "download_official_document", fake_download)
+    monkeypatch.setattr(filing_materialization, "extract_pdf_text", fake_extract)
+
+    enriched, rechecked = filing_materialization._enrich_conflicting_presentation_variants(
+        facts
+    )
+    variants = dict(
+        zip(
+            enriched["document_id"].astype(str),
+            enriched["document_presentation_variant"].astype(str),
+        )
+    )
+    assert rechecked == 2
+    assert variants["1209844800"] == "SUMMARY"
+    assert variants["1209844801"] == "FULL_OR_CANONICAL"
+
+
+def test_conflict_recheck_rejects_official_pdf_sha_drift(monkeypatch):
+    facts = pd.DataFrame(
+        [
+            {
+                "entity_id": "688002.SH",
+                "period_end": "2020-12-31",
+                "fact_type": "OPERATING_CASH_FLOW_NET",
+                "value": 100.0,
+                "unit": "CNY",
+                "evidence_available_date": "2021-04-28",
+                "publication_timestamp": "2021-04-28 00:00:00",
+                "document_id": "one",
+                "document_url": "https://static.cninfo.com.cn/finalpage/2021-04-28/1209844800.PDF",
+                "document_sha256": "a" * 64,
+                "document_presentation_variant": "",
+            },
+            {
+                "entity_id": "688002.SH",
+                "period_end": "2020-12-31",
+                "fact_type": "OPERATING_CASH_FLOW_NET",
+                "value": 120.0,
+                "unit": "CNY",
+                "evidence_available_date": "2021-04-28",
+                "publication_timestamp": "2021-04-28 00:00:00",
+                "document_id": "two",
+                "document_url": "https://static.cninfo.com.cn/finalpage/2021-04-28/1209844801.PDF",
+                "document_sha256": "b" * 64,
+                "document_presentation_variant": "",
+            },
+        ]
+    )
+
+    class Downloaded:
+        url = "https://static.cninfo.com.cn/finalpage/2021-04-28/1209844800.PDF"
+        sha256 = "c" * 64
+        content = b"changed"
+
+    monkeypatch.setattr(
+        filing_materialization,
+        "download_official_document",
+        lambda url: Downloaded(),
+    )
+
+    with pytest.raises(ValueError, match="official filing bytes changed"):
+        filing_materialization._enrich_conflicting_presentation_variants(facts)
