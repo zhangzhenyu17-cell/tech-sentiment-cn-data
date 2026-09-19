@@ -521,7 +521,7 @@ jobs:
           mkdir -p "stage-shard/${{ matrix.shard }}" \
             .cache/capital_pit_v4a/derived/progress \
             .cache/capital_pit_v4a/derived/legacy
-          python scripts/materialize_v4a_fundamental_earnings_shard.py \
+          timeout --signal=TERM --kill-after=2m 330m python scripts/materialize_v4a_fundamental_earnings_shard.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --calendar-csv stage/shared/trading_calendar.csv \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
