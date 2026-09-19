@@ -418,7 +418,8 @@ architecture work.
 
 ## Related documents
 
-- [V4-A Preflight Incident Review](../docs/v4a_preflight_incident_review_2026-09.md)
-- [V4-A Manual Reusable Stage Runbook](../docs/v4a_manual_reusable_stage_runbook.md)
-- [Parallel Execution Architecture](../docs/parallel_execution_architecture.md)
-- [Public Data Qualification Runbook](../docs/public_data_qualification_runbook.md)
+- [V4-A Preflight Incident Review](v4a_preflight_incident_review_2026-09.md)
+- [V4-A Fundamental Long-Run Incident Review](v4a_fundamental_long_run_incident_review_2026-09-19.md)
+- [V4-A Manual Reusable Stage Runbook](v4a_manual_reusable_stage_runbook.md)
+- [Parallel Execution Architecture](parallel_execution_architecture.md)
+- [Public Data Qualification Runbook](public_data_qualification_runbook.md)
