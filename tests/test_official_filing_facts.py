@@ -722,6 +722,37 @@ def test_official_pdf_title_classifies_summary_body_and_full_carriers():
     )
 
 
+def test_generic_running_header_does_not_mask_explicit_body_cover_title():
+    text = """
+    2021 年第一季度报告
+    公司代码：688122 公司简称：西部超导
+    西部超导材料科技股份有限公司
+    2021 年第一季度报告正文
+    一、重要提示
+    """
+    assert classify_official_filing_presentation(text) == FILING_PRESENTATION_BODY
+
+
+def test_generic_running_header_does_not_mask_explicit_summary_cover_title():
+    text = """
+    2021 年第一季度报告
+    公司代码：688122 公司简称：西部超导
+    西部超导材料科技股份有限公司
+    2021 年第一季度报告摘要
+    """
+    assert classify_official_filing_presentation(text) == FILING_PRESENTATION_SUMMARY
+
+
+def test_conflicting_explicit_presentation_markers_remain_fail_closed_unknown():
+    text = """
+    2021年第一季度报告正文
+    2021年第一季度报告摘要
+    """
+    assert (
+        classify_official_filing_presentation(text)
+        == filing_module.FILING_PRESENTATION_UNKNOWN
+    )
+
 def test_same_timestamp_full_carrier_beats_summary_when_facts_conflict():
     summary = _facts(
         "2020年年度报告",

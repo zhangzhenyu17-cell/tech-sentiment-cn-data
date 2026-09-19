@@ -166,13 +166,16 @@ def _enrich_conflicting_presentation_variants(
                 if str(value).strip()
                 and str(value) != FILING_PRESENTATION_UNKNOWN
             }
-            if len(existing) == 1:
-                document_variants[document_id] = next(iter(existing))
-                continue
             if len(existing) > 1:
                 raise ValueError(
                     f"filing document presentation metadata conflict: {document_id}"
                 )
+
+            # A known checkpoint presentation label is only cached engineering
+            # metadata.  When standardized facts actually conflict at the same
+            # availability/publication time, re-prove presentation from the
+            # exact official bytes and checkpoint SHA instead of trusting stale
+            # metadata from an older classifier.
             row = rows.iloc[0]
             downloaded = download_official_document(str(row["document_url"]))
             expected_sha = str(row["document_sha256"])

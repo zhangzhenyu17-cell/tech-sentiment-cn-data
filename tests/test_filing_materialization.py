@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pandas as pd
 import pytest
 
@@ -12,6 +13,7 @@ from tech_sentiment.official_filing_facts import (
     FILING_PARSER_VERSION,
     LEGACY_FILING_PARSER_VERSION,
     derive_fundamental_trend_evidence,
+    filing_period_end_from_title,
 )
 
 
@@ -198,6 +200,275 @@ def test_conflicting_cached_documents_recheck_exact_official_pdf_carriers(monkey
     assert variants["1209844800"] == "SUMMARY"
     assert variants["1209844801"] == "FULL_OR_CANONICAL"
 
+
+def test_conflict_recheck_overrides_stale_full_metadata_with_exact_body_title(
+    monkeypatch,
+):
+    facts = pd.DataFrame(
+        [
+            {
+                "entity_id": "688122.SH",
+                "period_end": "2021-03-31",
+                "fact_type": "NET_PROFIT_MARGIN",
+                "value": 0.20,
+                "unit": "RATIO",
+                "evidence_available_date": "2021-04-26",
+                "publication_timestamp": "2021-04-26 00:00:00",
+                "document_id": "1209800560",
+                "document_url": "https://static.cninfo.com.cn/finalpage/2021-04-26/1209800560.PDF",
+                "document_sha256": "a" * 64,
+                "document_presentation_variant": "FULL_OR_CANONICAL",
+            },
+            {
+                "entity_id": "688122.SH",
+                "period_end": "2021-03-31",
+                "fact_type": "NET_PROFIT_MARGIN",
+                "value": 0.24,
+                "unit": "RATIO",
+                "evidence_available_date": "2021-04-26",
+                "publication_timestamp": "2021-04-26 00:00:00",
+                "document_id": "1209800561",
+                "document_url": "https://static.cninfo.com.cn/finalpage/2021-04-26/1209800561.PDF",
+                "document_sha256": "b" * 64,
+                "document_presentation_variant": "FULL_OR_CANONICAL",
+            },
+        ]
+    )
+
+    class Downloaded:
+        def __init__(self, url, sha256, content):
+            self.url = url
+            self.sha256 = sha256
+            self.content = content
+
+    def fake_download(url):
+        if url.endswith("1209800560.PDF"):
+            return Downloaded(url, "a" * 64, b"body")
+        return Downloaded(url, "b" * 64, b"full")
+
+    def fake_extract(content):
+        if content == b"body":
+            return (
+                "2021年第一季度报告 "
+                "公司代码：688122 公司简称：西部超导 "
+                "西部超导材料科技股份有限公司2021年第一季度报告正文"
+            )
+        return (
+            "2021年第一季度报告 "
+            "公司代码：688122 公司简称：西部超导 "
+            "西部超导材料科技股份有限公司2021年第一季度报告"
+        )
+
+    monkeypatch.setattr(
+        filing_materialization,
+        "download_official_document",
+        fake_download,
+    )
+    monkeypatch.setattr(
+        filing_materialization,
+        "extract_pdf_text",
+        fake_extract,
+    )
+
+    enriched, rechecked = (
+        filing_materialization._enrich_conflicting_presentation_variants(facts)
+    )
+    variants = dict(
+        zip(
+            enriched["document_id"].astype(str),
+            enriched["document_presentation_variant"].astype(str),
+        )
+    )
+    assert rechecked == 2
+    assert variants["1209800560"] == "BODY"
+    assert variants["1209800561"] == "FULL_OR_CANONICAL"
+
+
+
+def _same_title_conflicting_presentation_fixture():
+    return pd.DataFrame(
+        [
+            _announcement(
+                "2021年第一季度报告",
+                "2021-04-26 00:00:00",
+                "1209800560",
+            ),
+            _announcement(
+                "2021年第一季度报告",
+                "2021-04-26 00:00:00",
+                "1209800561",
+            ),
+            _announcement(
+                "2022年第一季度报告",
+                "2022-04-26 00:00:00",
+                "1213200000",
+            ),
+        ]
+    )
+
+
+def _install_same_title_conflict_materialization_fakes(
+    monkeypatch,
+    *,
+    distinguish_body_from_full: bool,
+):
+    raw = _same_title_conflicting_presentation_fixture()
+    monkeypatch.setattr(
+        filing_materialization,
+        "fetch_cninfo_announcements_direct",
+        lambda **kwargs: raw.copy(),
+    )
+
+    class Downloaded:
+        def __init__(self, url, sha256, content):
+            self.url = url
+            self.retrieval_url = url
+            self.sha256 = sha256
+            self.content = content
+
+    sha_by_document = {
+        "1209800560": "a" * 64,
+        "1209800561": "b" * 64,
+        "1213200000": "c" * 64,
+    }
+
+    def fake_download(url):
+        document_id = str(url).rsplit("/", 1)[-1].removesuffix(".PDF")
+        return Downloaded(
+            url,
+            sha_by_document[document_id],
+            document_id.encode("ascii"),
+        )
+
+    def fake_extract(content):
+        document_id = content.decode("ascii")
+        if document_id == "1209800560" and distinguish_body_from_full:
+            return (
+                "2021年第一季度报告 "
+                "公司代码：688012 公司简称：西部超导 "
+                "西部超导材料科技股份有限公司2021年第一季度报告正文"
+            )
+        if document_id in {"1209800560", "1209800561"}:
+            return (
+                "2021年第一季度报告 "
+                "公司代码：688012 公司简称：西部超导 "
+                "西部超导材料科技股份有限公司2021年第一季度报告"
+            )
+        return (
+            "2022年第一季度报告 "
+            "公司代码：688012 公司简称：西部超导 "
+            "西部超导材料科技股份有限公司2022年第一季度报告"
+        )
+
+    value_by_document = {
+        "1209800560": 0.20,
+        "1209800561": 0.24,
+        "1213200000": 0.30,
+    }
+
+    def fake_build_filing_fact_rows(**kwargs):
+        document_id = str(kwargs["document_id"])
+        return pd.DataFrame(
+            [
+                {
+                    "entity_id": str(kwargs["entity_id"]),
+                    "period_end": filing_period_end_from_title(kwargs["title"]),
+                    "fact_type": "NET_PROFIT_MARGIN",
+                    "value": value_by_document[document_id],
+                    "unit": "RATIO",
+                    "evidence_available_date": pd.Timestamp(
+                        kwargs["evidence_available_date"]
+                    ).normalize(),
+                    "publication_timestamp": str(kwargs["publication_timestamp"]),
+                    "source_identity": str(kwargs["source_identity"]),
+                    "provider": str(kwargs["provider"]),
+                    "document_id": document_id,
+                    "revision_id": str(kwargs["revision_id"]),
+                    "document_url": str(kwargs["document_url"]),
+                    "document_sha256": str(kwargs["document_sha256"]),
+                    "parser_version": FILING_PARSER_VERSION,
+                }
+            ],
+            columns=list(FILING_FACT_COLUMNS),
+        )
+
+    monkeypatch.setattr(
+        filing_materialization,
+        "download_official_document",
+        fake_download,
+    )
+    monkeypatch.setattr(
+        filing_materialization,
+        "extract_pdf_text",
+        fake_extract,
+    )
+    monkeypatch.setattr(
+        filing_materialization,
+        "build_filing_fact_rows",
+        fake_build_filing_fact_rows,
+    )
+
+
+def test_materialization_same_title_body_and_full_conflict_selects_full(
+    monkeypatch,
+    tmp_path,
+):
+    _install_same_title_conflict_materialization_fakes(
+        monkeypatch,
+        distinguish_body_from_full=True,
+    )
+
+    result = filing_materialization.materialize_versioned_filing_facts(
+        ["688012"],
+        target_start_date="2021-01-04",
+        end_date="2022-05-06",
+        trading_dates=pd.date_range("2021-01-04", "2022-05-06", freq="B"),
+        source_commit="5" * 40,
+        checkpoint_dir=tmp_path / "checkpoint",
+        warmup_years=1,
+    )
+
+    variants = dict(
+        zip(
+            result.facts["document_id"].astype(str),
+            result.facts["document_presentation_variant"].astype(str),
+        )
+    )
+    assert variants["1209800560"] == "BODY"
+    assert variants["1209800561"] == "FULL_OR_CANONICAL"
+    assert result.summary["presentation_conflict_recheck_documents"] == 2
+
+    margin_trend = result.trends[
+        result.trends["evidence_type"].astype(str).eq("MARGIN_TREND")
+        & result.trends["document_id"].astype(str).eq("1213200000")
+    ].iloc[0]
+    payload = json.loads(margin_trend["evidence_payload"])
+    assert payload["prior_document_id"] == "1209800561"
+    assert payload["prior_comparable_value"] == pytest.approx(0.24)
+
+
+def test_materialization_same_title_conflict_without_proven_presentation_fails_closed(
+    monkeypatch,
+    tmp_path,
+):
+    _install_same_title_conflict_materialization_fakes(
+        monkeypatch,
+        distinguish_body_from_full=False,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="ambiguous same-availability filing revisions with conflicting facts",
+    ):
+        filing_materialization.materialize_versioned_filing_facts(
+            ["688012"],
+            target_start_date="2021-01-04",
+            end_date="2022-05-06",
+            trading_dates=pd.date_range("2021-01-04", "2022-05-06", freq="B"),
+            source_commit="6" * 40,
+            checkpoint_dir=tmp_path / "checkpoint",
+            warmup_years=1,
+        )
 
 def test_conflict_recheck_rejects_official_pdf_sha_drift(monkeypatch):
     facts = pd.DataFrame(
