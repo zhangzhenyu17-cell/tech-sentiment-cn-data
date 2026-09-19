@@ -235,7 +235,7 @@ def test_issuer_sources_are_independently_manual_and_cninfo_keeps_bounded_shards
     assert "--source SZSE_ANNOUNCEMENT_ARCHIVE" in text
 
 
-def test_stage_cache_namespaces_remain_exact_commit_and_stage_compatible():
+def test_stage_cache_namespaces_use_semantic_progress_identity_while_bundle_identity_stays_strict():
     cache_workflows = (
         "v4a-capital.yml",
         "v4a-financing.yml",
@@ -247,14 +247,19 @@ def test_stage_cache_namespaces_remain_exact_commit_and_stage_compatible():
     for name in cache_workflows:
         text = _text(WORKFLOW_DIR / name)
         assert "STAGE_COMPAT" in text
+        assert "v4a_persistent_stage_bundle.py key" in text
+        assert "v4a_persistent_stage_bundle.py progress-key" in text
+        assert "PROGRESS_KEY" in text
         assert "actions/cache/restore@v4" in text
         assert "actions/cache/save@v4" in text
         cache_lines = "\n".join(
-            line for line in text.splitlines()
+            line
+            for line in text.splitlines()
             if "key:" in line or "restore-keys:" in line
         )
-        assert "STAGE_COMPAT" in cache_lines
-        assert "github.sha" in cache_lines
+        assert "PROGRESS_KEY" in cache_lines
+        assert "STAGE_COMPAT" not in cache_lines
+        assert "github.sha" not in cache_lines
 
 
 def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handoff():
