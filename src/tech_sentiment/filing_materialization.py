@@ -82,6 +82,49 @@ def is_numeric_financial_filing_title(title: object) -> bool:
     return True
 
 
+def _numeric_filing_title_family(title: object) -> str:
+    """Collapse only presentation variants of the same public filing title."""
+
+    text = re.sub(r"\s+", "", str(title or ""))
+    return re.sub(r"(?:（?(?:正文|全文)）?)$", "", text)
+
+
+def _numeric_filing_variant_priority(title: object) -> int:
+    """Prefer the complete/canonical filing when body and full variants coexist."""
+
+    text = re.sub(r"\s+", "", str(title or ""))
+    return 0 if re.search(r"(?:（?正文）?)$", text) else 1
+
+
+def _select_primary_numeric_filing_candidates(raw: pd.DataFrame) -> pd.DataFrame:
+    """Remove duplicate presentation variants without dropping a sole body filing.
+
+    CNINFO historically publishes quarterly filings as both a short "正文"
+    document and a complete "报告"/"全文" document at the same official
+    publication timestamp. They are parallel presentation carriers, not filing
+    revisions. When both exist, standardized numeric facts must come from the
+    complete/canonical carrier. If only the body carrier exists, retain it so
+    historical coverage does not silently disappear.
+    """
+
+    candidates = raw[raw["公告标题"].map(is_numeric_financial_filing_title)].copy()
+    if candidates.empty:
+        return candidates
+    candidates["_filing_title_family"] = candidates["公告标题"].map(
+        _numeric_filing_title_family
+    )
+    candidates["_filing_variant_priority"] = candidates["公告标题"].map(
+        _numeric_filing_variant_priority
+    )
+    group_cols = ["公告时间", "_filing_title_family"]
+    best = candidates.groupby(group_cols, dropna=False)["_filing_variant_priority"].transform(
+        "max"
+    )
+    return candidates[candidates["_filing_variant_priority"].eq(best)].drop(
+        columns=["_filing_title_family", "_filing_variant_priority"]
+    )
+
+
 def _symbol_query_identity(
     *,
     source_commit: str,
@@ -201,7 +244,7 @@ def materialize_versioned_filing_facts(
                 )
                 continue
 
-        candidates = raw[raw["公告标题"].map(is_numeric_financial_filing_title)].copy()
+        candidates = _select_primary_numeric_filing_candidates(raw)
         financial_documents = 0
         parsed_documents = 0
         symbol_failed = False
@@ -361,6 +404,10 @@ def materialize_versioned_filing_facts(
             else "PARTIAL_COVERAGE" if len(trends) else "DATA_INSUFFICIENT"
         ),
         "fundamental_state_mapping_state": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1_DEFINED_SEPARATELY",
+        "document_variant_selection": (
+            "SAME_PUBLICATION_TITLE_FAMILY_PREFER_COMPLETE_OR_CANONICAL_"
+            "OVER_BODY_KEEP_BODY_IF_SOLE"
+        ),
         "revision_ordering": (
             "EVIDENCE_AVAILABLE_DATE_THEN_OFFICIAL_PUBLICATION_TIMESTAMP_"
             "THEN_EXPLICIT_REVISION_TITLE_THEN_SEMANTIC_EQUIVALENCE_"
