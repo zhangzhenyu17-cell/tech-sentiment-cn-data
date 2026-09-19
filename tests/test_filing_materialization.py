@@ -5,9 +5,12 @@ import pytest
 
 import tech_sentiment.filing_materialization as filing_materialization
 from tech_sentiment.fundamental_pit_state import materialize_fundamental_state_evidence
+from tech_sentiment.immutable_checkpoint import ImmutableCheckpointStore
 from tech_sentiment.official_filing_facts import (
     DERIVED_FUNDAMENTAL_EVIDENCE_COLUMNS,
     FILING_FACT_COLUMNS,
+    FILING_PARSER_VERSION,
+    LEGACY_FILING_PARSER_VERSION,
     derive_fundamental_trend_evidence,
 )
 
@@ -241,3 +244,231 @@ def test_conflict_recheck_rejects_official_pdf_sha_drift(monkeypatch):
 
     with pytest.raises(ValueError, match="official filing bytes changed"):
         filing_materialization._enrich_conflicting_presentation_variants(facts)
+
+
+def test_incomplete_legacy_facts_require_parser_upgrade_but_complete_core_facts_do_not():
+    partial = pd.DataFrame({"fact_type": ["OPERATING_REVENUE", "BASIC_EPS"]})
+    complete = pd.DataFrame(
+        {
+            "fact_type": [
+                "OPERATING_REVENUE",
+                "NET_PROFIT_PARENT",
+                "OPERATING_CASH_FLOW_NET",
+                "NET_PROFIT_MARGIN",
+            ]
+        }
+    )
+    assert filing_materialization._facts_require_parser_upgrade(partial) is True
+    assert filing_materialization._facts_require_parser_upgrade(complete) is False
+
+
+def test_legacy_incomplete_checkpoint_is_sha_verified_and_selectively_reparsed(
+    monkeypatch,
+    tmp_path,
+):
+    legacy_commit = "1" * 40
+    current_commit = "2" * 40
+    document_id = "1200000001"
+    attachment = (
+        "https://static.cninfo.com.cn/finalpage/2025-04-30/1200000001.PDF"
+    )
+    raw = pd.DataFrame(
+        [
+            {
+                "代码": "688012",
+                "简称": "中微公司",
+                "公告标题": "2024年年度报告",
+                "公告时间": "2025-04-30 10:00:00",
+                "公告链接": (
+                    "https://www.cninfo.com.cn/new/disclosure/detail?"
+                    f"stockCode=688012&announcementId={document_id}&orgId=gssh0600688"
+                ),
+                "公告附件链接": attachment,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        filing_materialization,
+        "fetch_cninfo_announcements_direct",
+        lambda **kwargs: raw.copy(),
+    )
+
+    legacy_facts = pd.DataFrame(
+        [
+            {
+                "entity_id": "688012.SH",
+                "period_end": "2024-12-31",
+                "fact_type": "OPERATING_REVENUE",
+                "value": 100.0,
+                "unit": "CNY",
+                "evidence_available_date": "2025-04-30",
+                "publication_timestamp": "2025-04-30 10:00:00",
+                "source_identity": "CNINFO_ANNOUNCEMENT_ARCHIVE",
+                "provider": "CNINFO",
+                "document_id": document_id,
+                "revision_id": f"DOCUMENT:{document_id}:SHA256:{'a' * 64}",
+                "document_url": attachment,
+                "document_sha256": "a" * 64,
+                "parser_version": LEGACY_FILING_PARSER_VERSION,
+            }
+        ],
+        columns=list(FILING_FACT_COLUMNS),
+    )
+    store = ImmutableCheckpointStore(tmp_path / "checkpoint")
+    legacy_identity = filing_materialization._document_identity(
+        source_commit=legacy_commit,
+        symbol="688012",
+        document_id=document_id,
+        attachment_url=attachment,
+        parser_version=LEGACY_FILING_PARSER_VERSION,
+    )
+    store.save(
+        legacy_identity,
+        frames={"facts": legacy_facts},
+        metadata={
+            "document_sha256": "a" * 64,
+            "document_presentation_variant": "FULL_OR_CANONICAL",
+        },
+    )
+
+    class Downloaded:
+        url = attachment
+        retrieval_url = attachment
+        sha256 = "a" * 64
+        content = b"reparse"
+
+    monkeypatch.setattr(
+        filing_materialization,
+        "download_official_document",
+        lambda url: Downloaded(),
+    )
+    monkeypatch.setattr(
+        filing_materialization,
+        "extract_pdf_text",
+        lambda content: """
+            2024年年度报告
+            主要会计数据 单位：人民币千元 币种：人民币
+            营业收入 120 100
+            归属于母公司所有者的净利润 12 10
+            经营活动产生的现金流量净额 20 18
+        """,
+    )
+
+    result = filing_materialization.materialize_versioned_filing_facts(
+        ["688012"],
+        target_start_date="2025-01-01",
+        end_date="2025-05-02",
+        trading_dates=pd.date_range("2025-04-28", "2025-05-02", freq="B"),
+        source_commit=current_commit,
+        checkpoint_source_commit=legacy_commit,
+        checkpoint_dir=tmp_path / "checkpoint",
+        warmup_years=2,
+    )
+
+    assert result.summary["parser_upgrade_documents"] == 1
+    assert result.summary["reused_legacy_complete_documents"] == 0
+    assert result.summary["active_parser_version"] == FILING_PARSER_VERSION
+    extracted = {
+        row.fact_type: row.value
+        for row in result.facts.itertuples()
+        if row.document_id == document_id
+    }
+    assert extracted["OPERATING_REVENUE"] == pytest.approx(120_000.0)
+    assert extracted["NET_PROFIT_PARENT"] == pytest.approx(12_000.0)
+    assert extracted["OPERATING_CASH_FLOW_NET"] == pytest.approx(20_000.0)
+    assert extracted["NET_PROFIT_MARGIN"] == pytest.approx(0.1)
+
+    current_identity = filing_materialization._document_identity(
+        source_commit=current_commit,
+        symbol="688012",
+        document_id=document_id,
+        attachment_url=attachment,
+        parser_version=FILING_PARSER_VERSION,
+    )
+    upgraded = store.load(current_identity)
+    assert upgraded is not None
+    assert upgraded.receipt["metadata"]["parser_upgrade_from_legacy"] is True
+
+
+def test_legacy_parser_upgrade_rejects_sha_drift(monkeypatch, tmp_path):
+    legacy_commit = "1" * 40
+    current_commit = "2" * 40
+    document_id = "1200000002"
+    attachment = (
+        "https://static.cninfo.com.cn/finalpage/2025-04-30/1200000002.PDF"
+    )
+    raw = pd.DataFrame(
+        [
+            {
+                "代码": "688012",
+                "简称": "中微公司",
+                "公告标题": "2024年年度报告",
+                "公告时间": "2025-04-30 10:00:00",
+                "公告链接": (
+                    "https://www.cninfo.com.cn/new/disclosure/detail?"
+                    f"stockCode=688012&announcementId={document_id}&orgId=gssh0600688"
+                ),
+                "公告附件链接": attachment,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        filing_materialization,
+        "fetch_cninfo_announcements_direct",
+        lambda **kwargs: raw.copy(),
+    )
+    legacy_facts = pd.DataFrame(
+        [
+            {
+                "entity_id": "688012.SH",
+                "period_end": "2024-12-31",
+                "fact_type": "OPERATING_REVENUE",
+                "value": 100.0,
+                "unit": "CNY",
+                "evidence_available_date": "2025-04-30",
+                "publication_timestamp": "2025-04-30 10:00:00",
+                "source_identity": "CNINFO_ANNOUNCEMENT_ARCHIVE",
+                "provider": "CNINFO",
+                "document_id": document_id,
+                "revision_id": f"DOCUMENT:{document_id}:SHA256:{'a' * 64}",
+                "document_url": attachment,
+                "document_sha256": "a" * 64,
+                "parser_version": LEGACY_FILING_PARSER_VERSION,
+            }
+        ],
+        columns=list(FILING_FACT_COLUMNS),
+    )
+    store = ImmutableCheckpointStore(tmp_path / "checkpoint")
+    legacy_identity = filing_materialization._document_identity(
+        source_commit=legacy_commit,
+        symbol="688012",
+        document_id=document_id,
+        attachment_url=attachment,
+        parser_version=LEGACY_FILING_PARSER_VERSION,
+    )
+    store.save(legacy_identity, frames={"facts": legacy_facts})
+
+    class Downloaded:
+        url = attachment
+        retrieval_url = attachment
+        sha256 = "b" * 64
+        content = b"changed"
+
+    monkeypatch.setattr(
+        filing_materialization,
+        "download_official_document",
+        lambda url: Downloaded(),
+    )
+
+    result = filing_materialization.materialize_versioned_filing_facts(
+        ["688012"],
+        target_start_date="2025-01-01",
+        end_date="2025-05-02",
+        trading_dates=pd.date_range("2025-04-28", "2025-05-02", freq="B"),
+        source_commit=current_commit,
+        checkpoint_source_commit=legacy_commit,
+        checkpoint_dir=tmp_path / "checkpoint",
+        warmup_years=2,
+    )
+    assert result.coverage.iloc[0]["query_status"] == "FAILED"
+    assert "official filing bytes changed during parser upgrade" in result.errors.iloc[0]["error"]
