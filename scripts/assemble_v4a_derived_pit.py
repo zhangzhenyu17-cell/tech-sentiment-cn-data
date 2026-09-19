@@ -28,10 +28,11 @@ from tech_sentiment.trailing_valuation_pit import (
     build_trailing_valuation_rail,
     valuation_rail_to_pit_evidence,
 )
-from tech_sentiment.v4a_stage_artifact import verify_stage_receipt
+from tech_sentiment.v4a_stage_artifact import file_sha256, verify_stage_receipt
 
 
 SCHEMA_VERSION = "capital-pit-derived-materialization-v4a"
+CHECKPOINT_SCHEMA_VERSION = "v4a-derived-phase-checkpoint-v1"
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
@@ -55,6 +56,92 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
         json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, default=str) + "\n",
         encoding="utf-8",
     )
+
+
+def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, default=str) + "\n",
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
+def _checkpoint_identity(
+    *,
+    args: argparse.Namespace,
+    issuer_dir: Path,
+    policy_dir: Path,
+    fundamental_dirs: list[Path],
+    price_dirs: list[Path],
+) -> dict[str, object]:
+    return {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "start_date": args.start_date,
+        "end_date": args.end_date,
+        "source_commit": args.source_commit,
+        "issuer_source_commit": args.issuer_source_commit or args.source_commit,
+        "fundamental_source_commit": args.fundamental_source_commit or args.source_commit,
+        "price_source_commit": args.price_source_commit or args.source_commit,
+        "policy_source_commit": args.policy_source_commit or args.source_commit,
+        "symbols_sha256": file_sha256(Path(args.symbols_csv)),
+        "calendar_sha256": file_sha256(Path(args.calendar_csv)),
+        "issuer_receipt_sha256": file_sha256(issuer_dir / "receipt.json"),
+        "policy_receipt_sha256": file_sha256(policy_dir / "receipt.json"),
+        "fundamental_receipt_sha256": [
+            file_sha256(path / "receipt.json") for path in fundamental_dirs
+        ],
+        "price_receipt_sha256": [
+            file_sha256(path / "receipt.json") for path in price_dirs
+        ],
+    }
+
+
+def _prepare_checkpoint(root: Path, identity: dict[str, object]) -> dict[str, object]:
+    root.mkdir(parents=True, exist_ok=True)
+    state_path = root / "checkpoint_state.json"
+    if state_path.is_file():
+        state = _read_json(state_path)
+        if state.get("schema_version") != CHECKPOINT_SCHEMA_VERSION:
+            raise ValueError("derived checkpoint schema mismatch")
+        if state.get("identity") != identity:
+            raise ValueError("derived checkpoint identity mismatch")
+        phases = state.get("completed_phases")
+        if not isinstance(phases, list) or any(not isinstance(x, str) for x in phases):
+            raise ValueError("derived checkpoint completed phase list malformed")
+        return state
+    state = {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "identity": identity,
+        "completed_phases": [],
+    }
+    _atomic_write_json(state_path, state)
+    return state
+
+
+def _phase_done(state: dict[str, object], name: str) -> bool:
+    return name in set(state.get("completed_phases") or [])
+
+
+def _mark_phase(root: Path, state: dict[str, object], name: str) -> None:
+    phases = list(state.get("completed_phases") or [])
+    if name not in phases:
+        phases.append(name)
+    state["completed_phases"] = phases
+    _atomic_write_json(root / "checkpoint_state.json", state)
+
+
+def _write_frame(path: Path, frame: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    frame.to_csv(tmp, index=False)
+    tmp.replace(path)
+
+
+def _load_evidence_frame(path: Path) -> pd.DataFrame:
+    frame = _read_csv(path)
+    return validate_materialized_pit_records(frame) if len(frame) else frame
 
 
 def _entity(symbol: object) -> str:
@@ -335,6 +422,7 @@ def main() -> None:
     parser.add_argument("--price-source-commit", default="")
     parser.add_argument("--policy-source-commit", default="")
     parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--checkpoint-dir", default="")
     args = parser.parse_args()
 
     issuer_source_commit = args.issuer_source_commit or args.source_commit
