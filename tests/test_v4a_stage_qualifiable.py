@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -261,3 +262,28 @@ def test_derived_guard_matches_existing_public_readiness_dependencies(tmp_path: 
         "DERIVED_PIT_TRAILING_VALUATION=PARTIAL_COVERAGE"
         in stage_blockers("derived", root)
     )
+
+
+def test_main_emits_fundamental_tolerance_payload_without_nameerror(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(_MODULE, "stage_blockers", lambda kind, root: [])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "assert_v4a_stage_qualifiable.py",
+            "--kind",
+            "fundamental_earnings",
+            "--root",
+            str(tmp_path),
+        ],
+    )
+    _MODULE.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "V4A_STAGE_QUALIFIABLE"
+    assert payload["kind"] == "fundamental_earnings"
+    assert payload["evidence_eligibility_changed"] is True
+    assert payload["qualification_tolerance_policy"] == "V4A_QUALIFICATION_TOLERANCE_V1"

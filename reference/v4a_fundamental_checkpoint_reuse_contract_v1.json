@@ -16,7 +16,7 @@
     35384571822,
     35419103373
   ],
-  "reuse_reason": "The V9 parser repair preserves the same official CNINFO source, document identity, PIT/no-lookahead rules, evidence eligibility, research scope, and trading/production boundaries. Legacy V8 query/document checkpoints may be restored, but a legacy parsed filing document is reused only when all frozen core Fundamental State facts are already present. Incomplete legacy parsed documents are re-downloaded from the exact official attachment, must match the legacy checkpoint document SHA256, and are then reparsed under V9. No substitute document, inferred unit, future outcome, or eligibility relaxation is allowed. Durable progress is isolated from legacy V8 caches: 16 bounded work units restore a read-only legacy shard cache plus a separate V9 progress cache. Each completed work unit saves only its V9 progress store under a frozen generation identity, so workflow-only changes such as timeout adjustments do not invalidate completed engineering progress. Partial progress remains non-evidence and never grants qualification. The cancelled run 35431952238 successfully saved all four mixed V8/V9 checkpoint caches after cancellation. A frozen one-time bridge may restore those exact cache keys and migrate only fully validated current V9/earnings-v2 checkpoints matching the frozen progress source commit and current work-unit symbol set into the durable progress store; all other contents remain read-only legacy. This bridge is engineering-only and grants no evidence qualification.",
+  "reuse_reason": "The V9 parser repair preserves the same official CNINFO source, document identity, PIT/no-lookahead rules, evidence eligibility, research scope, and trading/production boundaries. Legacy V8 query/document checkpoints may be restored, but a legacy parsed filing document is reused only when all frozen core Fundamental State facts are already present. Incomplete legacy parsed documents are re-downloaded from the exact official attachment, must match the legacy checkpoint document SHA256, and are then reparsed under V9. No substitute document, inferred unit, future outcome, or eligibility relaxation is allowed. Durable progress is isolated from legacy V8 caches: 16 bounded work units restore a read-only legacy shard cache plus a separate V9 progress cache. Each completed work unit saves only its V9 progress store under a frozen generation identity, so workflow-only changes such as timeout adjustments do not invalidate completed engineering progress. Partial progress remains non-evidence and never grants qualification. The cancelled run 35431952238 successfully saved all four mixed V8/V9 checkpoint caches after cancellation. A frozen one-time bridge may restore those exact cache keys and migrate only fully validated current V9/earnings-v2 checkpoints matching the frozen progress source commit and current work-unit symbol set into the durable progress store; all other contents remain read-only legacy. This bridge is engineering-only and grants no evidence qualification. Run 35438201372 exposed a qualification-gate-only NameError after durable V9 progress had already been saved. A frozen one-time bridge may restore those exact per-unit engineering progress caches despite the gate-script-only semantic fingerprint change. The bridge grants no qualification and is valid only because materialization/checkpoint/PIT/evidence semantics are unchanged.",
   "acquisition_semantics_changed": false,
   "parser_semantics_changed": true,
   "checkpoint_schema_changed": false,
@@ -155,5 +155,33 @@
     "production_authority_changed": false,
     "trading_authority_changed": false,
     "removal_condition": "MAY_BE_REMOVED_AFTER_ALL_16_WORK_UNITS_HAVE_IMMUTABLE_COMPLETED_BUNDLES"
+  },
+  "qualification_gate_nameerror_progress_bridge": {
+    "schema_version": "v4a-gate-nameerror-progress-bridge-v1",
+    "status": "FROZEN_ONE_TIME_ENGINEERING_COMPATIBILITY",
+    "source_run_id": 35438201372,
+    "source_commit": "69e515090bbb0728b8771aa1581a5909eb9d3613",
+    "source_semantic_fingerprint": "e77232e9d11a5739a3010794d6cd6c7c58046b1dc8bd76fbae46a4d3309808f3",
+    "source_semantic_key": "e77232e9d11a5739a301",
+    "source_generation_id": "fundamental-v9-tolerance-v1",
+    "source_window": {
+      "start_date": "2022-01-04",
+      "end_date": "2026-09-17"
+    },
+    "unit_count": 16,
+    "cache_key_template": "v4a-fund-progress-fundamental-v9-tolerance-v1-e77232e9d11a5739a301-2022-01-04-2026-09-17-{unit}-35438201372-1",
+    "compatibility_reason": "Only the qualification gate CLI payload variable changed from undefined `kind` to `args.kind`; materialization, parser, checkpoint identity, PIT semantics, evidence eligibility, frozen tolerance semantics, symbol scope, and source window are unchanged.",
+    "exact_code_change": "scripts/assert_v4a_stage_qualifiable.py: payload evidence_eligibility_changed variable reference only",
+    "source_progress_saved_before_gate": true,
+    "restore_only_as_engineering_progress": true,
+    "formal_evidence_handoff": false,
+    "qualification_granted": false,
+    "parser_semantics_changed": false,
+    "checkpoint_identity_changed": false,
+    "evidence_eligibility_changed": false,
+    "pit_no_lookahead_semantics_changed": false,
+    "production_authority_changed": false,
+    "trading_authority_changed": false,
+    "removal_condition": "MAY_BE_REMOVED_AFTER_ALL_16_WORK_UNITS_HAVE_CURRENT_SEMANTIC_PROGRESS_OR_IMMUTABLE_COMPLETED_BUNDLES"
   }
 }
