@@ -50,6 +50,8 @@ def test_long_running_engineering_contract_is_frozen_and_boundary_preserving() -
         "cache_visibility_scope_must_be_preflighted",
         "inline_restore_resolver_execution_test_required",
         "resume_effectiveness_requires_runtime_counters",
+        "post_success_producer_identity_freeze_required",
+        "stage_success_distinct_from_pipeline_qualification",
     ):
         assert defaults[key] is True
 
@@ -109,6 +111,32 @@ def test_restore_precedence_and_compatibility_bridge_are_explicit() -> None:
     ):
         assert resume[key] is True
 
+    runtime = payload["runtime_estimation"]
+    for key in (
+        "classify_fully_resumed_units",
+        "classify_targeted_semantic_repair_units",
+        "classify_provider_recompute_units",
+        "forecast_by_execution_class_and_parallelism",
+        "do_not_apply_single_unit_average_to_mixed_recovery",
+    ):
+        assert runtime[key] is True
+
+    handoff = payload["post_success_handoff_freeze"]
+    for key in (
+        "record_group_asset_base",
+        "record_bundle_identity",
+        "record_compatibility_key",
+        "record_archive_sha256",
+        "record_stage_receipt_sha256",
+        "record_original_source_commit",
+        "freeze_producer_fingerprint_inputs_until_downstream_consumed",
+        "logical_retirement_may_precede_physical_cleanup",
+        "physical_cleanup_deferred_if_it_changes_producer_identity",
+        "cleanup_requires_separate_review_after_handoff",
+        "documentation_outside_producer_identity_may_continue",
+    ):
+        assert handoff[key] is True
+
 
 def test_cancellation_contract_requires_pre_and_post_cancel_persistence_checks() -> None:
     cancellation = _contract()["cancellation"]
@@ -139,6 +167,9 @@ def test_protocol_and_run_plan_cover_recent_long_run_failure_modes() -> None:
         "Cache visibility is part of the restore identity",
         "provider/source query executed count = 0",
         "workflow-inline restore/resolver guard",
+        "Post-success handoff freeze",
+        "fully resumed units",
+        "targeted semantic-repair units",
     ):
         assert phrase in protocol
 
@@ -163,6 +194,9 @@ def test_protocol_and_run_plan_cover_recent_long_run_failure_modes() -> None:
         "wrong-ref path fails before expensive materialization",
         "zero-provider-query recovery proof:",
         "zero-document-execution recovery proof:",
+        "Published asset base / bundle identity / compatibility key:",
+        "Producer-identity freeze starts when:",
+        "Stage success explicitly distinguished from final pipeline qualification:",
     ):
         assert phrase in run_plan
 
@@ -243,3 +277,24 @@ def test_fundamental_recovery_branch_scope_and_resolver_execution_are_locked() -
     assert "35451946515" in incident
     assert "executed_symbol_queries = 0" in incident
     assert "executed_documents = 0" in incident
+
+
+def test_fundamental_success_closeout_records_handoff_and_freeze_window() -> None:
+    incident = (
+        ROOT / "docs" / "v4a_fundamental_long_run_incident_review_2026-09-19.md"
+    ).read_text(encoding="utf-8")
+    runbook = (ROOT / "docs" / "v4a_manual_reusable_stage_runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    for text in (incident, runbook):
+        assert "35451946515" in text
+        assert "v4a-fundamental-20220104-20260917-56e8c44ca678668bfc17" in text
+        assert "f558db45af7a9e8b5e69dad1275f98e93e6ee49c09914fa591edd4348cfde4c4" in text
+        assert "56e8c44ca678668bfc17fd7ef5da5a9c32503dcbac03eb86fa3963ecd0cf751b" in text
+        assert "c1df2ec495657f52cf34935feb5ab94c7159f43e4cbf6f24bb8fbcf43ffdb54e" in text
+        assert "2b27a25584e22521811ceebfdc873363d6a8fc43cf82d1b442d8ced121b91770" in text
+
+    assert "producer-identity freeze" in incident.lower()
+    assert "Producer-identity freeze before Derived" in runbook
+    assert "HISTORICAL_DATA_QUALIFIED" in runbook
