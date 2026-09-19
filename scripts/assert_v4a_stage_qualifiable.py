@@ -279,7 +279,7 @@ def main() -> None:
         "root": str(Path(args.root)),
         "blockers": blockers,
         "research_run": False,
-        "evidence_eligibility_changed": kind in {"fundamental_earnings", "derived"},
+        "evidence_eligibility_changed": args.kind in {"fundamental_earnings", "derived"},
         "qualification_tolerance_policy": QUALIFICATION_TOLERANCE_POLICY,
         "production_authority_changed": False,
     }
