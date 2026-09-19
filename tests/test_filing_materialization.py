@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pandas as pd
 import pytest
 
@@ -12,6 +13,7 @@ from tech_sentiment.official_filing_facts import (
     FILING_PARSER_VERSION,
     LEGACY_FILING_PARSER_VERSION,
     derive_fundamental_trend_evidence,
+    filing_period_end_from_title,
 )
 
 
@@ -370,9 +372,7 @@ def _install_same_title_conflict_materialization_fakes(
             [
                 {
                     "entity_id": str(kwargs["entity_id"]),
-                    "period_end": filing_materialization.filing_period_end_from_title(
-                        kwargs["title"]
-                    ),
+                    "period_end": filing_period_end_from_title(kwargs["title"]),
                     "fact_type": "NET_PROFIT_MARGIN",
                     "value": value_by_document[document_id],
                     "unit": "RATIO",
