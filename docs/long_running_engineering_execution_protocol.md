@@ -499,6 +499,17 @@ pipeline, the ladder is normally:
 `unit qualification -> group bundle -> downstream assembly -> canonical
 finalizer -> private intake / final qualification state`.
 
+Before dispatching a downstream consumer, recompute/resolve the expected upstream
+producer identity from the current repository state and compare it with the
+recorded published bundle. If the asset base, compatibility key, bundle identity,
+or required input identities no longer match:
+
+- do not automatically rerun the expensive upstream producer;
+- first identify the exact producer-file drift;
+- determine whether the drift is intentional and semantic or merely cleanup;
+- prefer reverting/defering accidental cleanup when the published handoff is
+  still the intended canonical input.
+
 Do not interpret a successful public materialization stage as the final
 historical/evidence qualification unless the governing intake contract says so.
 
