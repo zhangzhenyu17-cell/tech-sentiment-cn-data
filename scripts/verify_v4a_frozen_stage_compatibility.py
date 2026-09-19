@@ -96,10 +96,37 @@ def verify(args: argparse.Namespace) -> None:
     if not isinstance(expected, dict):
         raise SystemExit(f"frozen downstream stage contract malformed: {args.family}")
 
-    drift = contract["allowed_producer_drift"]
-    semantic_flag = f"{args.family}_gate_semantics_changed"
-    if drift.get(semantic_flag) is not False:
-        raise SystemExit(f"frozen downstream stage gate semantics not proven unchanged: {args.family}")
+    if args.family == "fundamental":
+        stage_drifts = (contract.get("stage_allowed_producer_drifts") or {}).get(
+            "fundamental"
+        ) or []
+        if len(stage_drifts) != 1:
+            raise SystemExit("frozen Fundamental producer drift contract mismatch")
+        drift = stage_drifts[0]
+        if drift.get("classification") != "DERIVED_ONLY_COMPATIBILITY_IDENTITY_BINDING":
+            raise SystemExit("frozen Fundamental drift classification mismatch")
+        for key in (
+            "fundamental_materialization_semantics_changed",
+            "fundamental_qualification_semantics_changed",
+            "pit_no_lookahead_semantics_changed",
+        ):
+            if drift.get(key) is not False:
+                raise SystemExit(f"frozen Fundamental boundary drift: {key}")
+        current_path = Path(str(drift["path"]))
+        if (
+            file_sha256(current_path) != drift.get("current_sha256")
+            or current_path.stat().st_size != int(drift.get("current_bytes") or 0)
+        ):
+            raise SystemExit("frozen Fundamental current allowlisted drift no longer exact")
+        allowed_drifts = {str(drift["path"]): drift}
+    else:
+        drift = contract["allowed_producer_drift"]
+        semantic_flag = f"{args.family}_gate_semantics_changed"
+        if drift.get(semantic_flag) is not False:
+            raise SystemExit(
+                f"frozen downstream stage gate semantics not proven unchanged: {args.family}"
+            )
+        allowed_drifts = {str(drift["path"]): drift}
 
     manifest = _load_manifest(args.manifest)
     exact_fields = {
@@ -137,15 +164,17 @@ def verify(args: argparse.Namespace) -> None:
 
     for path, old_row in source_rows.items():
         current_row = current_rows[path]
-        if path == drift["path"]:
+        allowed = allowed_drifts.get(path)
+        if allowed is not None:
             if (
-                old_row.get("sha256") != drift["source_sha256"]
-                or int(old_row.get("bytes") or 0) != int(drift["source_bytes"])
-                or current_row.get("sha256") != drift["current_sha256"]
-                or int(current_row.get("bytes") or 0) != int(drift["current_bytes"])
+                old_row.get("sha256") != allowed["source_sha256"]
+                or int(old_row.get("bytes") or 0) != int(allowed["source_bytes"])
+                or current_row.get("sha256") != allowed["current_sha256"]
+                or int(current_row.get("bytes") or 0) != int(allowed["current_bytes"])
             ):
                 raise SystemExit(
-                    f"frozen downstream allowlisted producer drift mismatch: {args.family}"
+                    f"frozen downstream allowlisted producer drift mismatch: "
+                    f"{args.family}:{path}"
                 )
         elif (
             old_row.get("sha256") != current_row.get("sha256")
@@ -198,7 +227,11 @@ def verify(args: argparse.Namespace) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--family", required=True, choices=("capital", "financing", "policy"))
+    parser.add_argument(
+        "--family",
+        required=True,
+        choices=("capital", "financing", "fundamental", "policy"),
+    )
     parser.add_argument("--contract", required=True)
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--archive", required=True)
