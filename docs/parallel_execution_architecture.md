@@ -25,9 +25,18 @@ V4-A no longer treats one GitHub Actions run as the unit of successful historica
 
 A stage bundle is accepted across repository commits only when the current code independently recomputes the same stage-specific producer fingerprint, date window, and upstream bundle identities. The original stage commit remains recorded in lineage, while the final canonical public artifact is bound to the current finalizer commit.
 
-Persistent inter-workflow handoff uses the public release registry `v4a-stage-bundles-v1`. GitHub Actions cache remains local resume acceleration only and is not a canonical stage handoff.
+Persistent inter-workflow handoff uses the public release registry `v4a-stage-bundles-v1`. GitHub Actions cache remains engineering resume acceleration only and is not a canonical stage handoff.
 
-The manual stage order, failure recovery matrix, and trigger policy are defined in [V4-A Manual Reusable Stage Runbook](v4a_manual_reusable_stage_runbook.md).
+Engineering resume state may be layered: current semantic-generation progress,
+exact audited compatibility bridges, and read-only legacy/query/index caches.
+Those layers never grant qualification. Query/index caches are restored
+independently from document/parser progress so a parser cache hit cannot
+accidentally re-enable years of provider pagination.
+
+The manual stage order, failure recovery matrix, and trigger policy are defined
+in [V4-A Manual Reusable Stage Runbook](v4a_manual_reusable_stage_runbook.md).
+The repository-wide planning/cancellation/monitoring rules are defined in
+[Long-Running Engineering Execution Protocol](long_running_engineering_execution_protocol.md).
 
 This architecture deliberately prevents a Policy-only fix from invalidating Capital, Financing, Prices, or unrelated issuer bundles. Conversely, a change to Shared/frozen scope invalidates all bundles that name that Shared bundle identity as an input.
 
@@ -47,9 +56,13 @@ A compliant long-running pipeline should normally have five layers:
    - use matrix shards when a source can be partitioned deterministically;
    - cap source-specific concurrency where needed to avoid overloading public providers.
 
-3. **Stage sealing**
-   - each job/shard emits a stage artifact plus a receipt;
+3. **Progress persistence and stage sealing**
+   - long units persist engineering progress before their qualification gate;
+   - failure diagnostics are preserved before the gate where practical;
+   - each qualified job/work unit emits an immutable artifact plus receipt;
    - the receipt binds the artifact to the exact execution identity;
+   - completed qualified units are published immediately instead of waiting for
+     all siblings;
    - incomplete or inconsistent stages fail closed.
 
 4. **Aggregation**
@@ -106,13 +119,18 @@ Checkpoints exist only to support resume/retry of a producer.
 
 They must:
 
-- be exact-identity;
-- bind at least producer/version, source commit, query/scope identity, and relevant source identity;
-- restore only when identity matches;
-- never silently bridge code revisions or incompatible scopes;
+- be exact-identity within their declared semantic generation;
+- bind producer/version, query/scope identity, and relevant source identity;
+- distinguish operational execution identity from semantic materialization identity;
+- restore only when the declared compatibility contract matches;
+- never silently bridge incompatible parser/evidence/PIT/scope semantics;
+- use an explicit, exact, fail-closed compatibility bridge for a proven
+  non-semantic cross-commit repair;
+- keep query/index cache restoration independent from document/parser progress;
 - remain safe to ignore without changing canonical output semantics.
 
-A cache is an optimization, not evidence.
+A cache is an optimization, not evidence. A compatibility bridge is engineering
+resume policy, not permission to weaken a producer fingerprint globally.
 
 ### Stage artifacts
 
@@ -196,12 +214,17 @@ A public workflow may report successful **materialization** only according to it
 
 When a failure occurs:
 
-1. identify the failed stage/shard;
-2. preserve successful immutable stage artifacts;
-3. prefer producer-local checkpoint resume;
-4. rerun only the failed job/shard when the execution identity is unchanged and the platform supports it;
+1. identify the failed stage/work unit and failure class;
+2. preserve successful immutable stage/work-unit artifacts;
+3. inspect whether active units saved durable progress before assuming loss;
+4. prefer the narrowest compatible checkpoint/progress resume;
 5. make only mechanical engineering fixes needed to restore the declared contract;
-6. after a code change, treat the new source commit as a new execution identity unless an explicitly audited compatibility rule says otherwise.
+6. add a regression test for deterministic code/orchestration failures, including
+   the actual CLI entrypoint when that path failed;
+7. after a code change, determine whether the change is semantic or operational;
+8. use an exact audited compatibility bridge only when the old progress is proven
+   semantically compatible;
+9. rerun only non-immutable units and affected downstream aggregators.
 
 Do not rerun completed one-shot research/evidence work merely to make CI green.
 
@@ -275,12 +298,17 @@ Every long-running stage should expose enough information to diagnose failure wi
 
 At minimum, record:
 
-- stage/shard identity;
+- stage/work-unit identity;
 - source and scope identity;
 - complete/failed entity counts;
 - materialized record counts;
-- structured error output where feasible;
-- whether execution resumed from checkpoint;
+- resumed vs executed source-query counts;
+- resumed vs executed document counts;
+- parser-upgrade counts where applicable;
+- structured soft/hard error output where feasible;
+- progress-generation/compatibility identity;
+- checkpoint save outcome;
+- immutable publication outcome;
 - output/receipt identity.
 
 A summary that only says "failed" is insufficient for a multi-hour pipeline.
@@ -309,12 +337,16 @@ Unacceptable optimizations:
 
 ## Reference implementation
 
-The current reference implementation is:
+The current reference implementation includes:
 
-- workflow: `.github/workflows/qualify-capital-inputs.yml`;
+- manual V4-A reusable-stage workflows;
 - shared preflight stage;
-- bounded CNINFO and price matrix shards;
-- independent Capital, financing, SSE, SZSE, and policy stages;
+- bounded provider concurrency;
+- Fundamental/Earnings as 16 deterministic work units with `max-parallel: 4`;
+- durable progress saved before the Fundamental unit gate;
+- immutable qualified Fundamental work-unit bundles;
+- independent query/index and document/parser resume layers;
+- independent Capital, financing, issuer-source, price, and policy stages;
 - immutable stage receipts;
 - issuer and derived aggregation;
 - single final canonical bundle and external artifact receipt.
@@ -336,13 +368,25 @@ Before accepting a new or refactored long-running pipeline, confirm:
 - [ ] canonical output remains singular;
 - [ ] triggers comply with workflow governance;
 - [ ] no research/evidence/production/trading boundary changed implicitly;
-- [ ] source-commit identity and retry semantics are explicit.
+- [ ] source-commit / semantic-generation identity and retry semantics are explicit;
+- [ ] long materialization progress is persisted before the qualification gate;
+- [ ] qualified completed units are persisted immutably without waiting for siblings;
+- [ ] query/index cache restore is independent from document/parser progress;
+- [ ] deterministic CLI entrypoints have direct regression coverage;
+- [ ] timeout is documented as a per-job safety ceiling;
+- [ ] cancellation-safe checkpoint behavior and restart criteria are documented;
+- [ ] any cross-commit compatibility bridge is exact, fail-closed, and expiring.
 
 ## Operating runbook
 
-Operational execution, failure classification, rerun decisions, and minimum diagnostics are defined in [Public Data Qualification Runbook](public_data_qualification_runbook.md).
+Operational execution, failure classification, rerun decisions, cancellation,
+monitoring, compatibility bridges, and minimum diagnostics are defined in
+[Long-Running Engineering Execution Protocol](long_running_engineering_execution_protocol.md)
+and [Public Data Qualification Runbook](public_data_qualification_runbook.md).
 
-The September 2026 stabilization lessons are recorded in [V4-A Preflight Incident Review](v4a_preflight_incident_review_2026-09.md).
+The September 2026 lessons are recorded in
+[V4-A Preflight Incident Review](v4a_preflight_incident_review_2026-09.md) and
+[V4-A Fundamental Long-Run Incident Review](v4a_fundamental_long_run_incident_review_2026-09-19.md).
 
 ## Optimization roadmap
 
