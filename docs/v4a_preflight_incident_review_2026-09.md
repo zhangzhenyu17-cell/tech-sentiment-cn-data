@@ -215,3 +215,10 @@ The following rules are now considered part of the preferred repository practice
 10. evidence and PIT requirements are never weakened to make CI green.
 
 See [Public Data Qualification Runbook](public_data_qualification_runbook.md) for the reusable operating procedure.
+
+The later September 19 long-run execution failures (timeout blast radius,
+durable progress, qualification-gate CLI failure, compatibility bridges, and
+query-cache performance regression) are recorded separately in
+[V4-A Fundamental Long-Run Incident Review](v4a_fundamental_long_run_incident_review_2026-09-19.md)
+and generalized in
+[Long-Running Engineering Execution Protocol](long_running_engineering_execution_protocol.md).
