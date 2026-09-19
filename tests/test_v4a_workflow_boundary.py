@@ -4,12 +4,14 @@ import re
 
 WORKFLOW_DIR = Path(".github/workflows")
 FINAL = WORKFLOW_DIR / "qualify-capital-inputs.yml"
+SZSE_MIGRATION = WORKFLOW_DIR / "v4a-issuer-szse-migration.yml"
 
 STAGE_WORKFLOWS = (
     WORKFLOW_DIR / "v4a-shared-inputs.yml",
     WORKFLOW_DIR / "v4a-capital.yml",
     WORKFLOW_DIR / "v4a-financing.yml",
     WORKFLOW_DIR / "v4a-issuer-source.yml",
+    SZSE_MIGRATION,
     WORKFLOW_DIR / "v4a-issuer-aggregate.yml",
     WORKFLOW_DIR / "v4a-fundamental-earnings.yml",
     WORKFLOW_DIR / "v4a-prices.yml",
@@ -99,6 +101,7 @@ def test_stage_cache_namespaces_remain_exact_commit_and_stage_compatible():
         "v4a-capital.yml",
         "v4a-financing.yml",
         "v4a-issuer-source.yml",
+        "v4a-issuer-szse-migration.yml",
         "v4a-fundamental-earnings.yml",
         "v4a-prices.yml",
         "v4a-policy.yml",
@@ -143,6 +146,7 @@ def test_stage_diagnostics_are_preserved_before_qualification_failure():
         "v4a-capital.yml": "assert_v4a_stage_qualifiable.py",
         "v4a-financing.yml": "assert_v4a_stage_qualifiable.py",
         "v4a-issuer-source.yml": "assert_v4a_stage_qualifiable.py",
+        "v4a-issuer-szse-migration.yml": "assert_v4a_stage_qualifiable.py",
         "v4a-fundamental-earnings.yml": "assert_v4a_stage_qualifiable.py",
         "v4a-policy.yml": "assert_v4a_stage_qualifiable.py",
         "v4a-derived.yml": "assert_v4a_stage_qualifiable.py",
@@ -160,6 +164,7 @@ def test_manual_pipeline_has_explicit_failure_isolation_order():
         "v4a-02-capital",
         "v4a-03-financing",
         "v4a-04-issuer-source",
+        "v4a-04b-issuer-szse-migration",
         "v4a-05-issuer-aggregate",
         "v4a-06-fundamental-earnings",
         "v4a-07-prices",
@@ -179,3 +184,30 @@ def test_release_publisher_recovers_partial_assets_without_overwrite():
     assert "--clobber" not in text
     assert 'gh release view "$TAG" >/dev/null 2>&1 || {' in text
 
+
+
+def test_szse_migration_workflow_is_manual_and_producer_isolated():
+    from tech_sentiment.v4a_persistent_stage import STAGE_SPECS
+
+    text = _text(SZSE_MIGRATION)
+    assert text.startswith("name: v4a-04b-issuer-szse-migration\n")
+    assert "materialize_v4a_szse_issuer.py" in text
+    assert "--family issuer_szse" in text
+    assert "workflow_dispatch:" in text
+    for forbidden in ("schedule:", "workflow_run:", "pull_request:", "push:"):
+        assert forbidden not in text
+
+    assert STAGE_SPECS["issuer_cninfo"].extra_files == (
+        ".github/workflows/v4a-issuer-source.yml",
+    )
+    assert STAGE_SPECS["issuer_sse"].extra_files == (
+        ".github/workflows/v4a-issuer-source.yml",
+    )
+    szse = STAGE_SPECS["issuer_szse"]
+    assert "scripts/materialize_v4a_szse_issuer.py" in szse.entrypoints
+    assert "scripts/materialize_pit_evidence.py" in szse.entrypoints
+    assert ".github/workflows/v4a-issuer-szse-migration.yml" in szse.extra_files
+    assert (
+        "reference/v4a_szse_security_code_migration_contract_v1.json"
+        in szse.extra_files
+    )
