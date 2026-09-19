@@ -150,6 +150,74 @@ Lesson:
 > A safe restart decision depends on what is already immutable, not only on how
 > long the current run has been executing.
 
+### 8. Correct cache keys were still insufficient because cache visibility was branch-scoped
+
+The presentation-classifier compatibility bridge initially froze exact cache
+keys from runs `35444225741`, `35440581921`, and `35438201372`.
+
+The keys and fingerprints were correct, but all three source runs had executed
+on:
+
+`v4a/fundamental-resume-295710`
+
+A replacement run dispatched directly from `main` would therefore be unable to
+read those feature-branch caches even with the correct exact key.
+
+This was a real orchestration defect because it could silently turn a
+well-designed resume path back into expensive provider/document recomputation.
+
+The fix froze the cache-scope branch/ref in the bridge and added a
+pre-materialization fail-fast guard. The recovery branch was then fast-forwarded
+without force to the latest intended `main` commit before the replacement run.
+
+Lesson:
+
+> Cache identity includes visibility scope. Exact key + exact fingerprint is not
+> sufficient if the replacement Git ref cannot read the cache.
+
+### 9. The recovery guard needed execution-level testing, not only YAML assertions
+
+A static workflow assertion could prove that a branch guard string existed, but
+could not prove that the actual inline Python resolver parsed, received the
+expected environment, and emitted the required cache keys.
+
+The regression test was strengthened to extract the real Python heredoc from the
+workflow and execute it twice:
+
+- recovery branch ref -> must succeed and emit the three presentation cache keys;
+- `main` ref -> must fail before materialization with the branch-scope message.
+
+Lesson:
+
+> Any inline resolver/guard controlling an expensive path should have an
+> execution-level regression test, just like a CLI gate or finalizer.
+
+### 10. Real recovery success was proven by zero-work counters, not by green cache steps
+
+The first real `fundamental-v9-presentation-recheck-v2` recovery run was:
+
+`35451946515`
+
+Units 0-2 restored the audited prior durable progress and completed current
+semantic materialization and qualification in roughly one minute per unit.
+
+The decisive proof was not merely that cache restore steps were green. Runtime
+summaries showed:
+
+- `executed_symbol_queries = 0`;
+- filing/earnings `executed_documents = 0`;
+- roughly 305-311 current-parser documents resumed per unit;
+- 12 progress symbol-query checkpoints resumed per unit;
+- current qualification and current-generation publication still ran.
+
+This demonstrated that the recovery path removed the expensive provider and
+document work without inheriting old qualification status.
+
+Lesson:
+
+> A recovery optimization is operationally proven only when counters show the
+> expensive path was avoided and current qualification still executes.
+
 ## Failure patterns to remember
 
 ### Pattern A: "Everything is still materializing"
@@ -217,8 +285,15 @@ The following are now mandatory preferred practice for large engineering runs:
 9. distinguish operational changes from semantic changes;
 10. use exact, expiring compatibility bridges for proven non-semantic fixes;
 11. inspect save outcomes after cancellation;
-12. estimate remaining wall-clock from completed-batch throughput;
-13. stop after acceptance instead of expanding scope.
+12. record cache branch/ref visibility as part of restore identity;
+13. fast-forward a dedicated recovery branch to the intended latest code when
+    same-branch cache visibility is required;
+14. fail fast before materialization if the dispatch ref cannot read required
+    recovery caches;
+15. execution-test inline workflow resolvers/guards that control expensive work;
+16. prove resume efficiency using query/document executed-vs-resumed counters;
+17. estimate remaining wall-clock from completed-batch throughput;
+18. stop after acceptance instead of expanding scope.
 
 See [Long-Running Engineering Execution Protocol](long_running_engineering_execution_protocol.md)
 for the reusable procedure.

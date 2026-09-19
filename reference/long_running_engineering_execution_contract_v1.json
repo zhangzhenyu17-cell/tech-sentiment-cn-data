@@ -25,7 +25,10 @@
     "query_cache_independent_from_document_progress": true,
     "actual_cli_entrypoint_regression_test_required": true,
     "latest_pr_head_is_authoritative_ci": true,
-    "rerun_failed_jobs_before_full_ci_when_appropriate": true
+    "rerun_failed_jobs_before_full_ci_when_appropriate": true,
+    "cache_visibility_scope_must_be_preflighted": true,
+    "inline_restore_resolver_execution_test_required": true,
+    "resume_effectiveness_requires_runtime_counters": true
   },
   "restore_precedence": [
     "IMMUTABLE_COMPLETED_WORK_UNIT",
@@ -55,7 +58,11 @@
     "fail_closed_on_mismatch": true,
     "formal_evidence_handoff": false,
     "qualification_granted": false,
-    "removal_condition_required": true
+    "removal_condition_required": true,
+    "source_run_attempt_required": true,
+    "source_branch_or_ref_required": true,
+    "cache_visibility_relationship_required": true,
+    "wrong_ref_fail_fast_when_scope_required": true
   },
   "observability": {
     "record_unit_identity": true,
@@ -66,7 +73,10 @@
     "record_soft_and_hard_failures": true,
     "record_readiness": true,
     "record_checkpoint_save_result": true,
-    "record_immutable_publish_result": true
+    "record_immutable_publish_result": true,
+    "record_cache_source_run_and_ref": true,
+    "record_restore_layer_selected": true,
+    "record_zero_work_recovery_proof": true
   },
   "failure_classes": [
     "DETERMINISTIC_CODE_OR_ORCHESTRATION",
@@ -86,5 +96,23 @@
     "lineage_recorded": true,
     "unauthorized_boundary_change": false,
     "stop_when_acceptance_met": true
+  },
+  "recovery_branch": {
+    "same_branch_cache_scope_supported": true,
+    "fast_forward_to_intended_main_when_linear": true,
+    "force_update_default": false,
+    "dispatch_from_cache_visible_ref": true,
+    "fail_before_materialization_on_wrong_ref": true,
+    "remove_one_time_guard_only_after_current_generation_immutable_completion": true
+  },
+  "resume_validation": {
+    "cache_step_success_alone_is_insufficient": true,
+    "fully_resumed_provider_queries_executed_expected": 0,
+    "fully_resumed_documents_executed_expected": 0,
+    "resumed_counters_must_be_plausible": true,
+    "current_semantic_materialization_required": true,
+    "current_qualification_required": true,
+    "current_generation_immutable_publish_required": true,
+    "targeted_semantic_reproof_may_execute_only_affected_subset": true
   }
 }
