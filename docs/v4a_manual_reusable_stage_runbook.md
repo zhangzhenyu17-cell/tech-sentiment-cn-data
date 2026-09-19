@@ -125,6 +125,20 @@ This workflow performs no provider materialization. It verifies the upstream
 bundles, then rebuilds the cross-source PIT rails, trailing valuation, major
 negative coverage/review, and PIT replay audit.
 
+Derived is phase-resumable. Its engineering checkpoint identity binds the
+frozen symbol scope, trading calendar, upstream source commits, and exact
+upstream stage-receipt hashes. Completed phases are persisted independently:
+
+- Fundamental/Earnings aggregation and state derivation;
+- Price aggregation plus trailing valuation;
+- major-negative coverage/review;
+- PIT replay audit.
+
+A phase is resumable only after its completed-phase marker is atomically written.
+Partial files without the marker are ignored. The final assembled output tree is
+always rebuilt for the current workflow commit so its source identity is never
+reused from an older operational commit. Checkpoint state is engineering-only
+and never grants qualification.
 ### 5. Canonical public finalizer
 
 Workflow: `qualify-capital-inputs`
@@ -193,6 +207,24 @@ stage commits are execution lineage, not an alternative finalizer identity.
 
 ## Cache and progress policy
 
+All V4-A jobs use a 360-minute hard job ceiling. Long checkpointed
+materialization steps use a 330-minute soft process ceiling so the remaining
+job window is reserved for `always()` checkpoint persistence and cleanup.
+
+For Capital, Financing, issuer sources, SZSE migration, Prices, Policy, and
+Derived, engineering checkpoint keys use a semantic-progress identity rather
+than the workflow commit SHA. The semantic-progress identity covers:
+
+- materialization/PIT entrypoints;
+- recursively imported local semantic modules;
+- semantic reference contracts;
+- the exact date window;
+- exact upstream persistent bundle identities.
+
+It deliberately excludes workflow YAML, timeout settings, cache wiring,
+qualification-gate orchestration, receipt writing, packaging, and publication.
+Those operational files remain governed by the formal persistent-bundle
+producer identity and do not gain cross-version evidence compatibility.
 GitHub Actions cache is engineering acceleration only. It is not a canonical
 cross-stage data bus and is never sufficient evidence for final qualification.
 
@@ -211,11 +243,13 @@ Query/index caches and document/parser progress caches are independent assets.
 A hit in one layer must not suppress another layer merely because both are
 implemented with GitHub Actions cache.
 
-Cross-commit progress reuse is allowed only through an explicit frozen
-compatibility rule that identifies the exact old run/commit/fingerprint/window
-and proves that materialization, checkpoint, PIT, evidence, and qualification
-semantics did not change. Such a bridge remains engineering-only, grants no
-qualification, fails closed on mismatch, and has a removal condition.
+Cross-commit engineering progress reuse is allowed when the semantic-progress
+fingerprint, date window, and exact upstream persistent bundle identities match.
+Older cache generations that did not carry this identity still require an
+explicit frozen compatibility bridge identifying the exact old
+run/commit/fingerprint/window and proving that materialization, checkpoint, PIT,
+evidence, and qualification semantics did not change. In both cases the reuse
+remains engineering-only, grants no qualification, and fails closed on mismatch.
 
 Operational changes such as timeout or cache orchestration must not silently
 weaken semantic fingerprinting. Semantic changes require a new compatible

@@ -175,6 +175,40 @@ When a non-semantic change still alters a producer fingerprint, cross-version
 reuse requires an explicit compatibility bridge. Never silently weaken the
 fingerprint or make all commits mutually reusable.
 
+### Engineering progress identity is separate from formal bundle identity
+
+For checkpoint/resume state, use a dedicated **semantic progress identity** that
+contains the materialization/PIT entrypoint, recursively imported local semantic
+modules, semantic reference inputs, the exact date window, and exact upstream
+persistent bundle identities.
+
+Do **not** put workflow YAML, runner timeout, cache wiring, qualification-gate
+orchestration, receipt writing, packaging, or publication plumbing into the
+engineering progress identity. Those remain part of the formal persistent-bundle
+producer fingerprint where appropriate.
+
+This separation has one purpose: an operational-only change such as raising a
+timeout must not destroy otherwise compatible partial progress. It does not make
+formal bundles cross-compatible. Final immutable publication still uses the full
+producer fingerprint and remains fail-closed.
+
+### Layered timeout rule
+
+For long checkpointed jobs, use two timeout layers:
+
+1. **Hard job ceiling** — use the repository maximum supported ceiling for the
+   hosted runner (`360` minutes in the current V4-A workflows).
+2. **Soft materialization ceiling** — stop the expensive materialization step
+   before the hard ceiling (`330` minutes in the current V4-A workflows), leaving
+   a protected tail window for `always()` checkpoint persistence and cleanup.
+
+The soft timeout is expected to fail the job if reached. Its purpose is to turn a
+destructive hard kill into a controlled failure with durable progress. Never
+place the soft timeout after the checkpoint-save point.
+
+Short deterministic assembly steps may still use smaller command-level timeouts
+when they are explicit hang guards, but those budgets should be generous enough
+not to become routine false failures.
 ## Work-unit sizing
 
 The unit of execution should be small enough that a timeout or cancellation does
@@ -225,6 +259,11 @@ For long materialization steps:
 The expected maximum recomputation loss should be approximately one currently
 running work unit per active runner, not an entire matrix or workflow.
 
+A long monolithic assembly that has natural deterministic phases must persist
+those phases independently. Each phase checkpoint must carry an exact identity
+covering the frozen scope/calendar and upstream receipt hashes. A phase marker is
+written only after all phase files are atomically complete. Incomplete files
+without a completed-phase marker are never treated as resumable success.
 ## Query cache and document cache are different assets
 
 Historical source-index queries and parsed-document checkpoints solve different
