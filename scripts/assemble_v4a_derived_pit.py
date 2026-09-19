@@ -80,7 +80,6 @@ def _checkpoint_identity(
         "schema_version": CHECKPOINT_SCHEMA_VERSION,
         "start_date": args.start_date,
         "end_date": args.end_date,
-        "source_commit": args.source_commit,
         "issuer_source_commit": args.issuer_source_commit or args.source_commit,
         "fundamental_source_commit": args.fundamental_source_commit or args.source_commit,
         "price_source_commit": args.price_source_commit or args.source_commit,
@@ -503,18 +502,6 @@ def main() -> None:
                 price_dirs=price_dirs,
             ),
         )
-        if _phase_done(checkpoint_state, "final"):
-            final_root = checkpoint_root / "final"
-            if not (final_root / "derived_pit_materialization_manifest.json").is_file():
-                raise ValueError("derived final checkpoint marker exists without manifest")
-            out = Path(args.out_dir)
-            if out.exists():
-                shutil.rmtree(out)
-            shutil.copytree(final_root, out)
-            summary = _read_json(out / "derived_pit_materialization_manifest.json")
-            print(json.dumps(summary, ensure_ascii=False, sort_keys=True, indent=2, default=str))
-            return
-
     if checkpoint_root is not None and checkpoint_state is not None and _phase_done(checkpoint_state, "fundamental"):
         phase_root = checkpoint_root / "fundamental"
         facts = _read_csv(phase_root / "versioned_filing_facts.csv")
@@ -925,12 +912,8 @@ def main() -> None:
     if not isinstance(summary, dict):
         raise ValueError("derived PIT summary must be a mapping")
 
-    out = (
-        checkpoint_root / "final"
-        if checkpoint_root is not None
-        else Path(args.out_dir)
-    )
-    if out.exists() and checkpoint_root is not None:
+    out = Path(args.out_dir)
+    if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True, exist_ok=True)
     issuer_files = [
@@ -973,12 +956,6 @@ def main() -> None:
     major_negative_review.to_csv(out / "major_negative_review.csv", index=False)
     combined.to_csv(out / "pit_evidence_extended.csv", index=False)
     _write_json(out / "derived_pit_materialization_manifest.json", summary)
-    if checkpoint_root is not None and checkpoint_state is not None:
-        _mark_phase(checkpoint_root, checkpoint_state, "final")
-        target = Path(args.out_dir)
-        if target.exists():
-            shutil.rmtree(target)
-        shutil.copytree(out, target)
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True, indent=2, default=str))
 
 
