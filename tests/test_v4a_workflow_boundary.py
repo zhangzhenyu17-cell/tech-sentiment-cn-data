@@ -138,6 +138,7 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
     assert "partial progress cache cannot be formal evidence" in text
     assert "v4a_fundamental_progress_bundle.py key" in text
     assert "v4a_fundamental_progress_bundle.py verify" in text
+    assert "v4a_fundamental_progress_bundle.py rebase" in text
     assert "v4a_fundamental_progress_bundle.py package" in text
     assert "Restore immutable completed work unit" in text
     assert "Publish immutable completed work unit" in text
