@@ -69,18 +69,22 @@ jobs:
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-key.json
           echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/source-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+          python scripts/v4a_persistent_stage_bundle.py progress-key \
+            --family issuer_cninfo --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-progress-key.json
+          echo "PROGRESS_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/source-progress-key.json"))["progress_key"])' )" >> "$GITHUB_ENV"
       - name: Restore CNINFO checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-cninfo-progress-v1-${{ env.PROGRESS_KEY }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-
+            v4a-issuer-cninfo-progress-v1-${{ env.PROGRESS_KEY }}-${{ matrix.shard }}-
       - name: Materialize CNINFO issuer shard
         id: materialize
         run: |
           mkdir -p "stage-source/cninfo-${{ matrix.shard }}" .cache/capital_pit_v4a/issuer
-          python scripts/materialize_pit_evidence.py \
+          timeout --signal=TERM --kill-after=2m 330m python scripts/materialize_pit_evidence.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
@@ -93,7 +97,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-cninfo-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-cninfo-progress-v1-${{ env.PROGRESS_KEY }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal CNINFO shard
         if: ${{ success() }}
         run: |
@@ -148,18 +152,22 @@ jobs:
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-key.json
           echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/source-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+          python scripts/v4a_persistent_stage_bundle.py progress-key \
+            --family issuer_sse --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-progress-key.json
+          echo "PROGRESS_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/source-progress-key.json"))["progress_key"])' )" >> "$GITHUB_ENV"
       - name: Restore SSE checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-sse-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-
+            v4a-issuer-sse-progress-v1-${{ env.PROGRESS_KEY }}-
       - name: Materialize SSE issuer archive
         id: materialize
         run: |
           mkdir -p stage-source/sse .cache/capital_pit_v4a/issuer
-          python scripts/materialize_pit_evidence.py \
+          timeout --signal=TERM --kill-after=2m 330m python scripts/materialize_pit_evidence.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
@@ -171,7 +179,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-sse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-sse-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal SSE shard
         if: ${{ success() }}
         run: |
@@ -221,18 +229,22 @@ jobs:
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-key.json
           echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/source-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+          python scripts/v4a_persistent_stage_bundle.py progress-key \
+            --family issuer_szse --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/source-progress-key.json
+          echo "PROGRESS_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/source-progress-key.json"))["progress_key"])' )" >> "$GITHUB_ENV"
       - name: Restore SZSE checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-szse-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-
+            v4a-issuer-szse-progress-v1-${{ env.PROGRESS_KEY }}-
       - name: Materialize SZSE issuer archive
         id: materialize
         run: |
           mkdir -p stage-source/szse .cache/capital_pit_v4a/issuer
-          python scripts/materialize_pit_evidence.py \
+          timeout --signal=TERM --kill-after=2m 330m python scripts/materialize_pit_evidence.py \
             --symbols-csv stage/shared/pit_symbol_scope/capital_pit_symbols.csv \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
@@ -244,7 +256,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/issuer
-          key: v4a-issuer-szse-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-issuer-szse-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal SZSE shard
         if: ${{ success() }}
         run: |
