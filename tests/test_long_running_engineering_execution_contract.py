@@ -47,6 +47,9 @@ def test_long_running_engineering_contract_is_frozen_and_boundary_preserving() -
         "completed_unit_reuse_precedes_recomputation",
         "query_cache_independent_from_document_progress",
         "actual_cli_entrypoint_regression_test_required",
+        "cache_visibility_scope_must_be_preflighted",
+        "inline_restore_resolver_execution_test_required",
+        "resume_effectiveness_requires_runtime_counters",
     ):
         assert defaults[key] is True
 
@@ -65,6 +68,10 @@ def test_restore_precedence_and_compatibility_bridge_are_explicit() -> None:
     for key in (
         "exceptional_only",
         "source_run_id_required",
+        "source_run_attempt_required",
+        "source_branch_or_ref_required",
+        "cache_visibility_relationship_required",
+        "wrong_ref_fail_fast_when_scope_required",
         "source_commit_required",
         "old_semantic_fingerprint_required",
         "exact_window_required",
@@ -77,6 +84,30 @@ def test_restore_precedence_and_compatibility_bridge_are_explicit() -> None:
         assert bridge[key] is True
     assert bridge["formal_evidence_handoff"] is False
     assert bridge["qualification_granted"] is False
+
+    recovery = payload["recovery_branch"]
+    for key in (
+        "same_branch_cache_scope_supported",
+        "fast_forward_to_intended_main_when_linear",
+        "dispatch_from_cache_visible_ref",
+        "fail_before_materialization_on_wrong_ref",
+        "remove_one_time_guard_only_after_current_generation_immutable_completion",
+    ):
+        assert recovery[key] is True
+    assert recovery["force_update_default"] is False
+
+    resume = payload["resume_validation"]
+    assert resume["cache_step_success_alone_is_insufficient"] is True
+    assert resume["fully_resumed_provider_queries_executed_expected"] == 0
+    assert resume["fully_resumed_documents_executed_expected"] == 0
+    for key in (
+        "resumed_counters_must_be_plausible",
+        "current_semantic_materialization_required",
+        "current_qualification_required",
+        "current_generation_immutable_publish_required",
+        "targeted_semantic_reproof_may_execute_only_affected_subset",
+    ):
+        assert resume[key] is True
 
 
 def test_cancellation_contract_requires_pre_and_post_cancel_persistence_checks() -> None:
@@ -105,6 +136,9 @@ def test_protocol_and_run_plan_cover_recent_long_run_failure_modes() -> None:
         "Compatibility bridge requirements",
         "timeout is a **per-job safety ceiling**",
         "Immutable completed work-unit bundle",
+        "Cache visibility is part of the restore identity",
+        "provider/source query executed count = 0",
+        "workflow-inline restore/resolver guard",
     ):
         assert phrase in protocol
 
@@ -121,6 +155,16 @@ def test_protocol_and_run_plan_cover_recent_long_run_failure_modes() -> None:
         "## Acceptance",
     ):
         assert heading in run_plan
+
+    for phrase in (
+        "Cache-producing branch/ref:",
+        "Intended recovery dispatch branch/ref:",
+        "intended recovery ref can read required caches",
+        "wrong-ref path fails before expensive materialization",
+        "zero-provider-query recovery proof:",
+        "zero-document-execution recovery proof:",
+    ):
+        assert phrase in run_plan
 
 
 def test_fundamental_reference_workflow_obeys_long_run_ordering_contract() -> None:
@@ -180,3 +224,22 @@ def test_qualification_gate_has_actual_cli_entrypoint_regression_coverage() -> N
     )
     assert "test_main_emits_fundamental_tolerance_payload_without_nameerror" in test_text
     assert "_MODULE.main()" in test_text
+
+
+def test_fundamental_recovery_branch_scope_and_resolver_execution_are_locked() -> None:
+    workflow = FUNDAMENTAL_WORKFLOW.read_text(encoding="utf-8")
+    boundary_test = (ROOT / "tests" / "test_v4a_workflow_boundary.py").read_text(
+        encoding="utf-8"
+    )
+    incident = (
+        ROOT / "docs" / "v4a_fundamental_long_run_incident_review_2026-09-19.md"
+    ).read_text(encoding="utf-8")
+
+    assert "presentation progress caches are branch-scoped" in workflow
+    assert "v4a/fundamental-resume-295710" in workflow
+    assert "_fundamental_reuse_resolver_python" in boundary_test
+    assert "test_fundamental_reuse_resolver_accepts_exact_recovery_cache_branch" in boundary_test
+    assert "test_fundamental_reuse_resolver_rejects_default_branch_cache_scope" in boundary_test
+    assert "35451946515" in incident
+    assert "executed_symbol_queries = 0" in incident
+    assert "executed_documents = 0" in incident
