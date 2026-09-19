@@ -37,6 +37,9 @@ execution before launching the expensive run.
 - Incremental checkpoint location:
 - Query/index cache identity:
 - Document/parser progress identity:
+- Cache-producing branch/ref:
+- Intended recovery dispatch branch/ref:
+- Cache visibility from intended recovery ref verified:
 - Save-before-gate step:
 - Cancellation-safe save behavior:
 - Immutable completed-unit bundle:
@@ -60,6 +63,10 @@ Explain any deviation:
 - [ ] actual CLI entrypoints tested
 - [ ] representative provider path checked when data-path changed
 - [ ] cache restore path checked
+- [ ] cache-producing branch/ref recorded
+- [ ] intended recovery ref can read required caches
+- [ ] wrong-ref path fails before expensive materialization when branch scope matters
+- [ ] workflow-inline restore/resolver guard execution-tested when it controls expensive work
 - [ ] diagnostics emitted before gate
 - [ ] cancellation/save behavior understood
 - [ ] immutable publication verification checked when changed
@@ -70,6 +77,10 @@ Required counters/fields:
 
 - resumed/executed symbol queries:
 - resumed/executed documents:
+- selected restore layer/source run/ref:
+- zero-provider-query recovery proof:
+- zero-document-execution recovery proof:
+- targeted semantic re-proof count:
 - parser-upgrade documents:
 - soft/hard failures:
 - readiness:
