@@ -113,9 +113,32 @@ def _progress_policy(contract_path: str | Path) -> dict[str, object]:
     if progress.get("mode") != "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1":
         raise ValueError("fundamental progress cache mode mismatch")
     if progress.get("formal_evidence_handoff") is not False:
-        raise ValueError("Fundamental progress bundle cannot grant formal evidence")
+        raise ValueError("Fundamental progress cache cannot grant formal evidence")
     if progress.get("partial_progress_never_grants_qualification") is not True:
         raise ValueError("Fundamental progress qualification boundary missing")
+
+    persistent = contract.get("persistent_work_unit_bundle_policy")
+    if not isinstance(persistent, dict):
+        raise ValueError("Fundamental persistent work-unit policy missing")
+    if persistent.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("Fundamental persistent work-unit schema mismatch")
+    if persistent.get("release_tag") != RELEASE_TAG:
+        raise ValueError("Fundamental persistent work-unit release mismatch")
+    if persistent.get("restore_before_materialization") is not True:
+        raise ValueError("Fundamental persistent work-unit restore policy missing")
+    if persistent.get("publish_only_after_work_unit_qualification_gate") is not True:
+        raise ValueError("Fundamental persistent work-unit gate policy missing")
+    if persistent.get("immutable_no_overwrite") is not True:
+        raise ValueError("Fundamental persistent work-unit immutability missing")
+    if persistent.get("formal_evidence_handoff") is not False:
+        raise ValueError("Fundamental work-unit bundle cannot grant formal evidence")
+    if persistent.get("requires_full_group_assembly") is not True:
+        raise ValueError("Fundamental work-unit bundle must require full assembly")
+    if persistent.get("partial_progress_never_grants_qualification") is not True:
+        raise ValueError("Fundamental work-unit qualification boundary missing")
+    excluded = set(map(str, persistent.get("semantic_fingerprint_excludes") or []))
+    if excluded != EXCLUDED_SEMANTIC_PRODUCER_PATHS:
+        raise ValueError("Fundamental semantic fingerprint exclusion drift")
     return progress
 
 
