@@ -52,9 +52,11 @@ MANAGED_RELATIVE_PATHS = (
     "pit_evidence_materialization/fundamental_state_evidence.csv",
     "pit_evidence_materialization/fundamental_state_coverage.csv",
     "pit_evidence_materialization/fundamental_pit_state_contract_v1.json",
+    "pit_evidence_materialization/v4a_qualification_tolerance_contract_v1.json",
     "pit_evidence_materialization/earnings_direction.csv",
     "pit_evidence_materialization/earnings_direction_evidence.csv",
     "pit_evidence_materialization/earnings_direction_coverage.csv",
+    "pit_evidence_materialization/earnings_direction_unclassified.csv",
     "pit_evidence_materialization/pit_stock_prices.csv",
     "pit_evidence_materialization/pit_stock_price_coverage.csv",
     "pit_evidence_materialization/pit_stock_price_errors.csv",
@@ -134,12 +136,47 @@ def main() -> None:
     issuer_summary = _read_json(pit_dir / "pit_materialization_manifest.json")
     scope_summary = _read_json(scope_dir / "capital_pit_symbol_scope.json")
     contract = _read_json(pit_dir / "fundamental_pit_state_contract_v1.json")
+    tolerance = _read_json(
+        pit_dir / "v4a_qualification_tolerance_contract_v1.json"
+    )
     checkpoint_summary = _read_json(pit_dir / "checkpoint_receipt_summary.json")
 
     if contract.get("contract_id") != "FUNDAMENTAL_PIT_STATE_CONTRACT_V1":
         raise ValueError("unexpected fundamental PIT contract identity")
     if contract.get("parameter_search") is not False:
         raise ValueError("fundamental PIT contract must prove parameter_search=false")
+    if tolerance.get("contract_id") != "V4A_QUALIFICATION_TOLERANCE_V1":
+        raise ValueError("unexpected qualification tolerance contract identity")
+    if (
+        tolerance.get("status")
+        != "FROZEN_EXPLICITLY_AUTHORIZED_EVIDENCE_QUALIFICATION_TOLERANCE"
+    ):
+        raise ValueError("qualification tolerance contract is not frozen")
+    if tolerance.get("evidence_qualification_changed") is not True:
+        raise ValueError("qualification tolerance must disclose eligibility change")
+    invariants = tolerance.get("invariants")
+    if not isinstance(invariants, dict):
+        raise ValueError("qualification tolerance invariants missing")
+    for key in (
+        "unknown_earnings_is_not_not_down",
+        "data_insufficient_is_not_pass_watch_or_fail",
+        "missing_valuation_emits_no_evidence",
+    ):
+        if invariants.get(key) is not True:
+            raise ValueError(f"qualification tolerance invariant missing: {key}")
+    for key in (
+        "unit_inference_allowed",
+        "substitute_document_allowed",
+        "future_outcomes_used",
+        "parameter_search_used",
+        "model_thresholds_changed",
+        "signal_definitions_changed",
+        "stock_universe_changed",
+        "production_authority_changed",
+        "trading_authority_changed",
+    ):
+        if invariants.get(key) is not False:
+            raise ValueError(f"qualification tolerance boundary drift: {key}")
     if checkpoint_summary.get("source_commit") != str(args.source_commit):
         raise ValueError("checkpoint receipt summary source commit mismatch")
     if checkpoint_summary.get("all_completion_states_complete") is not True:
@@ -222,6 +259,14 @@ def main() -> None:
                 "file_sha256": file_sha256(pit_dir / "fundamental_pit_state_contract_v1.json"),
                 "threshold_policy": contract.get("threshold_policy"),
             },
+            "qualification_tolerance_contract": {
+                "contract_id": tolerance.get("contract_id"),
+                "status": tolerance.get("status"),
+                "file_sha256": file_sha256(
+                    pit_dir / "v4a_qualification_tolerance_contract_v1.json"
+                ),
+                "evidence_qualification_changed": True,
+            },
             "major_negative_event_exclusion_complete": bool(
                 pit_summary.get("major_negative_event_exclusion_complete")
             ),
@@ -254,6 +299,8 @@ def main() -> None:
         "v4c_context_research_gate_met": False,
         "research_run": False,
         "evidence_qualification_promotion_run": False,
+        "evidence_qualification_tolerance_authorized": True,
+        "qualification_tolerance_contract_id": tolerance.get("contract_id"),
         "production_run": False,
         "workflow_dispatch_only_required": True,
         "workflow_envelope_separated_from_canonical_bundle": True,
@@ -281,6 +328,10 @@ def main() -> None:
         "fundamental_contract_id": contract.get("contract_id"),
         "fundamental_contract_sha256": file_sha256(
             pit_dir / "fundamental_pit_state_contract_v1.json"
+        ),
+        "qualification_tolerance_contract_id": tolerance.get("contract_id"),
+        "qualification_tolerance_contract_sha256": file_sha256(
+            pit_dir / "v4a_qualification_tolerance_contract_v1.json"
         ),
         "checkpoint_receipt_summary_sha256": file_sha256(
             pit_dir / "checkpoint_receipt_summary.json"

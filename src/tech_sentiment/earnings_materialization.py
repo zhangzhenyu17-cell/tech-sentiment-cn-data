@@ -27,7 +27,32 @@ from .pit_public_materialization import (
 )
 
 
-EARNINGS_MATERIALIZER_VERSION = "cninfo-issuer-earnings-direction-v1"
+LEGACY_EARNINGS_MATERIALIZER_VERSION = "cninfo-issuer-earnings-direction-v1"
+EARNINGS_MATERIALIZER_VERSION = "cninfo-issuer-earnings-direction-v2-auditable-unclassified"
+
+_DIRECTION_COLUMNS = (
+    "entity_id",
+    "document_id",
+    "event_date",
+    "earnings_expectation_direction",
+    "evidence_available_date",
+    "document_url",
+    "document_retrieval_url",
+    "document_sha256",
+    "classifier_version",
+    "availability_rule",
+)
+_UNCLASSIFIED_COLUMNS = (
+    "entity_id",
+    "document_id",
+    "title",
+    "evidence_available_date",
+    "document_url",
+    "document_retrieval_url",
+    "document_sha256",
+    "classifier_version",
+    "reason",
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +61,7 @@ class EarningsDirectionMaterializationResult:
     evidence: pd.DataFrame
     coverage: pd.DataFrame
     errors: pd.DataFrame
+    unclassified: pd.DataFrame
     summary: dict[str, object]
 
 
@@ -45,11 +71,16 @@ def _entity_id(symbol: str) -> str:
 
 
 def _direction_document_identity(
-    *, source_commit: str, symbol: str, document_id: str, attachment_url: str
+    *,
+    source_commit: str,
+    symbol: str,
+    document_id: str,
+    attachment_url: str,
+    producer_version: str = EARNINGS_MATERIALIZER_VERSION,
 ) -> CheckpointIdentity:
     return CheckpointIdentity(
         producer="issuer-earnings-direction-document",
-        producer_version=EARNINGS_MATERIALIZER_VERSION,
+        producer_version=producer_version,
         source_commit=source_commit,
         source_identities=(CNINFO_SOURCE_ID,),
         query_identity={
@@ -138,7 +169,9 @@ def materialize_cninfo_earnings_directions(
     rows: list[dict[str, object]] = []
     coverage_rows: list[dict[str, object]] = []
     errors: list[dict[str, str]] = []
+    unclassified: list[dict[str, object]] = []
     resumed_docs = 0
+    reused_legacy_docs = 0
     executed_docs = 0
 
     for symbol in unique_symbols:
@@ -208,57 +241,119 @@ def materialize_cninfo_earnings_directions(
                 attachment = "" if pd.isna(attachment_value) else str(attachment_value).strip()
                 if not attachment:
                     raise ValueError("earnings forecast lacks immutable attachment URL")
-                identity = _direction_document_identity(
+                current_identity = _direction_document_identity(
+                    source_commit=str(source_commit),
+                    symbol=symbol,
+                    document_id=document_id,
+                    attachment_url=attachment,
+                    producer_version=EARNINGS_MATERIALIZER_VERSION,
+                )
+                legacy_identity = _direction_document_identity(
                     source_commit=checkpoint_commit,
                     symbol=symbol,
                     document_id=document_id,
                     attachment_url=attachment,
+                    producer_version=LEGACY_EARNINGS_MATERIALIZER_VERSION,
                 )
-                loaded = store.load(identity)
-                if loaded is not None:
-                    direction_frame = loaded.frames["direction"]
+                loaded_current = store.load(current_identity)
+                loaded_legacy = (
+                    None if loaded_current is not None else store.load(legacy_identity)
+                )
+                classification_state = ""
+                metadata: dict[str, object] = {}
+                if loaded_current is not None:
+                    direction_frame = loaded_current.frames["direction"]
+                    raw_metadata = loaded_current.receipt.get("metadata")
+                    metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+                    classification_state = str(
+                        metadata.get("classification_state") or ""
+                    )
                     resumed_docs += 1
+                elif loaded_legacy is not None:
+                    direction_frame = loaded_legacy.frames["direction"]
+                    raw_metadata = loaded_legacy.receipt.get("metadata")
+                    metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+                    classification_state = "EXPLICIT_DIRECTION"
+                    resumed_docs += 1
+                    reused_legacy_docs += 1
                 else:
                     downloaded = download_official_document(attachment)
                     text = extract_pdf_text(downloaded.content)
                     direction = classify_explicit_issuer_earnings_direction(
                         f"{announcement['公告标题']}\n{text}"
                     )
-                    if direction == "UNKNOWN":
-                        raise ValueError(
-                            "issuer forecast document has no recognized explicit guidance direction"
-                        )
-                    direction_frame = pd.DataFrame(
-                        [
-                            {
-                                "entity_id": entity,
-                                "document_id": document_id,
-                                "event_date": pd.Timestamp(
-                                    pd.to_datetime(announcement["公告时间"], errors="raise")
-                                ).normalize(),
-                                "earnings_expectation_direction": direction,
-                                "evidence_available_date": available_date,
-                                "document_url": downloaded.url,
-                                "document_retrieval_url": downloaded.retrieval_url or downloaded.url,
-                                "document_sha256": downloaded.sha256,
-                                "classifier_version": EARNINGS_CLASSIFIER_VERSION,
-                                "availability_rule": availability_rule,
-                            }
-                        ]
+                    classification_state = (
+                        "UNCLASSIFIED_NO_EXPLICIT_UNAMBIGUOUS_DIRECTION"
+                        if direction == "UNKNOWN"
+                        else "EXPLICIT_DIRECTION"
                     )
+                    if direction == "UNKNOWN":
+                        direction_frame = pd.DataFrame(columns=list(_DIRECTION_COLUMNS))
+                    else:
+                        direction_frame = pd.DataFrame(
+                            [
+                                {
+                                    "entity_id": entity,
+                                    "document_id": document_id,
+                                    "event_date": pd.Timestamp(
+                                        pd.to_datetime(
+                                            announcement["公告时间"], errors="raise"
+                                        )
+                                    ).normalize(),
+                                    "earnings_expectation_direction": direction,
+                                    "evidence_available_date": available_date,
+                                    "document_url": downloaded.url,
+                                    "document_retrieval_url": (
+                                        downloaded.retrieval_url or downloaded.url
+                                    ),
+                                    "document_sha256": downloaded.sha256,
+                                    "classifier_version": EARNINGS_CLASSIFIER_VERSION,
+                                    "availability_rule": availability_rule,
+                                }
+                            ],
+                            columns=list(_DIRECTION_COLUMNS),
+                        )
+                    metadata = {
+                        "document_url": downloaded.url,
+                        "document_retrieval_url": downloaded.retrieval_url or downloaded.url,
+                        "document_sha256": downloaded.sha256,
+                        "classification_state": classification_state,
+                        "title": str(announcement["公告标题"]),
+                        "evidence_available_date": str(available_date.date()),
+                    }
                     store.save(
-                        identity,
+                        current_identity,
                         frames={"direction": direction_frame},
-                        metadata={
-                            "document_url": downloaded.url,
-                            "document_retrieval_url": downloaded.retrieval_url or downloaded.url,
-                            "document_sha256": downloaded.sha256,
-                        },
+                        metadata=metadata,
                     )
                     executed_docs += 1
                 if len(direction_frame):
                     rows.extend(direction_frame.to_dict("records"))
                     direction_documents += 1
+                elif classification_state.startswith("UNCLASSIFIED"):
+                    unclassified.append(
+                        {
+                            "entity_id": entity,
+                            "document_id": document_id,
+                            "title": str(
+                                metadata.get("title") or announcement["公告标题"]
+                            ),
+                            "evidence_available_date": available_date,
+                            "document_url": str(
+                                metadata.get("document_url") or attachment
+                            ),
+                            "document_retrieval_url": str(
+                                metadata.get("document_retrieval_url")
+                                or metadata.get("document_url")
+                                or attachment
+                            ),
+                            "document_sha256": str(
+                                metadata.get("document_sha256") or ""
+                            ),
+                            "classifier_version": EARNINGS_CLASSIFIER_VERSION,
+                            "reason": classification_state,
+                        }
+                    )
             except Exception as exc:
                 errors.append(
                     {
@@ -278,6 +373,15 @@ def materialize_cninfo_earnings_directions(
                 "query_status": "FAILED" if failed else "COMPLETE_WINDOW",
                 "forecast_documents": int(forecast_documents),
                 "direction_documents": int(direction_documents),
+                "unclassified_documents": int(
+                    forecast_documents - direction_documents
+                ) if not failed else int(
+                    sum(
+                        1
+                        for row in unclassified
+                        if str(row.get("entity_id")) == entity
+                    )
+                ),
             }
         )
 
@@ -307,14 +411,22 @@ def materialize_cninfo_earnings_directions(
         ),
         "forecast_documents": int(coverage["forecast_documents"].sum()) if len(coverage) else 0,
         "direction_documents": int(coverage["direction_documents"].sum()) if len(coverage) else 0,
+        "unclassified_documents": int(
+            pd.to_numeric(
+                coverage.get("unclassified_documents", 0), errors="coerce"
+            ).fillna(0).sum()
+        ) if len(coverage) else 0,
         "canonical_evidence_records": int(len(evidence)),
         "source_window_and_direction_extraction_complete": complete,
         "readiness_state": "QUALIFIED_INPUT" if complete else (
             "PARTIAL_COVERAGE" if len(coverage) else "DATA_INSUFFICIENT"
         ),
         "resumed_documents": resumed_docs,
+        "reused_legacy_direction_documents": reused_legacy_docs,
         "executed_documents": executed_docs,
         "unknown_is_not_not_down": True,
+        "unclassified_is_row_level_data_insufficiency": True,
+        "unclassified_never_emits_direction_evidence": True,
         "numeric_threshold_used": False,
         "price_or_return_used": False,
     }
@@ -323,11 +435,16 @@ def materialize_cninfo_earnings_directions(
         evidence=evidence,
         coverage=coverage,
         errors=pd.DataFrame(errors, columns=["entity_id", "document_id", "error"]),
+        unclassified=pd.DataFrame(
+            unclassified,
+            columns=list(_UNCLASSIFIED_COLUMNS),
+        ),
         summary=summary,
     )
 
 
 __all__ = [
+    "LEGACY_EARNINGS_MATERIALIZER_VERSION",
     "EARNINGS_MATERIALIZER_VERSION",
     "EarningsDirectionMaterializationResult",
     "materialize_cninfo_earnings_directions",

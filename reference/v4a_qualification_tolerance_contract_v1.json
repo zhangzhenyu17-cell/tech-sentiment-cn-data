@@ -1,0 +1,54 @@
+{
+  "schema_version": "v4a-qualification-tolerance-v1",
+  "contract_id": "V4A_QUALIFICATION_TOLERANCE_V1",
+  "status": "FROZEN_EXPLICITLY_AUTHORIZED_EVIDENCE_QUALIFICATION_TOLERANCE",
+  "qualification_window": {
+    "start_date": "2022-01-04",
+    "end_date": "2026-09-17"
+  },
+  "purpose": "Allow complete audited source pipelines to qualify while preserving explicit row-level DATA_INSUFFICIENT instead of failing the entire stage.",
+  "evidence_qualification_changed": true,
+  "explicit_user_authorization_required_and_received": true,
+  "applies_to": [
+    "fundamental filing parser coverage",
+    "issuer earnings direction classification",
+    "fundamental state materialization",
+    "trailing valuation materialization"
+  ],
+  "soft_data_insufficiency": [
+    "Exact official filing bytes are available but target facts cannot be extracted without inference.",
+    "An exact official earnings-related document has no unambiguous frozen UP/DOWN token; no direction evidence is emitted.",
+    "A Fundamental State row lacks required current/prior comparable facts; the row remains DATA_INSUFFICIENT and emits no PASS/WATCH/FAIL state.",
+    "A valuation row lacks a PIT TTM-EPS denominator or usable 20-day valuation comparison; the row emits no valuation evidence."
+  ],
+  "hard_blockers": [
+    "source query failure",
+    "official document download failure",
+    "missing immutable attachment identity",
+    "document SHA256 drift",
+    "ambiguous/conflicting official revision identity",
+    "duplicate evidence identity",
+    "future evidence or lookahead",
+    "provenance/replay/revision audit failure",
+    "price/source coverage hard failure",
+    "invalid availability state"
+  ],
+  "invariants": {
+    "unknown_earnings_is_not_not_down": true,
+    "data_insufficient_is_not_pass_watch_or_fail": true,
+    "missing_valuation_emits_no_evidence": true,
+    "unit_inference_allowed": false,
+    "substitute_document_allowed": false,
+    "future_outcomes_used": false,
+    "parameter_search_used": false,
+    "model_thresholds_changed": false,
+    "signal_definitions_changed": false,
+    "stock_universe_changed": false,
+    "production_authority_changed": false,
+    "trading_authority_changed": false
+  },
+  "stage_qualification_semantics": "QUALIFIED_INPUT means the source/materialization pipeline is complete and audited; individual records remain governed by availability_state and may be DATA_INSUFFICIENT.",
+  "downstream_consumption_rule": "Only HISTORICAL_RECONSTRUCTABLE evidence rows may be consumed as historical evidence; DATA_INSUFFICIENT rows must remain unavailable.",
+  "research_run": false,
+  "predictive_research": false
+}

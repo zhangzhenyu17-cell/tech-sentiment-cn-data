@@ -49,5 +49,17 @@
     "unit_inference_allowed": false,
     "substitute_document_allowed": false,
     "evidence_eligibility_changed": false
-  }
+  },
+  "qualification_tolerance_contract": "V4A_QUALIFICATION_TOLERANCE_V1",
+  "earnings_checkpoint_reuse_policy": {
+    "legacy_materializer_version": "cninfo-issuer-earnings-direction-v1",
+    "current_materializer_version": "cninfo-issuer-earnings-direction-v2-auditable-unclassified",
+    "legacy_successful_direction_checkpoint_reusable": true,
+    "legacy_unknown_checkpoint_expected": false,
+    "unknown_document_action": "REDOWNLOAD_EXACT_OFFICIAL_ATTACHMENT_CLASSIFY_AND_RECORD_UNCLASSIFIED_IF_STILL_UNKNOWN",
+    "unknown_emits_direction_evidence": false,
+    "hard_download_or_identity_failures_remain_failed": true
+  },
+  "evidence_qualification_changed": true,
+  "evidence_qualification_change_contract": "reference/v4a_qualification_tolerance_contract_v1.json"
 }

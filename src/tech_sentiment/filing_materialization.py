@@ -220,6 +220,25 @@ _REQUIRED_CORE_FACTS = {
     "NET_PROFIT_MARGIN",
 }
 
+_SOFT_FILING_DATA_INSUFFICIENCY_MESSAGES = (
+    "official filing has no extractable text layer",
+    "filing text does not contain an explicit table unit declaration",
+    "filing target fact has explicit supported amount unit but no parseable value",
+    "filing has no target facts with locally proven",
+    "filing parser produced no standardized facts",
+)
+
+
+def _filing_error_severity(exc: Exception) -> str:
+    """Classify only non-inferable document content as soft insufficiency."""
+
+    text = str(exc)
+    if isinstance(exc, ValueError) and any(
+        marker in text for marker in _SOFT_FILING_DATA_INSUFFICIENCY_MESSAGES
+    ):
+        return "SOFT_DATA_INSUFFICIENCY"
+    return "HARD_FAILURE"
+
 
 def _facts_require_parser_upgrade(facts: pd.DataFrame) -> bool:
     if facts.empty or "fact_type" not in facts.columns:
@@ -319,6 +338,7 @@ def materialize_versioned_filing_facts(
                         "entity_id": entity,
                         "document_id": "QUERY",
                         "error": f"{type(exc).__name__}: {exc}",
+                        "severity": "HARD_FAILURE",
                     }
                 )
                 coverage_rows.append(
@@ -337,6 +357,7 @@ def materialize_versioned_filing_facts(
         candidates = _select_primary_numeric_filing_candidates(raw)
         financial_documents = 0
         parsed_documents = 0
+        soft_data_insufficient_documents = 0
         symbol_failed = False
         for _, announcement in candidates.iterrows():
             publication = announcement["公告时间"]
@@ -357,6 +378,7 @@ def materialize_versioned_filing_facts(
                         "entity_id": entity,
                         "document_id": "UNKNOWN",
                         "error": "FINANCIAL_FILING_MISSING_IMMUTABLE_ATTACHMENT_URL",
+                        "severity": "HARD_FAILURE",
                     }
                 )
                 symbol_failed = True
@@ -479,14 +501,19 @@ def materialize_versioned_filing_facts(
                     fact_parts.append(facts)
                     parsed_documents += 1
             except Exception as exc:
+                severity = _filing_error_severity(exc)
                 errors.append(
                     {
                         "entity_id": entity,
                         "document_id": document_id,
                         "error": f"{type(exc).__name__}: {exc}",
+                        "severity": severity,
                     }
                 )
-                symbol_failed = True
+                if severity == "SOFT_DATA_INSUFFICIENCY":
+                    soft_data_insufficient_documents += 1
+                else:
+                    symbol_failed = True
 
         coverage_rows.append(
             {
@@ -495,12 +522,18 @@ def materialize_versioned_filing_facts(
                 "coverage_start": target_start,
                 "coverage_end": end,
                 "query_status": (
-                    "COMPLETE_WINDOW"
-                    if not symbol_failed and parsed_documents == financial_documents and financial_documents > 0
-                    else "FAILED"
+                    "FAILED"
+                    if symbol_failed
+                    else "COMPLETE_WINDOW"
+                    if parsed_documents == financial_documents and financial_documents > 0
+                    else "COMPLETE_WINDOW_WITH_DATA_INSUFFICIENCY"
                 ),
                 "financial_documents": int(financial_documents),
                 "parsed_documents": int(parsed_documents),
+                "soft_data_insufficient_documents": int(
+                    soft_data_insufficient_documents
+                    + (1 if financial_documents == 0 else 0)
+                ),
             }
         )
 
@@ -532,8 +565,20 @@ def materialize_versioned_filing_facts(
     facts, presentation_recheck_documents = _enrich_conflicting_presentation_variants(facts)
     trends = derive_fundamental_trend_evidence(facts)
     coverage = pd.DataFrame(coverage_rows)
+    complete_statuses = {
+        "COMPLETE_WINDOW",
+        "COMPLETE_WINDOW_WITH_DATA_INSUFFICIENCY",
+    }
     complete_entities = int(
+        coverage["query_status"].astype(str).isin(complete_statuses).sum()
+    ) if len(coverage) else 0
+    fully_parsed_entities = int(
         coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").sum()
+    ) if len(coverage) else 0
+    soft_data_insufficient_entities = int(
+        coverage["query_status"].astype(str).eq(
+            "COMPLETE_WINDOW_WITH_DATA_INSUFFICIENCY"
+        ).sum()
     ) if len(coverage) else 0
     summary = {
         "source_identity": DERIVED_FUNDAMENTAL_SOURCE_ID,
@@ -549,6 +594,8 @@ def materialize_versioned_filing_facts(
         ),
         "symbols": len(unique_symbols),
         "complete_entities": complete_entities,
+        "fully_parsed_entities": fully_parsed_entities,
+        "soft_data_insufficient_entities": soft_data_insufficient_entities,
         "filing_fact_rows": int(len(facts)),
         "derived_trend_records": int(len(trends)),
         "resumed_symbol_queries": resumed_symbol_queries,
@@ -569,6 +616,10 @@ def materialize_versioned_filing_facts(
             if complete_entities == len(unique_symbols) and len(trends)
             else "PARTIAL_COVERAGE" if len(trends) else "DATA_INSUFFICIENT"
         ),
+        "qualification_mode": (
+            "SOURCE_WINDOW_COMPLETE_WITH_EXPLICIT_ROW_LEVEL_DATA_INSUFFICIENCY"
+        ),
+        "soft_data_insufficiency_never_emits_fundamental_state": True,
         "fundamental_state_mapping_state": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1_DEFINED_SEPARATELY",
         "document_variant_selection": (
             "ANNOUNCEMENT_TITLE_FAMILY_PREFER_COMPLETE_OR_CANONICAL_OVER_BODY_"
@@ -588,7 +639,10 @@ def materialize_versioned_filing_facts(
         facts=facts,
         trends=trends,
         coverage=coverage,
-        errors=pd.DataFrame(errors, columns=["entity_id", "document_id", "error"]),
+        errors=pd.DataFrame(
+            errors,
+            columns=["entity_id", "document_id", "error", "severity"],
+        ),
         summary=summary,
     )
 

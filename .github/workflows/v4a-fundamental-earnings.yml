@@ -106,11 +106,59 @@ jobs:
               if upgrade.get("evidence_eligibility_changed") is not False:
                   raise SystemExit("fundamental parser upgrade cannot change evidence eligibility")
 
+          tolerance = json.loads(
+              Path("reference/v4a_qualification_tolerance_contract_v1.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if tolerance.get("contract_id") != "V4A_QUALIFICATION_TOLERANCE_V1":
+              raise SystemExit("qualification tolerance contract identity mismatch")
+          if (
+              tolerance.get("status")
+              != "FROZEN_EXPLICITLY_AUTHORIZED_EVIDENCE_QUALIFICATION_TOLERANCE"
+          ):
+              raise SystemExit("qualification tolerance contract is not frozen")
+          if tolerance.get("evidence_qualification_changed") is not True:
+              raise SystemExit("qualification tolerance change not explicitly disclosed")
+          if (
+              tolerance.get("explicit_user_authorization_required_and_received")
+              is not True
+          ):
+              raise SystemExit("qualification tolerance user authorization missing")
+          invariants = tolerance.get("invariants") or {}
+          for key in (
+              "unknown_earnings_is_not_not_down",
+              "data_insufficient_is_not_pass_watch_or_fail",
+              "missing_valuation_emits_no_evidence",
+          ):
+              if invariants.get(key) is not True:
+                  raise SystemExit(f"qualification tolerance invariant missing: {key}")
+          for key in (
+              "unit_inference_allowed",
+              "substitute_document_allowed",
+              "future_outcomes_used",
+              "parameter_search_used",
+              "model_thresholds_changed",
+              "signal_definitions_changed",
+              "stock_universe_changed",
+              "production_authority_changed",
+              "trading_authority_changed",
+          ):
+              if invariants.get(key) is not False:
+                  raise SystemExit(f"qualification tolerance boundary drift: {key}")
+
           window = contract.get("qualification_window") or {}
+          tolerance_window = tolerance.get("qualification_window") or {}
           exact_window = (
               os.environ["START_DATE"] == str(window.get("start_date"))
               and os.environ["END_DATE"] == str(window.get("end_date"))
+              and os.environ["START_DATE"] == str(tolerance_window.get("start_date"))
+              and os.environ["END_DATE"] == str(tolerance_window.get("end_date"))
           )
+          if not exact_window:
+              raise SystemExit(
+                  "qualification tolerance V1 is authorized only for its frozen window"
+              )
           if exact_window:
               checkpoint_commit = str(contract["legacy_checkpoint_source_commit"])
               compatibility = str(contract["legacy_stage_compatibility_key"])

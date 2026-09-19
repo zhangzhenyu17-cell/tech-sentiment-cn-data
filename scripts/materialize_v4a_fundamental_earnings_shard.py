@@ -117,6 +117,9 @@ def main() -> None:
     )
     earnings.coverage.to_csv(out / "earnings_direction_coverage.csv", index=False)
     earnings.errors.to_csv(out / "earnings_direction_errors.csv", index=False)
+    earnings.unclassified.to_csv(
+        out / "earnings_direction_unclassified.csv", index=False
+    )
 
     manifest = {
         "schema_version": SCHEMA_VERSION,

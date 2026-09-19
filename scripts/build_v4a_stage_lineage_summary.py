@@ -152,8 +152,15 @@ def main() -> None:
         "persistent_stage_schema": PERSISTENT_STAGE_SCHEMA,
         "stage_lineage": lineage,
         "original_source_commits": sorted(original_commits),
-        "private_qualification_semantics_unchanged": True,
-        "evidence_eligibility_changed": False,
+        "private_qualification_semantics_unchanged": False,
+        "evidence_eligibility_changed": True,
+        "authorized_qualification_tolerance_contract_id": (
+            "V4A_QUALIFICATION_TOLERANCE_V1"
+        ),
+        "authorized_change_scope": (
+            "ROW_LEVEL_DATA_INSUFFICIENCY_DOES_NOT_INVALIDATE_"
+            "AN_OTHERWISE_COMPLETE_AUDITED_SOURCE_PIPELINE"
+        ),
     }
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

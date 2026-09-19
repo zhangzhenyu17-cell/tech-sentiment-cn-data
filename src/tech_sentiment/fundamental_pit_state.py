@@ -210,6 +210,8 @@ def materialize_fundamental_state_evidence(
                 "readiness_state": "DATA_INSUFFICIENT",
                 "qualified_state_records": 0,
                 "data_insufficient_records": 0,
+                "qualification_readiness_state": "DATA_INSUFFICIENT",
+                "row_level_data_insufficiency_allowed": True,
                 "future_prices_or_returns_used": False,
                 "parameter_search_used": False,
             },
@@ -380,6 +382,17 @@ def materialize_fundamental_state_evidence(
         "latest_required_comparable_coverage_complete": all_latest_complete,
         "readiness_state": "QUALIFIED_INPUT" if all_latest_complete and qualified > 0 else (
             "PARTIAL_COVERAGE" if qualified > 0 else "DATA_INSUFFICIENT"
+        ),
+        "qualification_readiness_state": (
+            "QUALIFIED_INPUT"
+            if len(evidence) > 0
+            else "DATA_INSUFFICIENT"
+        ),
+        "row_level_data_insufficiency_allowed": True,
+        "row_level_data_insufficiency_never_promoted_to_state": True,
+        "qualification_semantics": (
+            "SOURCE_PIPELINE_QUALIFIED_WHEN_AUDITABLE_ROWS_ARE_EITHER_"
+            "HISTORICAL_RECONSTRUCTABLE_OR_EXPLICIT_DATA_INSUFFICIENT"
         ),
         "threshold_policy": "SIGN_AND_EXACT_DIRECTION_ONLY_NO_RETURN_OPTIMIZATION",
         "future_prices_or_returns_used": False,
