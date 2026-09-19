@@ -463,9 +463,9 @@ def test_same_timestamp_explicit_revision_title_supersedes_original_without_id_o
         12.1,
         published="2026-04-20 10:00:00",
     )
-    original["_filing_title"] = "2024年年度报告"
-    revision["_filing_title"] = "2024年年度报告（修订版）"
-    current["_filing_title"] = "2025年年度报告"
+    original["filing_title"] = "2024年年度报告"
+    revision["filing_title"] = "2024年年度报告（修订版）"
+    current["filing_title"] = "2025年年度报告"
 
     evidence = derive_fundamental_trend_evidence(
         pd.concat([original, revision, current], ignore_index=True)
@@ -509,7 +509,7 @@ def test_same_timestamp_semantically_equivalent_facts_use_stable_provenance_only
         (second, "2024年年度报告"),
         (current, "2025年年度报告"),
     ):
-        frame["_filing_title"] = title
+        frame["filing_title"] = title
 
     evidence = derive_fundamental_trend_evidence(
         pd.concat([first, second, current], ignore_index=True)
@@ -553,7 +553,7 @@ def test_same_timestamp_conflicting_unmarked_facts_remain_fail_closed():
         (second, "2024年年度报告"),
         (current, "2025年年度报告"),
     ):
-        frame["_filing_title"] = title
+        frame["filing_title"] = title
 
     with pytest.raises(ValueError, match="conflicting facts"):
         derive_fundamental_trend_evidence(

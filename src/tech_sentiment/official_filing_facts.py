@@ -843,8 +843,8 @@ def latest_filing_fact_as_of(
     latest_publication = candidates["publication_timestamp_order"].max()
     candidates = candidates[candidates["publication_timestamp_order"].eq(latest_publication)].copy()
 
-    if len(candidates) != 1 and "_filing_title" in candidates.columns:
-        candidates["_explicit_revision_priority"] = candidates["_filing_title"].map(
+    if len(candidates) != 1 and "filing_title" in candidates.columns:
+        candidates["_explicit_revision_priority"] = candidates["filing_title"].map(
             _explicit_filing_revision_priority
         )
         max_priority = int(candidates["_explicit_revision_priority"].max())
