@@ -13,6 +13,7 @@ PARALLEL_SCRIPTS = (
     "scripts/assemble_v4a_derived_pit.py",
     "scripts/v4a_persistent_stage_bundle.py",
     "scripts/v4a_fundamental_progress_bundle.py",
+    "scripts/migrate_v4a_cancelled_fundamental_cache.py",
     "scripts/build_v4a_stage_lineage_summary.py",
 )
 

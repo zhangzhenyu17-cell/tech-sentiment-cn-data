@@ -16,7 +16,7 @@
     35384571822,
     35419103373
   ],
-  "reuse_reason": "The V9 parser repair preserves the same official CNINFO source, document identity, PIT/no-lookahead rules, evidence eligibility, research scope, and trading/production boundaries. Legacy V8 query/document checkpoints may be restored, but a legacy parsed filing document is reused only when all frozen core Fundamental State facts are already present. Incomplete legacy parsed documents are re-downloaded from the exact official attachment, must match the legacy checkpoint document SHA256, and are then reparsed under V9. No substitute document, inferred unit, future outcome, or eligibility relaxation is allowed. Durable progress is isolated from legacy V8 caches: 16 bounded work units restore a read-only legacy shard cache plus a separate V9 progress cache. Each completed work unit saves only its V9 progress store under a frozen generation identity, so workflow-only changes such as timeout adjustments do not invalidate completed engineering progress. Partial progress remains non-evidence and never grants qualification.",
+  "reuse_reason": "The V9 parser repair preserves the same official CNINFO source, document identity, PIT/no-lookahead rules, evidence eligibility, research scope, and trading/production boundaries. Legacy V8 query/document checkpoints may be restored, but a legacy parsed filing document is reused only when all frozen core Fundamental State facts are already present. Incomplete legacy parsed documents are re-downloaded from the exact official attachment, must match the legacy checkpoint document SHA256, and are then reparsed under V9. No substitute document, inferred unit, future outcome, or eligibility relaxation is allowed. Durable progress is isolated from legacy V8 caches: 16 bounded work units restore a read-only legacy shard cache plus a separate V9 progress cache. Each completed work unit saves only its V9 progress store under a frozen generation identity, so workflow-only changes such as timeout adjustments do not invalidate completed engineering progress. Partial progress remains non-evidence and never grants qualification. The cancelled run 35431952238 successfully saved all four mixed V8/V9 checkpoint caches after cancellation. A frozen one-time bridge may restore those exact cache keys and migrate only fully validated current V9/earnings-v2 checkpoints matching the frozen progress source commit and current work-unit symbol set into the durable progress store; all other contents remain read-only legacy. This bridge is engineering-only and grants no evidence qualification.",
   "acquisition_semantics_changed": false,
   "parser_semantics_changed": true,
   "checkpoint_schema_changed": false,
@@ -122,5 +122,38 @@
     "formal_evidence_handoff": false,
     "requires_full_group_assembly": true,
     "partial_progress_never_grants_qualification": true
+  },
+  "cancelled_run_progress_bridge": {
+    "schema_version": "v4a-cancelled-run-progress-bridge-v1",
+    "status": "FROZEN_ONE_TIME_ENGINEERING_MIGRATION",
+    "source_run_id": 35431952238,
+    "source_branch": "v4a/fundamental-resume-295710",
+    "source_commit": "2ef3ee784c7e6ced5801cf35b6a5113a68e9ab6a",
+    "source_stage_compatibility_key": "03649c8b9961385313afe5ae2f0400e7a6df59a9e3b8071c6532c0b121a63160",
+    "source_cache_layout": ".cache/capital_pit_v4a/derived/filings",
+    "source_shard_count": 4,
+    "source_save_steps_verified_success": true,
+    "exact_cache_keys": {
+      "0": "v4a-fundamental-03649c8b9961385313afe5ae2f0400e7a6df59a9e3b8071c6532c0b121a63160-2ef3ee784c7e6ced5801cf35b6a5113a68e9ab6a-0-35431952238-1",
+      "1": "v4a-fundamental-03649c8b9961385313afe5ae2f0400e7a6df59a9e3b8071c6532c0b121a63160-2ef3ee784c7e6ced5801cf35b6a5113a68e9ab6a-1-35431952238-1",
+      "2": "v4a-fundamental-03649c8b9961385313afe5ae2f0400e7a6df59a9e3b8071c6532c0b121a63160-2ef3ee784c7e6ced5801cf35b6a5113a68e9ab6a-2-35431952238-1",
+      "3": "v4a-fundamental-03649c8b9961385313afe5ae2f0400e7a6df59a9e3b8071c6532c0b121a63160-2ef3ee784c7e6ced5801cf35b6a5113a68e9ab6a-3-35431952238-1"
+    },
+    "work_unit_to_source_shard_rule": "unit_index_mod_4",
+    "migrate_only_source_commit": "2ef3ee784c7e6ced5801cf35b6a5113a68e9ab6a",
+    "allowed_checkpoint_producers": [
+      "official-filing-facts@official-filing-facts-v9-explicit-unit-scaling-layout-labels",
+      "issuer-earnings-direction-document@cninfo-issuer-earnings-direction-v2-auditable-unclassified"
+    ],
+    "validate_checkpoint_receipt_and_files_before_copy": true,
+    "destination": "DURABLE_V9_PROGRESS_STORE",
+    "formal_evidence_handoff": false,
+    "qualification_granted": false,
+    "evidence_eligibility_changed": false,
+    "pit_no_lookahead_semantics_changed": false,
+    "parser_semantics_changed": false,
+    "production_authority_changed": false,
+    "trading_authority_changed": false,
+    "removal_condition": "MAY_BE_REMOVED_AFTER_ALL_16_WORK_UNITS_HAVE_IMMUTABLE_COMPLETED_BUNDLES"
   }
 }

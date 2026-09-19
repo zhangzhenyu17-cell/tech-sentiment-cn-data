@@ -128,8 +128,13 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
     assert "FUNDAMENTAL_WORK_UNIT_COUNT" in text
     assert "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1" in text
     assert "Restore durable V9 progress" in text
-    assert "Restore legacy V8 checkpoints at original cache path" in text
-    assert "Isolate restored legacy V8 checkpoints read-only" in text
+    assert "Restore cancelled-run mixed V8/V9 cache" in text
+    assert "Migrate validated cancelled-run V9 checkpoints into durable progress" in text
+    assert "Restore legacy V8 fallback when cancelled-run cache is unavailable" in text
+    assert "Isolate restored mixed or legacy checkpoints read-only" in text
+    assert "migrate_v4a_cancelled_fundamental_cache.py" in text
+    assert "CANCELLED_RUN_CACHE_KEY" in text
+    assert "CANCELLED_RUN_SOURCE_COMMIT" in text
     assert "Save durable V9 work-unit progress" in text
     assert ".cache/capital_pit_v4a/derived/progress" in text
     assert ".cache/capital_pit_v4a/derived/legacy" in text
