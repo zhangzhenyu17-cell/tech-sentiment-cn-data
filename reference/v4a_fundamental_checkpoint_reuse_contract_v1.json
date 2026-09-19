@@ -9,13 +9,14 @@
   "legacy_stage_compatibility_key": "f0fe6deb6a377b2941da30e860d606a3e1fb61ea17bf92f631069f382879ecb5",
   "checkpoint_scope": [
     "CNINFO filing-index query checkpoints",
-    "immutable parsed filing-fact document checkpoints"
+    "immutable parsed filing-fact document checkpoints",
+    "issuer earnings direction document checkpoints"
   ],
   "source_runs": [
     35384571822,
     35419103373
   ],
-  "reuse_reason": "The repair changes only post-acquisition same-publication-time revision resolution; acquisition endpoints, immutable document identity, PDF parsing, standardized fact extraction, and checkpoint schemas are unchanged.",
+  "reuse_reason": "The repair changes only post-acquisition same-publication-time revision resolution; acquisition endpoints, immutable document identity, PDF parsing, standardized filing fact extraction, issuer earnings direction classification, and checkpoint schemas are unchanged.",
   "acquisition_semantics_changed": false,
   "parser_semantics_changed": false,
   "checkpoint_schema_changed": false,
