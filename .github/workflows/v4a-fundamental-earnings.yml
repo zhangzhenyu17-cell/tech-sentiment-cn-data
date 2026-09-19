@@ -172,6 +172,28 @@ jobs:
               raise SystemExit("partial progress cache cannot be formal evidence")
           if progress.get("partial_progress_never_grants_qualification") is not True:
               raise SystemExit("partial progress cache qualification boundary missing")
+          if progress.get("partial_failed_work_unit_cache_allowed") is not True:
+              raise SystemExit("failed work-unit progress persistence policy missing")
+          if progress.get("partial_failed_work_unit_cache_never_formal_evidence") is not True:
+              raise SystemExit("failed work-unit progress cannot be formal evidence")
+
+          persistent = contract.get("persistent_work_unit_bundle_policy") or {}
+          if persistent.get("schema_version") != "v4a-fundamental-progress-unit-v1":
+              raise SystemExit("persistent work-unit schema mismatch")
+          if persistent.get("release_tag") != "v4a-stage-bundles-v1":
+              raise SystemExit("persistent work-unit release mismatch")
+          if persistent.get("restore_before_materialization") is not True:
+              raise SystemExit("persistent work-unit restore policy missing")
+          if persistent.get("publish_only_after_work_unit_qualification_gate") is not True:
+              raise SystemExit("persistent work-unit gate policy missing")
+          if persistent.get("immutable_no_overwrite") is not True:
+              raise SystemExit("persistent work-unit immutability missing")
+          if persistent.get("formal_evidence_handoff") is not False:
+              raise SystemExit("persistent work-unit cannot grant formal evidence")
+          if persistent.get("requires_full_group_assembly") is not True:
+              raise SystemExit("persistent work-unit must require full group assembly")
+          if persistent.get("partial_progress_never_grants_qualification") is not True:
+              raise SystemExit("persistent work-unit qualification boundary missing")
 
           work_unit_count = int(progress.get("work_unit_count") or 0)
           legacy_source_shard_count = int(progress.get("legacy_source_shard_count") or 0)
