@@ -134,6 +134,9 @@ def test_restore_precedence_and_compatibility_bridge_are_explicit() -> None:
         "physical_cleanup_deferred_if_it_changes_producer_identity",
         "cleanup_requires_separate_review_after_handoff",
         "documentation_outside_producer_identity_may_continue",
+        "pre_downstream_upstream_identity_preflight_required",
+        "do_not_auto_rerun_upstream_on_identity_mismatch",
+        "inspect_producer_drift_before_recomputation",
     ):
         assert handoff[key] is True
 
@@ -170,6 +173,7 @@ def test_protocol_and_run_plan_cover_recent_long_run_failure_modes() -> None:
         "Post-success handoff freeze",
         "fully resumed units",
         "targeted semantic-repair units",
+        "Before dispatching a downstream consumer",
     ):
         assert phrase in protocol
 
@@ -297,4 +301,6 @@ def test_fundamental_success_closeout_records_handoff_and_freeze_window() -> Non
 
     assert "producer-identity freeze" in incident.lower()
     assert "Producer-identity freeze before Derived" in runbook
+    assert "Before dispatching `v4a-09-derived`" in runbook
+    assert "Do not automatically rerun Fundamental" in runbook
     assert "HISTORICAL_DATA_QUALIFIED" in runbook
