@@ -164,6 +164,7 @@ STAGE_SPECS: dict[str, StageSpec] = {
             "reference/v4a_fundamental_pit_state_contract_v1.json",
             "reference/v4a_qualification_tolerance_contract_v1.json",
             "reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json",
+            "scripts/verify_v4a_frozen_stage_compatibility.py",
         ),
     ),
 }

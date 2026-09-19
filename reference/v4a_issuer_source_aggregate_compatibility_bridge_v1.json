@@ -1,7 +1,7 @@
 {
   "schema_version": "v4a-issuer-source-aggregate-compatibility-bridge-v1",
   "status": "FROZEN_ONE_TIME_ENGINEERING_COMPATIBILITY",
-  "purpose": "Allow v4a-05-issuer-aggregate to consume the already-qualified immutable CNINFO/SSE/SZSE source bundles without provider refetch when the only producer drift is the audited Fundamental-only qualification-tolerance change in scripts/assert_v4a_stage_qualifiable.py.",
+  "purpose": "Allow V4-A downstream assembly to consume already-qualified immutable issuer-source, Capital, Financing, and Policy bundles without provider refetch when the only producer drift is the audited Fundamental-only qualification-tolerance change in scripts/assert_v4a_stage_qualifiable.py.",
   "qualification_window": {
     "start_date": "2022-01-04",
     "end_date": "2026-09-17"
@@ -27,7 +27,10 @@
     "current_bytes": 10459,
     "classification": "FUNDAMENTAL_ONLY_QUALIFICATION_TOLERANCE_AND_DATA_INSUFFICIENCY_LOGIC",
     "issuer_source_gate_semantics_changed": false,
-    "issuer_materialization_semantics_changed": false
+    "issuer_materialization_semantics_changed": false,
+    "capital_gate_semantics_changed": false,
+    "financing_gate_semantics_changed": false,
+    "policy_gate_semantics_changed": false
   },
   "sources": {
     "issuer_cninfo": {
@@ -95,5 +98,49 @@
     "production_authority_changed": false,
     "trading_authority_changed": false
   },
-  "removal_condition": "Remove this one-time bridge only after the compatible issuer_aggregate bundle has been published and consumed by the current V4-A Derived/finalizer handoff. Do not alter the already-published issuer source bundles."
+  "removal_condition": "Remove this one-time bridge only after the compatible issuer_aggregate, Derived, and public finalizer handoff have consumed the frozen bundles. Do not alter or republish the already-published source/Capital/Financing/Policy bundles.",
+  "downstream_stages": {
+    "capital": {
+      "source_run_id": 35384429871,
+      "run_attempt": 1,
+      "source_commit": "29571066bbf69da5ba252982f71b592e07969314",
+      "stage_kind": "capital",
+      "stage_id": "capital",
+      "asset_base": "v4a-capital-20220104-20260917-6f8ed7d3811fa72ae9bd",
+      "producer_fingerprint": "bd2129605eb64a59350b8eb456c04089293fbdfb91b730dd5e5394c939f92367",
+      "compatibility_key": "6f8ed7d3811fa72ae9bde7db3de9a0e135c38e836893cdf68e0a33b22ea29f18",
+      "bundle_identity": "742ff961f72b72bdecfec4cbe0b517dc3a794669fd05917ee8940dfbb5a8f175",
+      "archive_sha256": "44e03c32e73d5638fda7de77a579a24b47bfd5774b05cd26a8d8a93e45bfeb3c",
+      "archive_bytes": 116357,
+      "stage_receipt_sha256": "d6c5b693b84748fcf1e7252ca458647ba85d80c439a064b211382431faf09776"
+    },
+    "financing": {
+      "source_run_id": 35384448004,
+      "run_attempt": 1,
+      "source_commit": "29571066bbf69da5ba252982f71b592e07969314",
+      "stage_kind": "financing",
+      "stage_id": "financing",
+      "asset_base": "v4a-financing-20220104-20260917-50c5cefbed3574a68989",
+      "producer_fingerprint": "63a6f5c9b83c103183798b619269ae2cd1e9b8592810a8e4acfcefd2c9f689aa",
+      "compatibility_key": "50c5cefbed3574a68989c4c3fd30463e6ba2f93ff505f0b0e9f769714eeafacf",
+      "bundle_identity": "4856c39a41bfb80c3ffe2e54802363731ef6fd98d9ecbbc4c242bccfe685a50e",
+      "archive_sha256": "b9ddb91409a0e93a68e4248ed40baa1ac8f7e9db4bdd5c2860fa9e1f9772ed3b",
+      "archive_bytes": 92289,
+      "stage_receipt_sha256": "84a5765143271405857235434f8548dbf739fed86b65fb2be1caf22854e57710"
+    },
+    "policy": {
+      "source_run_id": 35384604608,
+      "run_attempt": 1,
+      "source_commit": "29571066bbf69da5ba252982f71b592e07969314",
+      "stage_kind": "policy",
+      "stage_id": "policy",
+      "asset_base": "v4a-policy-20220104-20260917-fbd881d3d6b58def27a3",
+      "producer_fingerprint": "e9d4b6e27bbe940b7010905bd9f6ac035d3763ff856bbc5e91ce1dd0657c745a",
+      "compatibility_key": "fbd881d3d6b58def27a3aee0628d94971eaa7ebd6f5a03da0924c0ed048109fb",
+      "bundle_identity": "094e67bfeb2052f2b3c8783f7cb2caccdff48f225c4cdfe1b1b5c1d59aa04550",
+      "archive_sha256": "1c284766cd1edf134b134355d955068e89182e63c7a9e743246b8f77cc6b1eb8",
+      "archive_bytes": 59232,
+      "stage_receipt_sha256": "e45cd1f8ce23cfac9955ee07e844050a609525f70abd1b3ce8f00d2004745741"
+    }
+  }
 }

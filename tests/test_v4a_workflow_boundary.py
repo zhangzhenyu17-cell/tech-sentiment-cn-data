@@ -123,8 +123,10 @@ def test_final_workflow_is_assembly_only_and_never_refetches_public_data():
         "check_v4a_source_freshness.py",
     ):
         assert forbidden not in text, forbidden
-    assert text.count("v4a_persistent_stage_bundle.py verify") >= 5
+    assert text.count("v4a_persistent_stage_bundle.py verify") >= 4
+    assert "Download and exact-verify frozen Capital and Financing bundles" in text
     assert "Download and exact-verify frozen issuer-source bundles" in text
+    assert "Download and exact-verify frozen Policy bundle" in text
     assert "v4a-stage-bundles-v1" in text
 
 

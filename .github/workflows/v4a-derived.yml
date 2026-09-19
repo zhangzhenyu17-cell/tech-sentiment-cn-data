@@ -203,11 +203,11 @@ jobs:
             --input-manifest szse=bundle-meta/issuer_szse.json \
             --archive "bundle/issuer_aggregate/${BASE}.tar.gz" \
             --manifest bundle-meta/issuer_aggregate.json --extract-to stage/issuer_aggregate
-      - name: Download fundamental, prices, and policy bundles
+      - name: Download and verify Fundamental and Prices bundles
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for family in fundamental prices policy; do
+          for family in fundamental prices; do
             mkdir -p "bundle/${family}" "inputs/${family}"
             python scripts/v4a_persistent_stage_bundle.py key --family "$family" \
               --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
@@ -221,6 +221,22 @@ jobs:
               --archive "bundle/${family}/${base}.tar.gz" --manifest "bundle-meta/${family}.json" \
               --extract-to "inputs/${family}"
           done
+      - name: Download and exact-verify frozen Policy bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/policy inputs/policy
+          BASE="$(python -c 'import json; print(json.load(open("reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json"))["downstream_stages"]["policy"]["asset_base"])')"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/policy
+          cp "bundle/policy/${BASE}.manifest.json" bundle-meta/policy.json
+          python scripts/verify_v4a_frozen_stage_compatibility.py \
+            --family policy \
+            --contract reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json \
+            --manifest bundle-meta/policy.json \
+            --archive "bundle/policy/${BASE}.tar.gz" \
+            --shared-manifest bundle-meta/shared.json \
+            --extract-to inputs/policy \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}"
           mkdir -p stage/fundamental stage/prices stage/policy
           cp -a inputs/fundamental/shards/. stage/fundamental/
           cp -a inputs/prices/shards/. stage/prices/
