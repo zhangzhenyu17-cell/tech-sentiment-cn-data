@@ -199,6 +199,89 @@ def test_conflicting_cached_documents_recheck_exact_official_pdf_carriers(monkey
     assert variants["1209844801"] == "FULL_OR_CANONICAL"
 
 
+def test_conflict_recheck_overrides_stale_full_metadata_with_exact_body_title(
+    monkeypatch,
+):
+    facts = pd.DataFrame(
+        [
+            {
+                "entity_id": "688122.SH",
+                "period_end": "2021-03-31",
+                "fact_type": "NET_PROFIT_MARGIN",
+                "value": 0.20,
+                "unit": "RATIO",
+                "evidence_available_date": "2021-04-26",
+                "publication_timestamp": "2021-04-26 00:00:00",
+                "document_id": "1209800560",
+                "document_url": "https://static.cninfo.com.cn/finalpage/2021-04-26/1209800560.PDF",
+                "document_sha256": "a" * 64,
+                "document_presentation_variant": "FULL_OR_CANONICAL",
+            },
+            {
+                "entity_id": "688122.SH",
+                "period_end": "2021-03-31",
+                "fact_type": "NET_PROFIT_MARGIN",
+                "value": 0.24,
+                "unit": "RATIO",
+                "evidence_available_date": "2021-04-26",
+                "publication_timestamp": "2021-04-26 00:00:00",
+                "document_id": "1209800561",
+                "document_url": "https://static.cninfo.com.cn/finalpage/2021-04-26/1209800561.PDF",
+                "document_sha256": "b" * 64,
+                "document_presentation_variant": "FULL_OR_CANONICAL",
+            },
+        ]
+    )
+
+    class Downloaded:
+        def __init__(self, url, sha256, content):
+            self.url = url
+            self.sha256 = sha256
+            self.content = content
+
+    def fake_download(url):
+        if url.endswith("1209800560.PDF"):
+            return Downloaded(url, "a" * 64, b"body")
+        return Downloaded(url, "b" * 64, b"full")
+
+    def fake_extract(content):
+        if content == b"body":
+            return (
+                "2021年第一季度报告 "
+                "公司代码：688122 公司简称：西部超导 "
+                "西部超导材料科技股份有限公司2021年第一季度报告正文"
+            )
+        return (
+            "2021年第一季度报告 "
+            "公司代码：688122 公司简称：西部超导 "
+            "西部超导材料科技股份有限公司2021年第一季度报告"
+        )
+
+    monkeypatch.setattr(
+        filing_materialization,
+        "download_official_document",
+        fake_download,
+    )
+    monkeypatch.setattr(
+        filing_materialization,
+        "extract_pdf_text",
+        fake_extract,
+    )
+
+    enriched, rechecked = (
+        filing_materialization._enrich_conflicting_presentation_variants(facts)
+    )
+    variants = dict(
+        zip(
+            enriched["document_id"].astype(str),
+            enriched["document_presentation_variant"].astype(str),
+        )
+    )
+    assert rechecked == 2
+    assert variants["1209800560"] == "BODY"
+    assert variants["1209800561"] == "FULL_OR_CANONICAL"
+
+
 def test_conflict_recheck_rejects_official_pdf_sha_drift(monkeypatch):
     facts = pd.DataFrame(
         [
