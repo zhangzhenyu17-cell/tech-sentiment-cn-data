@@ -56,18 +56,22 @@ jobs:
             --input-manifest shared=bundle-meta/shared.json \
             --out bundle-meta/capital-key.json
           echo "STAGE_COMPAT=$(python -c 'import json; print(json.load(open("bundle-meta/capital-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+          python scripts/v4a_persistent_stage_bundle.py progress-key \
+            --family capital --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/capital-progress-key.json
+          echo "PROGRESS_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/capital-progress-key.json"))["progress_key"])' )" >> "$GITHUB_ENV"
       - name: Restore Capital checkpoints
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/capital
-          key: v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-capital-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.sha }}-
+            v4a-capital-progress-v1-${{ env.PROGRESS_KEY }}-
       - name: Materialize ETF-share and SSE+SZSE turnover
         id: materialize
         run: |
           mkdir -p stage/capital/capital_input_qualification .cache/capital_pit_v4a/capital
-          python scripts/qualify_capital_inputs.py \
+          timeout --signal=TERM --kill-after=2m 330m python scripts/qualify_capital_inputs.py \
             --start-date "${{ inputs.start_date }}" \
             --end-date "${{ inputs.end_date }}" \
             --calendar-csv stage/shared/trading_calendar.csv \
@@ -79,7 +83,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/capital
-          key: v4a-capital-${{ env.STAGE_COMPAT }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-capital-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal Capital stage
         if: ${{ success() }}
         run: |
