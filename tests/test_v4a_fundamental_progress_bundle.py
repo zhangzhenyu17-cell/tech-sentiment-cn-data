@@ -113,6 +113,7 @@ def test_progress_bundle_round_trip_is_semantic_and_not_formal_evidence(tmp_path
     semantic_paths = {row["path"] for row in manifest["semantic_files"]}
     assert ".github/workflows/v4a-fundamental-earnings.yml" not in semantic_paths
     assert "src/tech_sentiment/official_filing_facts.py" in semantic_paths
+    assert "scripts/v4a_fundamental_progress_bundle.py" in semantic_paths
 
     base = manifest["asset_base"]
     restored = tmp_path / "restored"
