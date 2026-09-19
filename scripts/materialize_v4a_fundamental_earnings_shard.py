@@ -55,6 +55,16 @@ def main() -> None:
     parser.add_argument("--shard-count", type=int, required=True)
     parser.add_argument("--checkpoint-dir", required=True)
     parser.add_argument(
+        "--legacy-checkpoint-dir",
+        default=None,
+        help="Optional read-only legacy checkpoint store separated from current progress.",
+    )
+    parser.add_argument(
+        "--progress-checkpoint-source-commit",
+        default=None,
+        help="Frozen engineering progress identity used for compatible cross-run V9 checkpoints.",
+    )
+    parser.add_argument(
         "--filing-checkpoint-source-commit",
         default=None,
         help="Optional frozen legacy source commit used only to address immutable filing checkpoints.",
@@ -83,6 +93,12 @@ def main() -> None:
         checkpoint_dir=checkpoint / "filings",
         warmup_years=2,
         checkpoint_source_commit=args.filing_checkpoint_source_commit,
+        legacy_checkpoint_dir=(
+            Path(args.legacy_checkpoint_dir) / "filings"
+            if args.legacy_checkpoint_dir
+            else None
+        ),
+        progress_checkpoint_source_commit=args.progress_checkpoint_source_commit,
     )
     fundamental = materialize_fundamental_state_evidence(
         filings.facts,
@@ -97,6 +113,12 @@ def main() -> None:
         source_commit=args.source_commit,
         checkpoint_dir=checkpoint / "filings",
         checkpoint_source_commit=args.filing_checkpoint_source_commit,
+        legacy_checkpoint_dir=(
+            Path(args.legacy_checkpoint_dir) / "filings"
+            if args.legacy_checkpoint_dir
+            else None
+        ),
+        progress_checkpoint_source_commit=args.progress_checkpoint_source_commit,
     )
 
     out = Path(args.out_dir)
@@ -133,6 +155,14 @@ def main() -> None:
         "filing_materialization": filings.summary,
         "filing_checkpoint_source_commit": (
             args.filing_checkpoint_source_commit or args.source_commit
+        ),
+        "progress_checkpoint_source_commit": (
+            args.progress_checkpoint_source_commit or args.source_commit
+        ),
+        "checkpoint_store_mode": (
+            "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1"
+            if args.legacy_checkpoint_dir
+            else "SINGLE_STORE_COMPATIBILITY_MODE"
         ),
         "fundamental_state_contract": fundamental.summary,
         "earnings_materialization": earnings.summary,
