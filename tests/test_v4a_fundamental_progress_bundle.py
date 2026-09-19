@@ -133,6 +133,21 @@ def test_progress_bundle_round_trip_is_semantic_and_not_formal_evidence(tmp_path
     assert (restored / "receipt.json").is_file()
     assert (restored / "stage_manifest.json").is_file()
 
+    rebased = _MODULE.rebase_verified_unit(
+        stage_root=restored,
+        manifest_path=out / f"{base}.manifest.json",
+        source_commit="9" * 40,
+    )
+    assert rebased["source_commit"] == "9" * 40
+    assert rebased["data_payload_files_modified"] is False
+    rebased_manifest = json.loads(
+        (restored / "stage_manifest.json").read_text(encoding="utf-8")
+    )
+    assert rebased_manifest["source_commit"] == "9" * 40
+    reuse = rebased_manifest["progress_bundle_reuse"]
+    assert reuse["bundle_identity"] == manifest["bundle_identity"]
+    assert reuse["data_payload_files_modified"] is False
+
 
 def test_progress_bundle_rejects_symbol_scope_or_unit_identity_drift(tmp_path: Path):
     symbols_csv, shared_manifest, stage, _ = _fixture(tmp_path)
