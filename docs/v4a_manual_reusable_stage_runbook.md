@@ -334,6 +334,21 @@ This is deliberate: removing a harmless one-time guard immediately after a
 green run would change the Fundamental producer fingerprint and could cause
 Derived to reject or fail to locate the just-published valid bundle.
 
+Before dispatching `v4a-09-derived`, perform an upstream-identity preflight:
+resolve the current Fundamental persistent-stage key using the same frozen
+window and Shared manifest, and require the result to match the already
+published Fundamental handoff:
+
+- expected asset base:
+  `v4a-fundamental-20220104-20260917-56e8c44ca678668bfc17`;
+- expected compatibility key:
+  `56e8c44ca678668bfc17fd7ef5da5a9c32503dcbac03eb86fa3963ecd0cf751b`.
+
+If the current key differs, stop before Derived. Inspect which producer file
+changed. Do not automatically rerun Fundamental merely because a cleanup or
+documentation-adjacent engineering change accidentally changed its producer
+identity.
+
 ### Qualification boundary after public success
 
 A successful Fundamental workflow and persistent bundle mean the public
