@@ -28,10 +28,11 @@ from tech_sentiment.trailing_valuation_pit import (
     build_trailing_valuation_rail,
     valuation_rail_to_pit_evidence,
 )
-from tech_sentiment.v4a_stage_artifact import verify_stage_receipt
+from tech_sentiment.v4a_stage_artifact import file_sha256, verify_stage_receipt
 
 
 SCHEMA_VERSION = "capital-pit-derived-materialization-v4a"
+CHECKPOINT_SCHEMA_VERSION = "v4a-derived-phase-checkpoint-v1"
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
@@ -55,6 +56,91 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
         json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, default=str) + "\n",
         encoding="utf-8",
     )
+
+
+def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2, default=str) + "\n",
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
+def _checkpoint_identity(
+    *,
+    args: argparse.Namespace,
+    issuer_dir: Path,
+    policy_dir: Path,
+    fundamental_dirs: list[Path],
+    price_dirs: list[Path],
+) -> dict[str, object]:
+    return {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "start_date": args.start_date,
+        "end_date": args.end_date,
+        "issuer_source_commit": args.issuer_source_commit or args.source_commit,
+        "fundamental_source_commit": args.fundamental_source_commit or args.source_commit,
+        "price_source_commit": args.price_source_commit or args.source_commit,
+        "policy_source_commit": args.policy_source_commit or args.source_commit,
+        "symbols_sha256": file_sha256(Path(args.symbols_csv)),
+        "calendar_sha256": file_sha256(Path(args.calendar_csv)),
+        "issuer_receipt_sha256": file_sha256(issuer_dir / "receipt.json"),
+        "policy_receipt_sha256": file_sha256(policy_dir / "receipt.json"),
+        "fundamental_receipt_sha256": [
+            file_sha256(path / "receipt.json") for path in fundamental_dirs
+        ],
+        "price_receipt_sha256": [
+            file_sha256(path / "receipt.json") for path in price_dirs
+        ],
+    }
+
+
+def _prepare_checkpoint(root: Path, identity: dict[str, object]) -> dict[str, object]:
+    root.mkdir(parents=True, exist_ok=True)
+    state_path = root / "checkpoint_state.json"
+    if state_path.is_file():
+        state = _read_json(state_path)
+        if state.get("schema_version") != CHECKPOINT_SCHEMA_VERSION:
+            raise ValueError("derived checkpoint schema mismatch")
+        if state.get("identity") != identity:
+            raise ValueError("derived checkpoint identity mismatch")
+        phases = state.get("completed_phases")
+        if not isinstance(phases, list) or any(not isinstance(x, str) for x in phases):
+            raise ValueError("derived checkpoint completed phase list malformed")
+        return state
+    state = {
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "identity": identity,
+        "completed_phases": [],
+    }
+    _atomic_write_json(state_path, state)
+    return state
+
+
+def _phase_done(state: dict[str, object], name: str) -> bool:
+    return name in set(state.get("completed_phases") or [])
+
+
+def _mark_phase(root: Path, state: dict[str, object], name: str) -> None:
+    phases = list(state.get("completed_phases") or [])
+    if name not in phases:
+        phases.append(name)
+    state["completed_phases"] = phases
+    _atomic_write_json(root / "checkpoint_state.json", state)
+
+
+def _write_frame(path: Path, frame: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    frame.to_csv(tmp, index=False)
+    tmp.replace(path)
+
+
+def _load_evidence_frame(path: Path) -> pd.DataFrame:
+    frame = _read_csv(path)
+    return validate_materialized_pit_records(frame) if len(frame) else frame
 
 
 def _entity(symbol: object) -> str:
@@ -335,6 +421,7 @@ def main() -> None:
     parser.add_argument("--price-source-commit", default="")
     parser.add_argument("--policy-source-commit", default="")
     parser.add_argument("--out-dir", required=True)
+    parser.add_argument("--checkpoint-dir", default="")
     args = parser.parse_args()
 
     issuer_source_commit = args.issuer_source_commit or args.source_commit
@@ -402,159 +489,256 @@ def main() -> None:
     if policy_manifest.get("schema_version") != "v4a-policy-stage-v1":
         raise ValueError("policy stage schema mismatch")
 
-    fact_parts: list[pd.DataFrame] = []
-    filing_coverage_parts: list[pd.DataFrame] = []
-    earnings_direction_parts: list[pd.DataFrame] = []
-    earnings_evidence_parts: list[pd.DataFrame] = []
-    earnings_coverage_parts: list[pd.DataFrame] = []
-    earnings_unclassified_parts: list[pd.DataFrame] = []
-    filing_error_parts: list[pd.DataFrame] = []
-    earnings_error_parts: list[pd.DataFrame] = []
-    for stage in fundamental_dirs:
-        facts = _read_csv(stage / "versioned_filing_facts.csv")
-        if len(facts):
-            fact_parts.append(facts)
-        filing_coverage_parts.append(_read_csv(stage / "filing_coverage.csv"))
-        directions = _read_csv(stage / "earnings_direction.csv")
-        if len(directions):
-            earnings_direction_parts.append(directions)
-        evidence = _read_csv(stage / "earnings_direction_evidence.csv")
-        if len(evidence):
-            earnings_evidence_parts.append(validate_materialized_pit_records(evidence))
-        earnings_coverage_parts.append(_read_csv(stage / "earnings_direction_coverage.csv"))
-        unclassified = _read_csv(stage / "earnings_direction_unclassified.csv")
-        if len(unclassified):
-            earnings_unclassified_parts.append(unclassified)
-        ferr = _read_csv(stage / "filing_errors.csv")
-        if len(ferr):
-            filing_error_parts.append(ferr)
-        eerr = _read_csv(stage / "earnings_direction_errors.csv")
-        if len(eerr):
-            earnings_error_parts.append(eerr)
-
-    facts = (
-        pd.concat(fact_parts, ignore_index=True, sort=False)
-        if fact_parts
-        else pd.DataFrame(columns=list(FILING_FACT_COLUMNS))
-    )
-    if len(facts):
-        facts["period_end"] = pd.to_datetime(facts["period_end"], errors="raise").dt.normalize()
-        facts["evidence_available_date"] = pd.to_datetime(
-            facts["evidence_available_date"], errors="raise"
-        ).dt.normalize()
-        if facts.duplicated(["entity_id", "document_id", "revision_id", "fact_type"]).any():
-            raise ValueError("aggregated filing facts contain duplicate identities")
-    filing_coverage = pd.concat(filing_coverage_parts, ignore_index=True, sort=False)
-    if filing_coverage.empty or filing_coverage.duplicated(["entity_id"]).any():
-        raise ValueError("filing coverage must contain exactly one row per entity")
-    if set(filing_coverage["entity_id"].astype(str)) != expected_entities:
-        raise ValueError("filing coverage entity set mismatch")
-
-    trends = _canonicalize_provenance(derive_fundamental_trend_evidence(facts))
-    fundamental = materialize_fundamental_state_evidence(
-        facts,
-        target_start_date=target_start,
-        target_end_date=target_end,
-    )
-    fundamental_evidence = _canonicalize_provenance(fundamental.evidence)
-    fundamental_state, fundamental_coverage_summary = _fundamental_readiness(
-        fundamental_evidence,
-        target_start=target_start,
-        target_end=target_end,
-        expected_entities=expected_entities,
-        filing_coverage=filing_coverage,
-    )
-
-    earnings_directions = (
-        pd.concat(earnings_direction_parts, ignore_index=True, sort=False)
-        if earnings_direction_parts else pd.DataFrame()
-    )
-    if len(earnings_directions) and earnings_directions.duplicated(["entity_id", "document_id"]).any():
-        raise ValueError("aggregated earnings directions contain duplicate documents")
-    earnings_evidence = (
-        validate_materialized_pit_records(
-            pd.concat(earnings_evidence_parts, ignore_index=True, sort=False)
+    checkpoint_root = Path(args.checkpoint_dir) if args.checkpoint_dir else None
+    checkpoint_state: dict[str, object] | None = None
+    if checkpoint_root is not None:
+        checkpoint_state = _prepare_checkpoint(
+            checkpoint_root,
+            _checkpoint_identity(
+                args=args,
+                issuer_dir=issuer_dir,
+                policy_dir=policy_dir,
+                fundamental_dirs=fundamental_dirs,
+                price_dirs=price_dirs,
+            ),
         )
-        if earnings_evidence_parts else pd.DataFrame()
-    )
-    earnings_unclassified = (
-        pd.concat(earnings_unclassified_parts, ignore_index=True, sort=False)
-        if earnings_unclassified_parts else pd.DataFrame()
-    )
-    earnings_coverage = pd.concat(earnings_coverage_parts, ignore_index=True, sort=False)
-    if earnings_coverage.empty or earnings_coverage.duplicated(["entity_id"]).any():
-        raise ValueError("earnings coverage must contain exactly one row per entity")
-    if set(earnings_coverage["entity_id"].astype(str)) != expected_entities:
-        raise ValueError("earnings coverage entity set mismatch")
-    earnings_complete = bool(
-        earnings_coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").all()
-    )
-    earnings_state = "QUALIFIED_INPUT" if earnings_complete else (
-        "PARTIAL_COVERAGE"
-        if earnings_coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").any()
-        else "DATA_INSUFFICIENT"
-    )
-    earnings_negative = _earnings_down_events(earnings_evidence)
-
-    price_parts: list[pd.DataFrame] = []
-    price_coverage_parts: list[pd.DataFrame] = []
-    price_error_parts: list[pd.DataFrame] = []
-    for stage in price_dirs:
-        prices = _read_csv(stage / "pit_stock_prices.csv")
-        if len(prices):
-            price_parts.append(prices)
-        price_coverage_parts.append(_read_csv(stage / "pit_stock_price_coverage.csv"))
-        errors = _read_csv(stage / "pit_stock_price_errors.csv")
-        if len(errors):
-            price_error_parts.append(errors)
-    prices = pd.concat(price_parts, ignore_index=True, sort=False) if price_parts else pd.DataFrame()
-    if len(prices):
-        prices["date"] = pd.to_datetime(prices["date"], errors="raise").dt.normalize()
-        if prices.duplicated(["symbol", "date"]).any():
-            raise ValueError("aggregated PIT prices contain duplicate symbol/date rows")
-        prices = prices.sort_values(["symbol", "date"]).reset_index(drop=True)
-    price_coverage = pd.concat(price_coverage_parts, ignore_index=True, sort=False)
-    if price_coverage.empty or price_coverage.duplicated(["symbol", "coverage_start", "coverage_end"]).any():
-        raise ValueError("price coverage contains duplicate or no chunks")
-    if set(price_coverage["symbol"].astype(str).str.zfill(6)) != expected_symbols:
-        raise ValueError("price coverage symbol set mismatch")
-    price_complete = int(price_coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").sum())
-    price_summary = {
-        "source_identity": "PUBLIC_A_SHARE_DAILY_CLOSE",
-        "start_date": args.start_date,
-        "end_date": args.end_date,
-        "symbols": len(expected_symbols),
-        "chunks": int(len(price_coverage)),
-        "complete_chunks": price_complete,
-        "readiness_state": (
-            "QUALIFIED_INPUT"
-            if price_complete == len(price_coverage)
-            else "PARTIAL_COVERAGE" if price_complete
+    if checkpoint_root is not None and checkpoint_state is not None and _phase_done(checkpoint_state, "fundamental"):
+        phase_root = checkpoint_root / "fundamental"
+        facts = _read_csv(phase_root / "versioned_filing_facts.csv")
+        if len(facts):
+            facts["period_end"] = pd.to_datetime(facts["period_end"], errors="raise").dt.normalize()
+            facts["evidence_available_date"] = pd.to_datetime(
+                facts["evidence_available_date"], errors="raise"
+            ).dt.normalize()
+        filing_coverage = _read_csv(phase_root / "filing_coverage.csv")
+        trends = _load_evidence_frame(phase_root / "derived_pit_fundamental_trends.csv")
+        fundamental_evidence = _load_evidence_frame(phase_root / "fundamental_state_evidence.csv")
+        fundamental_coverage = _read_csv(phase_root / "fundamental_state_coverage.csv")
+        earnings_directions = _read_csv(phase_root / "earnings_direction.csv")
+        earnings_evidence = _load_evidence_frame(phase_root / "earnings_direction_evidence.csv")
+        earnings_coverage = _read_csv(phase_root / "earnings_direction_coverage.csv")
+        earnings_unclassified = _read_csv(phase_root / "earnings_direction_unclassified.csv")
+        earnings_negative = _load_evidence_frame(phase_root / "earnings_negative_evidence.csv")
+        phase_meta = _read_json(phase_root / "phase_metadata.json")
+        fundamental_summary = phase_meta["fundamental_summary"]
+        fundamental_state = str(phase_meta["fundamental_state"])
+        fundamental_coverage_summary = dict(phase_meta["fundamental_coverage_summary"])
+        earnings_complete = bool(phase_meta["earnings_complete"])
+        earnings_state = str(phase_meta["earnings_state"])
+    else:
+        fact_parts: list[pd.DataFrame] = []
+        filing_coverage_parts: list[pd.DataFrame] = []
+        earnings_direction_parts: list[pd.DataFrame] = []
+        earnings_evidence_parts: list[pd.DataFrame] = []
+        earnings_coverage_parts: list[pd.DataFrame] = []
+        earnings_unclassified_parts: list[pd.DataFrame] = []
+        filing_error_parts: list[pd.DataFrame] = []
+        earnings_error_parts: list[pd.DataFrame] = []
+        for stage in fundamental_dirs:
+            facts = _read_csv(stage / "versioned_filing_facts.csv")
+            if len(facts):
+                fact_parts.append(facts)
+            filing_coverage_parts.append(_read_csv(stage / "filing_coverage.csv"))
+            directions = _read_csv(stage / "earnings_direction.csv")
+            if len(directions):
+                earnings_direction_parts.append(directions)
+            evidence = _read_csv(stage / "earnings_direction_evidence.csv")
+            if len(evidence):
+                earnings_evidence_parts.append(validate_materialized_pit_records(evidence))
+            earnings_coverage_parts.append(_read_csv(stage / "earnings_direction_coverage.csv"))
+            unclassified = _read_csv(stage / "earnings_direction_unclassified.csv")
+            if len(unclassified):
+                earnings_unclassified_parts.append(unclassified)
+            ferr = _read_csv(stage / "filing_errors.csv")
+            if len(ferr):
+                filing_error_parts.append(ferr)
+            eerr = _read_csv(stage / "earnings_direction_errors.csv")
+            if len(eerr):
+                earnings_error_parts.append(eerr)
+    
+        facts = (
+            pd.concat(fact_parts, ignore_index=True, sort=False)
+            if fact_parts
+            else pd.DataFrame(columns=list(FILING_FACT_COLUMNS))
+        )
+        if len(facts):
+            facts["period_end"] = pd.to_datetime(facts["period_end"], errors="raise").dt.normalize()
+            facts["evidence_available_date"] = pd.to_datetime(
+                facts["evidence_available_date"], errors="raise"
+            ).dt.normalize()
+            if facts.duplicated(["entity_id", "document_id", "revision_id", "fact_type"]).any():
+                raise ValueError("aggregated filing facts contain duplicate identities")
+        filing_coverage = pd.concat(filing_coverage_parts, ignore_index=True, sort=False)
+        if filing_coverage.empty or filing_coverage.duplicated(["entity_id"]).any():
+            raise ValueError("filing coverage must contain exactly one row per entity")
+        if set(filing_coverage["entity_id"].astype(str)) != expected_entities:
+            raise ValueError("filing coverage entity set mismatch")
+    
+        trends = _canonicalize_provenance(derive_fundamental_trend_evidence(facts))
+        fundamental = materialize_fundamental_state_evidence(
+            facts,
+            target_start_date=target_start,
+            target_end_date=target_end,
+        )
+        fundamental_evidence = _canonicalize_provenance(fundamental.evidence)
+        fundamental_state, fundamental_coverage_summary = _fundamental_readiness(
+            fundamental_evidence,
+            target_start=target_start,
+            target_end=target_end,
+            expected_entities=expected_entities,
+            filing_coverage=filing_coverage,
+        )
+    
+        earnings_directions = (
+            pd.concat(earnings_direction_parts, ignore_index=True, sort=False)
+            if earnings_direction_parts else pd.DataFrame()
+        )
+        if len(earnings_directions) and earnings_directions.duplicated(["entity_id", "document_id"]).any():
+            raise ValueError("aggregated earnings directions contain duplicate documents")
+        earnings_evidence = (
+            validate_materialized_pit_records(
+                pd.concat(earnings_evidence_parts, ignore_index=True, sort=False)
+            )
+            if earnings_evidence_parts else pd.DataFrame()
+        )
+        earnings_unclassified = (
+            pd.concat(earnings_unclassified_parts, ignore_index=True, sort=False)
+            if earnings_unclassified_parts else pd.DataFrame()
+        )
+        earnings_coverage = pd.concat(earnings_coverage_parts, ignore_index=True, sort=False)
+        if earnings_coverage.empty or earnings_coverage.duplicated(["entity_id"]).any():
+            raise ValueError("earnings coverage must contain exactly one row per entity")
+        if set(earnings_coverage["entity_id"].astype(str)) != expected_entities:
+            raise ValueError("earnings coverage entity set mismatch")
+        earnings_complete = bool(
+            earnings_coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").all()
+        )
+        earnings_state = "QUALIFIED_INPUT" if earnings_complete else (
+            "PARTIAL_COVERAGE"
+            if earnings_coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").any()
             else "DATA_INSUFFICIENT"
-        ),
-        "adjustment": "NONE_UNADJUSTED_CLOSE",
-        "no_forward_fill": True,
-        "parallel_shards": len(price_dirs),
-    }
+        )
+        earnings_negative = _earnings_down_events(earnings_evidence)
+        fundamental_coverage = fundamental.coverage
+        fundamental_summary = fundamental.summary
+        if checkpoint_root is not None and checkpoint_state is not None:
+            phase_root = checkpoint_root / "fundamental"
+            _write_frame(phase_root / "versioned_filing_facts.csv", facts)
+            _write_frame(phase_root / "filing_coverage.csv", filing_coverage)
+            _write_frame(phase_root / "derived_pit_fundamental_trends.csv", trends)
+            _write_frame(phase_root / "fundamental_state_evidence.csv", fundamental_evidence)
+            _write_frame(phase_root / "fundamental_state_coverage.csv", fundamental_coverage)
+            _write_frame(phase_root / "earnings_direction.csv", earnings_directions)
+            _write_frame(phase_root / "earnings_direction_evidence.csv", earnings_evidence)
+            _write_frame(phase_root / "earnings_direction_coverage.csv", earnings_coverage)
+            _write_frame(phase_root / "earnings_direction_unclassified.csv", earnings_unclassified)
+            _write_frame(phase_root / "earnings_negative_evidence.csv", earnings_negative)
+            _atomic_write_json(
+                phase_root / "phase_metadata.json",
+                {
+                    "fundamental_summary": fundamental_summary,
+                    "fundamental_state": fundamental_state,
+                    "fundamental_coverage_summary": fundamental_coverage_summary,
+                    "earnings_complete": earnings_complete,
+                    "earnings_state": earnings_state,
+                },
+            )
+            _mark_phase(checkpoint_root, checkpoint_state, "fundamental")
 
-    valuation_rail = build_trailing_valuation_rail(
-        filing_facts=facts,
-        stock_prices=prices,
-        trading_dates=trading_dates,
-    )
-    valuation_state, valuation_coverage = _valuation_readiness(
-        valuation_rail,
-        target_start=target_start,
-        target_end=target_end,
-    )
-    valuation_evidence = valuation_rail_to_pit_evidence(valuation_rail)
-    if len(valuation_evidence):
-        valuation_evidence = valuation_evidence[
-            pd.to_datetime(valuation_evidence["evidence_available_date"], errors="raise")
-            .dt.normalize()
-            .between(target_start, target_end)
-        ].reset_index(drop=True)
-        valuation_evidence = _canonicalize_provenance(valuation_evidence)
+    if checkpoint_root is not None and checkpoint_state is not None and _phase_done(checkpoint_state, "valuation"):
+        phase_root = checkpoint_root / "valuation"
+        prices = _read_csv(phase_root / "pit_stock_prices.csv")
+        if len(prices):
+            prices["date"] = pd.to_datetime(prices["date"], errors="raise").dt.normalize()
+        price_coverage = _read_csv(phase_root / "pit_stock_price_coverage.csv")
+        price_errors = _read_csv(phase_root / "pit_stock_price_errors.csv")
+        valuation_rail = _read_csv(phase_root / "trailing_valuation_rail.csv")
+        valuation_evidence = _load_evidence_frame(phase_root / "derived_pit_trailing_valuation.csv")
+        phase_meta = _read_json(phase_root / "phase_metadata.json")
+        price_summary = dict(phase_meta["price_summary"])
+        valuation_state = str(phase_meta["valuation_state"])
+        valuation_coverage = dict(phase_meta["valuation_coverage"])
+    else:
+        price_parts: list[pd.DataFrame] = []
+        price_coverage_parts: list[pd.DataFrame] = []
+        price_error_parts: list[pd.DataFrame] = []
+        for stage in price_dirs:
+            prices = _read_csv(stage / "pit_stock_prices.csv")
+            if len(prices):
+                price_parts.append(prices)
+            price_coverage_parts.append(_read_csv(stage / "pit_stock_price_coverage.csv"))
+            errors = _read_csv(stage / "pit_stock_price_errors.csv")
+            if len(errors):
+                price_error_parts.append(errors)
+        prices = pd.concat(price_parts, ignore_index=True, sort=False) if price_parts else pd.DataFrame()
+        if len(prices):
+            prices["date"] = pd.to_datetime(prices["date"], errors="raise").dt.normalize()
+            if prices.duplicated(["symbol", "date"]).any():
+                raise ValueError("aggregated PIT prices contain duplicate symbol/date rows")
+            prices = prices.sort_values(["symbol", "date"]).reset_index(drop=True)
+        price_coverage = pd.concat(price_coverage_parts, ignore_index=True, sort=False)
+        if price_coverage.empty or price_coverage.duplicated(["symbol", "coverage_start", "coverage_end"]).any():
+            raise ValueError("price coverage contains duplicate or no chunks")
+        if set(price_coverage["symbol"].astype(str).str.zfill(6)) != expected_symbols:
+            raise ValueError("price coverage symbol set mismatch")
+        price_complete = int(price_coverage["query_status"].astype(str).eq("COMPLETE_WINDOW").sum())
+        price_summary = {
+            "source_identity": "PUBLIC_A_SHARE_DAILY_CLOSE",
+            "start_date": args.start_date,
+            "end_date": args.end_date,
+            "symbols": len(expected_symbols),
+            "chunks": int(len(price_coverage)),
+            "complete_chunks": price_complete,
+            "readiness_state": (
+                "QUALIFIED_INPUT"
+                if price_complete == len(price_coverage)
+                else "PARTIAL_COVERAGE" if price_complete
+                else "DATA_INSUFFICIENT"
+            ),
+            "adjustment": "NONE_UNADJUSTED_CLOSE",
+            "no_forward_fill": True,
+            "parallel_shards": len(price_dirs),
+        }
+    
+        valuation_rail = build_trailing_valuation_rail(
+            filing_facts=facts,
+            stock_prices=prices,
+            trading_dates=trading_dates,
+        )
+        valuation_state, valuation_coverage = _valuation_readiness(
+            valuation_rail,
+            target_start=target_start,
+            target_end=target_end,
+        )
+        valuation_evidence = valuation_rail_to_pit_evidence(valuation_rail)
+        if len(valuation_evidence):
+            valuation_evidence = valuation_evidence[
+                pd.to_datetime(valuation_evidence["evidence_available_date"], errors="raise")
+                .dt.normalize()
+                .between(target_start, target_end)
+            ].reset_index(drop=True)
+            valuation_evidence = _canonicalize_provenance(valuation_evidence)
+        price_errors = (
+            pd.concat(price_error_parts, ignore_index=True, sort=False)
+            if price_error_parts
+            else pd.DataFrame(columns=["symbol", "chunk_start", "chunk_end", "error"])
+        )
+        if checkpoint_root is not None and checkpoint_state is not None:
+            phase_root = checkpoint_root / "valuation"
+            _write_frame(phase_root / "pit_stock_prices.csv", prices)
+            _write_frame(phase_root / "pit_stock_price_coverage.csv", price_coverage)
+            _write_frame(phase_root / "pit_stock_price_errors.csv", price_errors)
+            _write_frame(phase_root / "trailing_valuation_rail.csv", valuation_rail)
+            _write_frame(phase_root / "derived_pit_trailing_valuation.csv", valuation_evidence)
+            _atomic_write_json(
+                phase_root / "phase_metadata.json",
+                {
+                    "price_summary": price_summary,
+                    "valuation_state": valuation_state,
+                    "valuation_coverage": valuation_coverage,
+                },
+            )
+            _mark_phase(checkpoint_root, checkpoint_state, "valuation")
 
     policy_evidence = _read_csv(policy_dir / "official_policy_regulatory_notice_archive.csv")
     if len(policy_evidence):
@@ -565,36 +749,63 @@ def main() -> None:
     if not isinstance(policy_summary, dict):
         raise ValueError("policy stage summary missing")
 
-    combined_parts = [
-        frame for frame in (
-            issuer_evidence,
-            trends,
-            fundamental_evidence,
-            earnings_evidence,
-            earnings_negative,
-            valuation_evidence,
-            policy_evidence,
+    if checkpoint_root is not None and checkpoint_state is not None and _phase_done(checkpoint_state, "review"):
+        phase_root = checkpoint_root / "review"
+        combined = _load_evidence_frame(phase_root / "pit_evidence_extended.csv")
+        coverage_ledger = _read_csv(phase_root / "major_negative_coverage_ledger.csv")
+        major_negative_review = _read_csv(phase_root / "major_negative_review.csv")
+        review_meta = _read_json(phase_root / "phase_metadata.json")
+        major_negative_summary = dict(review_meta["major_negative_summary"])
+    else:
+        combined_parts = [
+            frame for frame in (
+                issuer_evidence,
+                trends,
+                fundamental_evidence,
+                earnings_evidence,
+                earnings_negative,
+                valuation_evidence,
+                policy_evidence,
+            )
+            if frame is not None and len(frame)
+        ]
+        combined = (
+            validate_materialized_pit_records(
+                pd.concat(combined_parts, ignore_index=True, sort=False)
+            )
+            if combined_parts else pd.DataFrame()
         )
-        if frame is not None and len(frame)
-    ]
-    combined = (
-        validate_materialized_pit_records(pd.concat(combined_parts, ignore_index=True, sort=False))
-        if combined_parts else pd.DataFrame()
-    )
-    coverage_ledger = build_major_negative_coverage_ledger(
-        frozen_scope=scope,
-        issuer_coverage=issuer_coverage,
-        policy_coverage=policy_coverage,
-        start_date=target_start,
-        end_date=target_end,
-        nmpa_cde_coverage=None,
-        nmpa_cde_applicable_entities=(),
-    )
-    major_negative_review, major_negative_summary = review_major_negative_events(
-        coverage_ledger=coverage_ledger,
-        evidence_records=combined,
-    )
-    audit = audit_pit_replay(combined)
+        coverage_ledger = build_major_negative_coverage_ledger(
+            frozen_scope=scope,
+            issuer_coverage=issuer_coverage,
+            policy_coverage=policy_coverage,
+            start_date=target_start,
+            end_date=target_end,
+            nmpa_cde_coverage=None,
+            nmpa_cde_applicable_entities=(),
+        )
+        major_negative_review, major_negative_summary = review_major_negative_events(
+            coverage_ledger=coverage_ledger,
+            evidence_records=combined,
+        )
+        if checkpoint_root is not None and checkpoint_state is not None:
+            phase_root = checkpoint_root / "review"
+            _write_frame(phase_root / "pit_evidence_extended.csv", combined)
+            _write_frame(phase_root / "major_negative_coverage_ledger.csv", coverage_ledger)
+            _write_frame(phase_root / "major_negative_review.csv", major_negative_review)
+            _atomic_write_json(
+                phase_root / "phase_metadata.json",
+                {"major_negative_summary": major_negative_summary},
+            )
+            _mark_phase(checkpoint_root, checkpoint_state, "review")
+
+    if checkpoint_root is not None and checkpoint_state is not None and _phase_done(checkpoint_state, "pit_audit"):
+        audit = _read_json(checkpoint_root / "pit_audit" / "audit.json")
+    else:
+        audit = audit_pit_replay(combined)
+        if checkpoint_root is not None and checkpoint_state is not None:
+            _atomic_write_json(checkpoint_root / "pit_audit" / "audit.json", audit)
+            _mark_phase(checkpoint_root, checkpoint_state, "pit_audit")
 
     raw_source_states = issuer_manifest.get("source_states")
     source_states = dict(raw_source_states) if isinstance(raw_source_states, dict) else {}
@@ -681,7 +892,7 @@ def main() -> None:
             major_negative_summary.get("major_negative_event_exclusion_complete")
         ),
         "major_negative_summary": major_negative_summary,
-        "fundamental_state_contract": fundamental.summary,
+        "fundamental_state_contract": fundamental_summary,
         "fundamental_coverage": fundamental_coverage_summary,
         "filing_materialization": filing_summary,
         "earnings_materialization": earnings_summary,
@@ -702,6 +913,8 @@ def main() -> None:
         raise ValueError("derived PIT summary must be a mapping")
 
     out = Path(args.out_dir)
+    if out.exists():
+        shutil.rmtree(out)
     out.mkdir(parents=True, exist_ok=True)
     issuer_files = [
         "pit_evidence.csv",
@@ -724,7 +937,7 @@ def main() -> None:
     facts.to_csv(out / "versioned_filing_facts.csv", index=False)
     trends.to_csv(out / "derived_pit_fundamental_trends.csv", index=False)
     fundamental_evidence.to_csv(out / "fundamental_state_evidence.csv", index=False)
-    fundamental.coverage.to_csv(out / "fundamental_state_coverage.csv", index=False)
+    fundamental_coverage.to_csv(out / "fundamental_state_coverage.csv", index=False)
     earnings_directions.to_csv(out / "earnings_direction.csv", index=False)
     earnings_evidence.to_csv(out / "earnings_direction_evidence.csv", index=False)
     earnings_coverage.to_csv(out / "earnings_direction_coverage.csv", index=False)
@@ -733,10 +946,7 @@ def main() -> None:
     )
     prices.to_csv(out / "pit_stock_prices.csv", index=False)
     price_coverage.to_csv(out / "pit_stock_price_coverage.csv", index=False)
-    (
-        pd.concat(price_error_parts, ignore_index=True, sort=False)
-        if price_error_parts else pd.DataFrame(columns=["symbol", "chunk_start", "chunk_end", "error"])
-    ).to_csv(out / "pit_stock_price_errors.csv", index=False)
+    price_errors.to_csv(out / "pit_stock_price_errors.csv", index=False)
     valuation_rail.to_csv(out / "trailing_valuation_rail.csv", index=False)
     valuation_evidence.to_csv(out / "derived_pit_trailing_valuation.csv", index=False)
     policy_evidence.to_csv(out / "official_policy_regulatory_notice_archive.csv", index=False)
