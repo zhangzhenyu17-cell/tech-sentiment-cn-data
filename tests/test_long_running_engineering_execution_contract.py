@@ -136,6 +136,12 @@ def test_fundamental_reference_workflow_obeys_long_run_ordering_contract() -> No
 
     restore_unit = text.index("Restore immutable completed work unit")
     restore_progress = text.index("Restore durable V9 progress")
+    restore_presentation_current = text.index(
+        "Restore presentation-fix-compatible current-run V9 progress"
+    )
+    restore_presentation_prior = text.index(
+        "Restore presentation-fix-compatible prior V9 progress"
+    )
     restore_queries = text.index(
         "Restore cancelled-run mixed V8/V9 cache for legacy queries"
     )
@@ -145,7 +151,14 @@ def test_fundamental_reference_workflow_obeys_long_run_ordering_contract() -> No
     gate = text.index("Qualification gate")
     publish = text.index("Publish immutable completed work unit")
 
-    assert restore_unit < restore_progress < restore_queries < materialize
+    assert (
+        restore_unit
+        < restore_progress
+        < restore_presentation_current
+        < restore_presentation_prior
+        < restore_queries
+        < materialize
+    )
     assert materialize < save_progress < diagnostics < gate < publish
 
     save_block = text[save_progress:diagnostics]
@@ -157,7 +170,8 @@ def test_fundamental_reference_workflow_obeys_long_run_ordering_contract() -> No
         "Migrate validated cancelled-run V9 checkpoints into durable progress"
     )[0]
     assert "durable_progress_restore.outputs.cache-hit" not in before_migration
-    assert "gate_bug_progress_restore.outputs.cache-hit" not in before_migration
+    assert "presentation_current_progress_restore.outputs.cache-hit" not in before_migration
+    assert "presentation_prior_progress_restore.outputs.cache-hit" not in before_migration
 
 
 def test_qualification_gate_has_actual_cli_entrypoint_regression_coverage() -> None:
