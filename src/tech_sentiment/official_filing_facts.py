@@ -790,7 +790,7 @@ _EXPLICIT_FILING_REVISION_MARKERS = (
 
 
 def _explicit_filing_revision_priority(value: object) -> int:
-    text = re.sub(r"\\s+", "", str(value or ""))
+    text = re.sub(r"\s+", "", str(value or ""))
     return int(any(marker in text for marker in _EXPLICIT_FILING_REVISION_MARKERS))
 
 
