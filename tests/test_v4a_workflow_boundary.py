@@ -309,6 +309,32 @@ def test_derived_workflow_consumes_only_verified_persistent_upstreams():
     assert "--policy-source-commit" in text
 
 
+def test_derived_timeout_and_phase_resume_are_hardened_without_changing_upstream_workflows():
+    text = _text(WORKFLOW_DIR / "v4a-derived.yml")
+    assert "timeout-minutes: 360" in text
+    assert "Resolve Derived resume identity" in text
+    assert "Restore Derived phase checkpoints" in text
+    assert "Save Derived phase checkpoints" in text
+    assert "timeout --signal=TERM --kill-after=2m 330m python scripts/assemble_v4a_derived_pit.py" in text
+    assert "--checkpoint-dir .cache/capital_pit_v4a/derived/assembly" in text
+    assert "v4a-derived-assembly-v1-" in text
+    assert "cancel-in-progress: false" in text
+
+    script = Path("scripts/assemble_v4a_derived_pit.py").read_text(encoding="utf-8")
+    assert "v4a-derived-phase-checkpoint-v1" in script
+    for phase in ("fundamental", "valuation", "review", "pit_audit"):
+        assert f'"{phase}"' in script
+    for identity_field in (
+        "symbols_sha256",
+        "calendar_sha256",
+        "issuer_receipt_sha256",
+        "policy_receipt_sha256",
+        "fundamental_receipt_sha256",
+        "price_receipt_sha256",
+    ):
+        assert identity_field in script
+
+
 def test_issuer_aggregate_tracks_original_source_commits():
     text = _text(WORKFLOW_DIR / "v4a-issuer-aggregate.yml")
     assert "--cninfo-source-commit" in text
