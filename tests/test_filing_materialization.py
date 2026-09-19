@@ -286,19 +286,35 @@ def test_conflict_recheck_overrides_stale_full_metadata_with_exact_body_title(
 
 
 def _same_title_conflicting_presentation_fixture():
+    def announcement(title: str, when: str, document_id: str) -> dict[str, str]:
+        announce_date = when[:10]
+        return {
+            "代码": "688122",
+            "简称": "西部超导",
+            "公告标题": title,
+            "公告时间": when,
+            "公告链接": (
+                "https://www.cninfo.com.cn/new/disclosure/detail?"
+                f"stockCode=688122&announcementId={document_id}&orgId=gssh0600688"
+            ),
+            "公告附件链接": (
+                f"https://static.cninfo.com.cn/finalpage/{announce_date}/{document_id}.PDF"
+            ),
+        }
+
     return pd.DataFrame(
         [
-            _announcement(
+            announcement(
                 "2021年第一季度报告",
                 "2021-04-26 00:00:00",
                 "1209800560",
             ),
-            _announcement(
+            announcement(
                 "2021年第一季度报告",
                 "2021-04-26 00:00:00",
                 "1209800561",
             ),
-            _announcement(
+            announcement(
                 "2022年第一季度报告",
                 "2022-04-26 00:00:00",
                 "1213200000",
@@ -419,7 +435,7 @@ def test_materialization_same_title_body_and_full_conflict_selects_full(
     )
 
     result = filing_materialization.materialize_versioned_filing_facts(
-        ["688012"],
+        ["688122"],
         target_start_date="2021-01-04",
         end_date="2022-05-06",
         trading_dates=pd.date_range("2021-01-04", "2022-05-06", freq="B"),
