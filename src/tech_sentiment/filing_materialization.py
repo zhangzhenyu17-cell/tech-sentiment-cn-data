@@ -163,6 +163,7 @@ def _enrich_conflicting_presentation_variants(
                 str(value)
                 for value in rows["document_presentation_variant"].dropna().astype(str)
                 if str(value).strip()
+                and str(value) != FILING_PRESENTATION_UNKNOWN
             }
             if len(existing) == 1:
                 document_variants[document_id] = next(iter(existing))
