@@ -295,9 +295,9 @@ def package(
     )
     root = Path(stage_root).resolve()
     stage_manifest = _read_json(root / "stage_manifest.json")
-    if int(stage_manifest.get("shard_index") or -1) != unit_index:
+    if int(stage_manifest.get("shard_index") if stage_manifest.get("shard_index") is not None else -1) != unit_index:
         raise ValueError("Fundamental progress stage unit-index mismatch")
-    if int(stage_manifest.get("shard_count") or -1) != unit_count:
+    if int(stage_manifest.get("shard_count") if stage_manifest.get("shard_count") is not None else -1) != unit_count:
         raise ValueError("Fundamental progress stage unit-count mismatch")
     stage_symbols = sorted(
         {str(value).zfill(6) for value in stage_manifest.get("symbols", [])}
@@ -461,9 +461,9 @@ def rebase_verified_unit(
     stage_manifest = _read_json(stage_manifest_path)
     if str(stage_manifest.get("source_commit") or "") != original_commit:
         raise ValueError("Fundamental progress stage was not verified against original commit")
-    if int(stage_manifest.get("shard_index") or -1) != unit_index:
+    if int(stage_manifest.get("shard_index") if stage_manifest.get("shard_index") is not None else -1) != unit_index:
         raise ValueError("Fundamental progress rebase unit-index mismatch")
-    if int(stage_manifest.get("shard_count") or -1) != unit_count:
+    if int(stage_manifest.get("shard_count") if stage_manifest.get("shard_count") is not None else -1) != unit_count:
         raise ValueError("Fundamental progress rebase unit-count mismatch")
 
     stage_manifest["source_commit"] = str(source_commit)
