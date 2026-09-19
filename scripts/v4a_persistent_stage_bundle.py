@@ -7,6 +7,7 @@ from pathlib import Path
 from tech_sentiment.v4a_persistent_stage import (
     compatibility_descriptor,
     package_stage_bundle,
+    progress_descriptor,
     verify_and_extract_stage_bundle,
 )
 
@@ -50,6 +51,14 @@ def main() -> None:
     key.add_argument("--input-manifest", action="append", default=[])
     key.add_argument("--out", default="")
 
+    progress_key = sub.add_parser("progress-key")
+    progress_key.add_argument("--repo-root", default=".")
+    progress_key.add_argument("--family", required=True)
+    progress_key.add_argument("--start-date", required=True)
+    progress_key.add_argument("--end-date", required=True)
+    progress_key.add_argument("--input-manifest", action="append", default=[])
+    progress_key.add_argument("--out", default="")
+
     package = sub.add_parser("package")
     package.add_argument("--repo-root", default=".")
     package.add_argument("--stage-root", required=True)
@@ -76,6 +85,14 @@ def main() -> None:
     inputs = _inputs(args.input_manifest)
     if args.command == "key":
         payload = compatibility_descriptor(
+            repo_root=args.repo_root,
+            family=args.family,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            input_manifests=inputs,
+        )
+    elif args.command == "progress-key":
+        payload = progress_descriptor(
             repo_root=args.repo_root,
             family=args.family,
             start_date=args.start_date,
