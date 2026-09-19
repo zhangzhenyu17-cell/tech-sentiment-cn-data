@@ -118,6 +118,7 @@ STAGE_SPECS: dict[str, StageSpec] = {
         stage_id="fundamental-all",
         entrypoints=(
             "scripts/materialize_v4a_fundamental_earnings_shard.py",
+            "scripts/v4a_fundamental_progress_bundle.py",
             "scripts/assert_v4a_stage_qualifiable.py",
             "scripts/write_v4a_stage_receipt.py",
         ),
