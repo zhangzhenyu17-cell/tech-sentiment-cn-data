@@ -149,6 +149,7 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
         line for line in text.splitlines() if "v4a-fund-progress-" in line
     )
     assert "PROGRESS_CACHE_ID" in progress_cache_lines
+    assert "PROGRESS_SEMANTIC_KEY" in progress_cache_lines
     assert "inputs.start_date" in progress_cache_lines
     assert "inputs.end_date" in progress_cache_lines
     assert "matrix.shard" in progress_cache_lines
