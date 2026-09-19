@@ -55,25 +55,24 @@ jobs:
             --archive "bundle/shared/${BASE}.tar.gz" --manifest bundle-meta/shared.json \
             --extract-to stage/shared
 
-      - name: Download and verify Capital and Financing bundles
+      - name: Download and exact-verify frozen Capital and Financing bundles
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           for family in capital financing; do
             mkdir -p "bundle/${family}" "stage/${family}"
-            python scripts/v4a_persistent_stage_bundle.py key --family "$family" \
-              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
-              --input-manifest shared=bundle-meta/shared.json --out "bundle-meta/${family}-key.json"
-            base="$(python -c "import json; print(json.load(open('bundle-meta/${family}-key.json'))['asset_base'])")"
+            base="$(python -c "import json; print(json.load(open('reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json'))['downstream_stages']['${family}']['asset_base'])")"
             bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$base" "bundle/${family}"
             cp "bundle/${family}/${base}.manifest.json" "bundle-meta/${family}.json"
-            python scripts/v4a_persistent_stage_bundle.py verify --family "$family" \
-              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
-              --input-manifest shared=bundle-meta/shared.json \
-              --archive "bundle/${family}/${base}.tar.gz" --manifest "bundle-meta/${family}.json" \
-              --extract-to "stage/${family}"
+            python scripts/verify_v4a_frozen_stage_compatibility.py \
+              --family "$family" \
+              --contract reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json \
+              --manifest "bundle-meta/${family}.json" \
+              --archive "bundle/${family}/${base}.tar.gz" \
+              --shared-manifest bundle-meta/shared.json \
+              --extract-to "stage/${family}" \
+              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}"
           done
-
       - name: Download and exact-verify frozen issuer-source bundles
         env:
           GH_TOKEN: ${{ github.token }}
@@ -232,11 +231,11 @@ jobs:
             --archive "bundle/issuer_aggregate/${BASE}.tar.gz" \
             --manifest bundle-meta/issuer_aggregate.json --extract-to lineage/issuer_aggregate
 
-      - name: Download and verify Fundamental, Prices, and Policy bundles
+      - name: Download and verify Fundamental and Prices bundles
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for family in fundamental prices policy; do
+          for family in fundamental prices; do
             mkdir -p "bundle/${family}" "lineage/${family}"
             python scripts/v4a_persistent_stage_bundle.py key --family "$family" \
               --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
@@ -251,6 +250,22 @@ jobs:
               --extract-to "lineage/${family}"
           done
 
+      - name: Download and exact-verify frozen Policy bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p bundle/policy lineage/policy
+          BASE="$(python -c 'import json; print(json.load(open("reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json"))["downstream_stages"]["policy"]["asset_base"])')"
+          bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/policy
+          cp "bundle/policy/${BASE}.manifest.json" bundle-meta/policy.json
+          python scripts/verify_v4a_frozen_stage_compatibility.py \
+            --family policy \
+            --contract reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json \
+            --manifest bundle-meta/policy.json \
+            --archive "bundle/policy/${BASE}.tar.gz" \
+            --shared-manifest bundle-meta/shared.json \
+            --extract-to lineage/policy \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}"
       - name: Download and verify Derived bundle
         env:
           GH_TOKEN: ${{ github.token }}
