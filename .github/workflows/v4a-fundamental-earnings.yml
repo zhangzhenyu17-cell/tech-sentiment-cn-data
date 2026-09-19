@@ -277,14 +277,24 @@ jobs:
           key: v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             v4a-fund-progress-${{ env.PROGRESS_CACHE_ID }}-${{ env.PROGRESS_SEMANTIC_KEY }}-${{ inputs.start_date }}-${{ inputs.end_date }}-${{ matrix.shard }}-
-      - name: Restore read-only legacy V8 checkpoints
+      - name: Restore legacy V8 checkpoints at original cache path
         if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
         uses: actions/cache/restore@v4
         with:
-          path: .cache/capital_pit_v4a/derived/legacy
+          path: .cache/capital_pit_v4a/derived/filings
           key: v4a-fund-legacy-readonly-${{ github.run_id }}-${{ matrix.shard }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ env.LEGACY_FILING_CACHE_PREFIX }}
+      - name: Isolate restored legacy V8 checkpoints read-only
+        if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
+        run: |
+          rm -rf .cache/capital_pit_v4a/derived/legacy
+          if [[ -d .cache/capital_pit_v4a/derived/filings ]]; then
+            mv .cache/capital_pit_v4a/derived/filings .cache/capital_pit_v4a/derived/legacy
+          else
+            mkdir -p .cache/capital_pit_v4a/derived/legacy
+          fi
+          mkdir -p .cache/capital_pit_v4a/derived/progress
       - name: Materialize fundamental/earnings shard
         if: ${{ steps.work_unit_restore.outputs.reused != 'true' }}
         id: materialize
