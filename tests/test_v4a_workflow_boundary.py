@@ -329,7 +329,7 @@ def test_stage_diagnostics_are_preserved_before_qualification_failure():
     for name, gate in required.items():
         text = _text(WORKFLOW_DIR / name)
         first_upload = text.index("actions/upload-artifact@v4")
-        first_gate = text.index(gate)
+        first_gate = text.index(f"python scripts/{gate}")
         assert first_upload < first_gate, name
 
 
