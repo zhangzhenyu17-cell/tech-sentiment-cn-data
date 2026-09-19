@@ -14,6 +14,7 @@ from .official_filing_facts import (
     DERIVED_FUNDAMENTAL_SOURCE_ID,
     FILING_FACT_COLUMNS,
     FILING_PARSER_VERSION,
+    LEGACY_FILING_PARSER_VERSION,
     FILING_PRESENTATION_UNKNOWN,
     build_filing_fact_rows,
     classify_official_filing_presentation,
@@ -212,16 +213,32 @@ def _symbol_query_identity(
     )
 
 
+_REQUIRED_CORE_FACTS = {
+    "OPERATING_REVENUE",
+    "NET_PROFIT_PARENT",
+    "OPERATING_CASH_FLOW_NET",
+    "NET_PROFIT_MARGIN",
+}
+
+
+def _facts_require_parser_upgrade(facts: pd.DataFrame) -> bool:
+    if facts.empty or "fact_type" not in facts.columns:
+        return True
+    available = set(facts["fact_type"].dropna().astype(str))
+    return not _REQUIRED_CORE_FACTS.issubset(available)
+
+
 def _document_identity(
     *,
     source_commit: str,
     symbol: str,
     document_id: str,
     attachment_url: str,
+    parser_version: str = FILING_PARSER_VERSION,
 ) -> CheckpointIdentity:
     return CheckpointIdentity(
         producer="official-filing-facts",
-        producer_version=FILING_PARSER_VERSION,
+        producer_version=parser_version,
         source_commit=source_commit,
         source_identities=(CNINFO_SOURCE_ID,),
         query_identity={
@@ -266,6 +283,9 @@ def materialize_versioned_filing_facts(
     resumed_symbol_queries = 0
     executed_symbol_queries = 0
     resumed_documents = 0
+    resumed_current_parser_documents = 0
+    reused_legacy_complete_documents = 0
+    parser_upgrade_documents = 0
     executed_documents = 0
 
     for symbol in unique_symbols:
@@ -344,24 +364,73 @@ def materialize_versioned_filing_facts(
             document_id = "UNKNOWN"
             try:
                 document_id, _ = _parse_document_identity(announcement["公告链接"])
-                doc_identity = _document_identity(
+                current_identity = _document_identity(
+                    source_commit=str(source_commit),
+                    symbol=symbol,
+                    document_id=document_id,
+                    attachment_url=attachment,
+                    parser_version=FILING_PARSER_VERSION,
+                )
+                legacy_identity = _document_identity(
                     source_commit=checkpoint_commit,
                     symbol=symbol,
                     document_id=document_id,
                     attachment_url=attachment,
+                    parser_version=LEGACY_FILING_PARSER_VERSION,
                 )
-                loaded_doc = store.load(doc_identity)
+                loaded_current = store.load(current_identity)
+                loaded_legacy = (
+                    None
+                    if loaded_current is not None
+                    or checkpoint_commit == str(source_commit)
+                    else store.load(legacy_identity)
+                )
                 presentation_variant = ""
-                if loaded_doc is not None:
-                    facts = loaded_doc.frames["facts"]
-                    metadata = loaded_doc.receipt.get("metadata")
+                if loaded_current is not None:
+                    facts = loaded_current.frames["facts"]
+                    metadata = loaded_current.receipt.get("metadata")
                     if isinstance(metadata, dict):
                         presentation_variant = str(
                             metadata.get("document_presentation_variant") or ""
                         )
                     resumed_documents += 1
+                    resumed_current_parser_documents += 1
+                elif loaded_legacy is not None and not _facts_require_parser_upgrade(
+                    loaded_legacy.frames["facts"]
+                ):
+                    facts = loaded_legacy.frames["facts"]
+                    metadata = loaded_legacy.receipt.get("metadata")
+                    if isinstance(metadata, dict):
+                        presentation_variant = str(
+                            metadata.get("document_presentation_variant") or ""
+                        )
+                    resumed_documents += 1
+                    reused_legacy_complete_documents += 1
                 else:
+                    legacy_facts = (
+                        loaded_legacy.frames["facts"]
+                        if loaded_legacy is not None
+                        else None
+                    )
                     downloaded = download_official_document(attachment)
+                    if legacy_facts is not None and len(legacy_facts):
+                        expected_hashes = {
+                            str(value)
+                            for value in legacy_facts["document_sha256"].dropna().astype(str)
+                            if str(value).strip()
+                        }
+                        if len(expected_hashes) != 1:
+                            raise ValueError(
+                                "legacy filing checkpoint has ambiguous document SHA256: "
+                                f"{document_id}"
+                            )
+                        expected_sha = next(iter(expected_hashes))
+                        if downloaded.sha256 != expected_sha:
+                            raise ValueError(
+                                "official filing bytes changed during parser upgrade: "
+                                f"{document_id}: expected={expected_sha} "
+                                f"actual={downloaded.sha256}"
+                            )
                     text = extract_pdf_text(downloaded.content)
                     presentation_variant = classify_official_filing_presentation(text)
                     facts = build_filing_fact_rows(
@@ -380,7 +449,7 @@ def materialize_versioned_filing_facts(
                     if facts.empty:
                         raise ValueError("filing parser produced no standardized facts")
                     store.save(
-                        doc_identity,
+                        current_identity,
                         frames={"facts": facts},
                         metadata={
                             "entity_id": entity,
@@ -390,9 +459,17 @@ def materialize_versioned_filing_facts(
                             "document_retrieval_url": downloaded.retrieval_url,
                             "document_sha256": downloaded.sha256,
                             "document_presentation_variant": presentation_variant,
+                            "parser_upgrade_from_legacy": bool(legacy_facts is not None),
+                            "legacy_parser_version": (
+                                LEGACY_FILING_PARSER_VERSION
+                                if legacy_facts is not None
+                                else None
+                            ),
                         },
                     )
                     executed_documents += 1
+                    if legacy_facts is not None:
+                        parser_upgrade_documents += 1
                 if len(facts):
                     if "publication_timestamp" not in facts.columns:
                         raise ValueError("filing facts checkpoint lacks publication_timestamp")
@@ -477,7 +554,16 @@ def materialize_versioned_filing_facts(
         "resumed_symbol_queries": resumed_symbol_queries,
         "executed_symbol_queries": executed_symbol_queries,
         "resumed_documents": resumed_documents,
+        "resumed_current_parser_documents": resumed_current_parser_documents,
+        "reused_legacy_complete_documents": reused_legacy_complete_documents,
+        "parser_upgrade_documents": parser_upgrade_documents,
         "executed_documents": executed_documents,
+        "active_parser_version": FILING_PARSER_VERSION,
+        "legacy_parser_version": LEGACY_FILING_PARSER_VERSION,
+        "parser_upgrade_policy": (
+            "REPARSE_ONLY_LEGACY_DOCUMENTS_MISSING_REQUIRED_CORE_FACTS_"
+            "WITH_EXACT_DOCUMENT_SHA256_MATCH"
+        ),
         "numerical_trend_materialization_state": (
             "QUALIFIED_INPUT"
             if complete_entities == len(unique_symbols) and len(trends)
