@@ -75,6 +75,31 @@ _NUMERIC_TOKEN_RE = re.compile(
     r"(?<![\d.])(?:-?\d[\d,]*(?:\.\d+)?|\(\d[\d,]*(?:\.\d+)?\))(?![\d.])"
 )
 
+_FILING_PRESENTATION_TITLE_RE = re.compile(
+    r"20\d{2}年(?:年度报告|半年度报告|第一季度报告|一季度报告|第三季度报告|三季度报告)"
+    r"(?P<variant>摘要|正文|全文)?"
+)
+FILING_PRESENTATION_FULL = "FULL_OR_CANONICAL"
+FILING_PRESENTATION_BODY = "BODY"
+FILING_PRESENTATION_SUMMARY = "SUMMARY"
+FILING_PRESENTATION_UNKNOWN = "UNKNOWN"
+
+
+def classify_official_filing_presentation(text: object) -> str:
+    """Classify the official PDF's own report-title carrier from its leading text."""
+
+    compact = re.sub(r"\s+", "", str(text or ""))[:5000]
+    match = _FILING_PRESENTATION_TITLE_RE.search(compact)
+    if match is None:
+        return FILING_PRESENTATION_UNKNOWN
+    variant = str(match.group("variant") or "")
+    if variant == "摘要":
+        return FILING_PRESENTATION_SUMMARY
+    if variant == "正文":
+        return FILING_PRESENTATION_BODY
+    return FILING_PRESENTATION_FULL
+
+
 
 @dataclass(frozen=True)
 class DownloadedOfficialDocument:
@@ -850,6 +875,25 @@ def latest_filing_fact_as_of(
             candidates["_explicit_revision_priority"].eq(max_priority)
         ].copy()
 
+    if len(candidates) != 1 and "document_presentation_variant" in candidates.columns:
+        variants = candidates["document_presentation_variant"].astype(str)
+        known = {
+            FILING_PRESENTATION_FULL,
+            FILING_PRESENTATION_BODY,
+            FILING_PRESENTATION_SUMMARY,
+        }
+        if bool(variants.isin(known).all()):
+            priority = {
+                FILING_PRESENTATION_FULL: 2,
+                FILING_PRESENTATION_BODY: 1,
+                FILING_PRESENTATION_SUMMARY: 0,
+            }
+            candidates["_presentation_priority"] = variants.map(priority)
+            max_priority = int(candidates["_presentation_priority"].max())
+            candidates = candidates[
+                candidates["_presentation_priority"].eq(max_priority)
+            ].copy()
+
     if len(candidates) != 1:
         semantic_signatures = {
             (float(row.value), str(row.unit))
@@ -877,7 +921,11 @@ def latest_filing_fact_as_of(
             )
 
     return candidates.iloc[0].drop(
-        labels=["publication_timestamp_order", "_explicit_revision_priority"],
+        labels=[
+            "publication_timestamp_order",
+            "_explicit_revision_priority",
+            "_presentation_priority",
+        ],
         errors="ignore",
     ).to_dict()
 
