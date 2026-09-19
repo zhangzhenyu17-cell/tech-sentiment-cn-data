@@ -103,7 +103,8 @@
     "stop_when_acceptance_met": true,
     "stage_acceptance_does_not_equal_pipeline_qualification": true,
     "downstream_handoff_freeze_declared_when_applicable": true,
-    "group_bundle_identity_and_hashes_recorded": true
+    "group_bundle_identity_and_hashes_recorded": true,
+    "upstream_identity_preflight_before_downstream_dispatch": true
   },
   "recovery_branch": {
     "same_branch_cache_scope_supported": true,
@@ -141,6 +142,9 @@
     "logical_retirement_may_precede_physical_cleanup": true,
     "physical_cleanup_deferred_if_it_changes_producer_identity": true,
     "cleanup_requires_separate_review_after_handoff": true,
-    "documentation_outside_producer_identity_may_continue": true
+    "documentation_outside_producer_identity_may_continue": true,
+    "pre_downstream_upstream_identity_preflight_required": true,
+    "do_not_auto_rerun_upstream_on_identity_mismatch": true,
+    "inspect_producer_drift_before_recomputation": true
   }
 }
