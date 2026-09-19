@@ -30,6 +30,9 @@ execution before launching the expensive run.
 - Timeout per job:
 - Expected median unit time:
 - Expected full wall-clock range:
+- Fully resumed unit expected time:
+- Targeted semantic-repair unit expected time:
+- Provider-recompute unit expected time:
 - Provider concurrency constraints:
 
 ## Persistence
@@ -45,6 +48,9 @@ execution before launching the expensive run.
 - Immutable completed-unit bundle:
 - Persistent registry/tag:
 - Group aggregate/final bundle:
+- Published asset base / bundle identity / compatibility key:
+- Archive SHA-256 / stage receipt SHA-256:
+- Producer files that must remain frozen for downstream handoff:
 
 ## Restore precedence
 
@@ -117,6 +123,15 @@ Before cancelling, record:
 
 After cancelling, verify actual save outcomes before the replacement run.
 
+## Post-success handoff freeze
+
+- Downstream consumers that must use the just-published producer identity:
+- Producer-identity freeze starts when:
+- Producer-identity freeze ends when:
+- One-time recovery code logically retired:
+- Physical cleanup deferred until downstream handoff:
+- Stage success explicitly distinguished from final pipeline qualification:
+
 ## Acceptance
 
 - [ ] all required units accounted for
@@ -125,6 +140,8 @@ After cancelling, verify actual save outcomes before the replacement run.
 - [ ] diagnostics retained
 - [ ] relevant CI green
 - [ ] lineage/current SHA recorded
+- [ ] published group bundle identity / compatibility key / archive hash recorded
+- [ ] downstream producer-identity freeze window declared where applicable
 - [ ] no unauthorized boundary change
 - [ ] known limitations recorded
 - [ ] stop condition reached

@@ -195,6 +195,21 @@ A job timeout is a **per-job safety ceiling**. It is not a target duration.
 Repeated units approaching the timeout indicate a decomposition or performance
 problem.
 
+After a recovery architecture has real measurements, estimate time by execution
+class instead of applying one average to every unit:
+
+- **fully resumed units**: query/document execution should normally be zero and
+  wall-clock is dominated by reconstruction, validation, qualification, and
+  publication;
+- **targeted semantic-repair units**: may execute bounded re-proof or parser work
+  only for the affected subset;
+- **provider-recompute units**: the slow fallback and the class that should drive
+  the conservative tail estimate.
+
+A mixed run should forecast its critical path from the count of units in each
+class and the configured parallelism. Do not extrapolate a repaired unit's time
+to fully resumed siblings, or vice versa.
+
 ## Progress persistence contract
 
 For long materialization steps:
@@ -451,6 +466,53 @@ An engineering compatibility bridge is exceptional and must include:
 
 Never create a generic "ignore fingerprint" path.
 
+## Post-success handoff freeze
+
+A successful stage can create a temporary **producer-identity freeze window**.
+
+When a persistent group bundle has been published and downstream workflows locate
+it by producer fingerprint / compatibility key, do not immediately clean up
+one-time recovery code if that cleanup changes any file included in the producer
+fingerprint.
+
+Required sequence:
+
+1. record the successful run id, source commit, asset base, bundle identity,
+   compatibility key, archive SHA-256, and stage-receipt SHA-256;
+2. identify every file that contributes to the producer fingerprint;
+3. freeze those producer files until the required downstream aggregate,
+   finalizer, or intake has successfully consumed and recorded the bundle;
+4. permit documentation/test changes only when they are outside the producer
+   identity and do not alter the published bundle contract;
+5. mark obsolete bridges/guards as **logically retired but physically deferred**
+   when their removal would change the producer fingerprint;
+6. remove them later through a separately reviewed cleanup after downstream
+   handoff no longer depends on the frozen identity.
+
+"All jobs are green" is not sufficient reason to mutate a just-published
+producer. A cleanup that makes a valid immutable bundle undiscoverable by the
+next stage is a regression even if the cleanup itself is semantically harmless.
+
+Stage acceptance and pipeline acceptance are different. For a qualification
+pipeline, the ladder is normally:
+
+`unit qualification -> group bundle -> downstream assembly -> canonical
+finalizer -> private intake / final qualification state`.
+
+Before dispatching a downstream consumer, recompute/resolve the expected upstream
+producer identity from the current repository state and compare it with the
+recorded published bundle. If the asset base, compatibility key, bundle identity,
+or required input identities no longer match:
+
+- do not automatically rerun the expensive upstream producer;
+- first identify the exact producer-file drift;
+- determine whether the drift is intentional and semantic or merely cleanup;
+- prefer reverting/defering accidental cleanup when the published handoff is
+  still the intended canonical input.
+
+Do not interpret a successful public materialization stage as the final
+historical/evidence qualification unless the governing intake contract says so.
+
 ## Acceptance checklist
 
 Before declaring a long-running engineering task complete:
@@ -461,6 +523,8 @@ Before declaring a long-running engineering task complete:
 - aggregate verifies uniqueness/completeness;
 - diagnostics are preserved;
 - current SHA and lineage are recorded;
+- published group bundle identity / compatibility key / archive hash are recorded;
+- any downstream producer-identity freeze window is declared;
 - relevant CI is green;
 - no research/evidence/production/trading boundary changed implicitly;
 - known limitations are documented;
