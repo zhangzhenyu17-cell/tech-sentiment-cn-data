@@ -74,7 +74,7 @@
     "cache_key_independent_of_workflow_source_commit": true,
     "cache_key_fields": [
       "generation_id",
-      "semantic_producer_fingerprint",
+      "semantic_fingerprint",
       "qualification_start_date",
       "qualification_end_date",
       "work_unit_index"
@@ -92,7 +92,10 @@
     "formal_stage_bundle_required_for_evidence_handoff": true,
     "partial_progress_never_grants_qualification": true,
     "partial_failed_work_unit_cache_allowed": true,
-    "partial_failed_work_unit_cache_never_formal_evidence": true
+    "partial_failed_work_unit_cache_never_formal_evidence": true,
+    "max_recompute_loss_scope": "AT_MOST_ONE_IN_PROGRESS_WORK_UNIT_PER_ACTIVE_RUNNER",
+    "completed_work_unit_persistence": "IMMUTABLE_RELEASE_BUNDLE_AFTER_QUALIFICATION_GATE",
+    "failed_or_incomplete_work_unit_persistence": "ACTIONS_CACHE_ENGINEERING_PROGRESS_ONLY_NOT_FORMAL_EVIDENCE"
   },
   "persistent_work_unit_bundle_policy": {
     "schema_version": "v4a-fundamental-progress-unit-v1",
