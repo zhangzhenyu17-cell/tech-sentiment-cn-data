@@ -186,6 +186,7 @@ jobs:
               family: {"asset_base": payload["asset_base"]}
               for family, payload in expected_sources.items()
           }
+          Path("bundle-meta").mkdir(parents=True, exist_ok=True)
           Path("bundle-meta/issuer-compat-plan.json").write_text(
               json.dumps(plan, sort_keys=True, indent=2) + "\n",
               encoding="utf-8",
