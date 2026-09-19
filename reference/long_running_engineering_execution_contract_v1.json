@@ -1,0 +1,90 @@
+{
+  "schema_version": "long-running-engineering-execution-contract-v1",
+  "status": "FROZEN_ENGINEERING_DEFAULT",
+  "effective_date": "2026-09-19",
+  "purpose": "Prevent long-running engineering work from losing completed progress, repeating deterministic failures, or conflating cache layers while preserving evidence/PIT/research/production/trading boundaries.",
+  "scope": {
+    "long_running_github_actions": true,
+    "public_data_materialization": true,
+    "engineering_repairs": true,
+    "changes_evidence_eligibility": false,
+    "changes_pit_no_lookahead": false,
+    "changes_model_threshold_signal": false,
+    "changes_production_or_trading_authority": false
+  },
+  "defaults": {
+    "manual_only": true,
+    "automatic_trigger_requires_explicit_allowlist": true,
+    "deterministic_partitioning": true,
+    "bounded_parallelism": true,
+    "timeout_is_per_job_safety_ceiling": true,
+    "diagnostics_before_qualification_gate": true,
+    "durable_progress_before_qualification_gate": true,
+    "immutable_unit_publish_after_gate": true,
+    "completed_unit_reuse_precedes_recomputation": true,
+    "query_cache_independent_from_document_progress": true,
+    "actual_cli_entrypoint_regression_test_required": true,
+    "latest_pr_head_is_authoritative_ci": true,
+    "rerun_failed_jobs_before_full_ci_when_appropriate": true
+  },
+  "restore_precedence": [
+    "IMMUTABLE_COMPLETED_WORK_UNIT",
+    "CURRENT_SEMANTIC_DURABLE_PROGRESS",
+    "EXACT_AUDITED_COMPATIBILITY_BRIDGE",
+    "LEGACY_QUERY_INDEX_AND_DOCUMENT_CACHE",
+    "PROVIDER_RECOMPUTATION"
+  ],
+  "cancellation": {
+    "inspect_completed_immutable_units": true,
+    "inspect_active_progress_save_state": true,
+    "prove_cancel_save_behavior": true,
+    "verify_post_cancel_save_outcomes": true,
+    "cancel_for_deterministic_global_blocker": true,
+    "cancel_for_material_fixed_performance_regression_when_progress_safe": true,
+    "do_not_cancel_only_for_slowness_when_progress_unsafe": true
+  },
+  "compatibility_bridge": {
+    "exceptional_only": true,
+    "source_run_id_required": true,
+    "source_commit_required": true,
+    "old_semantic_fingerprint_required": true,
+    "exact_window_required": true,
+    "exact_cache_or_bundle_identity_required": true,
+    "compatibility_reason_required": true,
+    "unchanged_invariants_required": true,
+    "fail_closed_on_mismatch": true,
+    "formal_evidence_handoff": false,
+    "qualification_granted": false,
+    "removal_condition_required": true
+  },
+  "observability": {
+    "record_unit_identity": true,
+    "record_source_and_scope": true,
+    "record_query_resume_and_execute_counts": true,
+    "record_document_resume_and_execute_counts": true,
+    "record_parser_upgrade_counts": true,
+    "record_soft_and_hard_failures": true,
+    "record_readiness": true,
+    "record_checkpoint_save_result": true,
+    "record_immutable_publish_result": true
+  },
+  "failure_classes": [
+    "DETERMINISTIC_CODE_OR_ORCHESTRATION",
+    "PROVIDER_TRANSPORT_OR_PROTOCOL",
+    "PARSER_OR_LAYOUT",
+    "QUALIFICATION_BLOCKER",
+    "PERFORMANCE_REGRESSION",
+    "PUBLICATION_OR_AGGREGATION"
+  ],
+  "acceptance": {
+    "all_required_units_accounted": true,
+    "successful_reusable_units_immutable": true,
+    "missing_unit_never_valid_empty": true,
+    "aggregate_completeness_verified": true,
+    "relevant_ci_green": true,
+    "diagnostics_retained": true,
+    "lineage_recorded": true,
+    "unauthorized_boundary_change": false,
+    "stop_when_acceptance_met": true
+  }
+}
