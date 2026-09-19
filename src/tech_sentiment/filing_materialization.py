@@ -279,6 +279,8 @@ def materialize_versioned_filing_facts(
     checkpoint_dir: str | Path,
     warmup_years: int = 2,
     checkpoint_source_commit: str | None = None,
+    legacy_checkpoint_dir: str | Path | None = None,
+    progress_checkpoint_source_commit: str | None = None,
 ) -> FilingMaterializationResult:
     """Reconstruct filing facts from exact versioned CNINFO attachments."""
 
@@ -291,7 +293,13 @@ def materialize_versioned_filing_facts(
     query_start = target_start - pd.DateOffset(years=warmup_years)
     calendar = _real_trading_calendar(trading_dates)
     store = ImmutableCheckpointStore(checkpoint_dir)
+    legacy_store = (
+        ImmutableCheckpointStore(legacy_checkpoint_dir)
+        if legacy_checkpoint_dir is not None
+        else store
+    )
     checkpoint_commit = str(checkpoint_source_commit or source_commit)
+    progress_commit = str(progress_checkpoint_source_commit or source_commit)
     unique_symbols = sorted({str(value).zfill(6) for value in symbols})
     if not unique_symbols:
         raise ValueError("at least one symbol is required")
@@ -300,6 +308,8 @@ def materialize_versioned_filing_facts(
     coverage_rows: list[dict[str, object]] = []
     errors: list[dict[str, str]] = []
     resumed_symbol_queries = 0
+    resumed_progress_symbol_queries = 0
+    reused_legacy_symbol_queries = 0
     executed_symbol_queries = 0
     resumed_documents = 0
     resumed_current_parser_documents = 0
@@ -309,50 +319,66 @@ def materialize_versioned_filing_facts(
 
     for symbol in unique_symbols:
         entity = _entity_id(symbol)
-        query_identity = _symbol_query_identity(
+        progress_query_identity = _symbol_query_identity(
+            source_commit=progress_commit,
+            symbol=symbol,
+            query_start=str(query_start.date()),
+            query_end=str(end.date()),
+        )
+        legacy_query_identity = _symbol_query_identity(
             source_commit=checkpoint_commit,
             symbol=symbol,
             query_start=str(query_start.date()),
             query_end=str(end.date()),
         )
-        loaded_query = store.load(query_identity)
+        loaded_query = store.load(progress_query_identity)
         if loaded_query is not None:
             raw = loaded_query.frames["announcements"]
             resumed_symbol_queries += 1
+            resumed_progress_symbol_queries += 1
         else:
-            try:
-                raw = fetch_cninfo_announcements_direct(
-                    symbol=symbol,
-                    start_date=query_start.strftime("%Y%m%d"),
-                    end_date=end.strftime("%Y%m%d"),
-                )
-                store.save(
-                    query_identity,
-                    frames={"announcements": raw},
-                    metadata={"entity_id": entity},
-                )
-                executed_symbol_queries += 1
-            except Exception as exc:
-                errors.append(
-                    {
-                        "entity_id": entity,
-                        "document_id": "QUERY",
-                        "error": f"{type(exc).__name__}: {exc}",
-                        "severity": "HARD_FAILURE",
-                    }
-                )
-                coverage_rows.append(
-                    {
-                        "source_identity": DERIVED_FUNDAMENTAL_SOURCE_ID,
-                        "entity_id": entity,
-                        "coverage_start": target_start,
-                        "coverage_end": end,
-                        "query_status": "FAILED",
-                        "financial_documents": 0,
-                        "parsed_documents": 0,
-                    }
-                )
-                continue
+            loaded_legacy_query = legacy_store.load(legacy_query_identity)
+            if loaded_legacy_query is not None:
+                raw = loaded_legacy_query.frames["announcements"]
+                resumed_symbol_queries += 1
+                reused_legacy_symbol_queries += 1
+            else:
+                try:
+                    raw = fetch_cninfo_announcements_direct(
+                        symbol=symbol,
+                        start_date=query_start.strftime("%Y%m%d"),
+                        end_date=end.strftime("%Y%m%d"),
+                    )
+                    store.save(
+                        progress_query_identity,
+                        frames={"announcements": raw},
+                        metadata={
+                            "entity_id": entity,
+                            "progress_checkpoint_source_commit": progress_commit,
+                        },
+                    )
+                    executed_symbol_queries += 1
+                except Exception as exc:
+                    errors.append(
+                        {
+                            "entity_id": entity,
+                            "document_id": "QUERY",
+                            "error": f"{type(exc).__name__}: {exc}",
+                            "severity": "HARD_FAILURE",
+                        }
+                    )
+                    coverage_rows.append(
+                        {
+                            "source_identity": DERIVED_FUNDAMENTAL_SOURCE_ID,
+                            "entity_id": entity,
+                            "coverage_start": target_start,
+                            "coverage_end": end,
+                            "query_status": "FAILED",
+                            "financial_documents": 0,
+                            "parsed_documents": 0,
+                        }
+                    )
+                    continue
 
         candidates = _select_primary_numeric_filing_candidates(raw)
         financial_documents = 0
@@ -387,7 +413,7 @@ def materialize_versioned_filing_facts(
             try:
                 document_id, _ = _parse_document_identity(announcement["公告链接"])
                 current_identity = _document_identity(
-                    source_commit=str(source_commit),
+                    source_commit=progress_commit,
                     symbol=symbol,
                     document_id=document_id,
                     attachment_url=attachment,
@@ -404,8 +430,7 @@ def materialize_versioned_filing_facts(
                 loaded_legacy = (
                     None
                     if loaded_current is not None
-                    or checkpoint_commit == str(source_commit)
-                    else store.load(legacy_identity)
+                    else legacy_store.load(legacy_identity)
                 )
                 presentation_variant = ""
                 if loaded_current is not None:
@@ -482,6 +507,8 @@ def materialize_versioned_filing_facts(
                             "document_sha256": downloaded.sha256,
                             "document_presentation_variant": presentation_variant,
                             "parser_upgrade_from_legacy": bool(legacy_facts is not None),
+                            "progress_checkpoint_source_commit": progress_commit,
+                            "legacy_checkpoint_source_commit": checkpoint_commit,
                             "legacy_parser_version": (
                                 LEGACY_FILING_PARSER_VERSION
                                 if legacy_facts is not None
@@ -587,6 +614,12 @@ def materialize_versioned_filing_facts(
         "end_date": str(end.date()),
         "warmup_years": int(warmup_years),
         "checkpoint_source_commit": checkpoint_commit,
+        "progress_checkpoint_source_commit": progress_commit,
+        "checkpoint_store_mode": (
+            "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1"
+            if legacy_checkpoint_dir is not None
+            else "SINGLE_STORE_COMPATIBILITY_MODE"
+        ),
         "checkpoint_reuse_mode": (
             "CURRENT_SOURCE_COMMIT"
             if checkpoint_commit == str(source_commit)
@@ -599,6 +632,8 @@ def materialize_versioned_filing_facts(
         "filing_fact_rows": int(len(facts)),
         "derived_trend_records": int(len(trends)),
         "resumed_symbol_queries": resumed_symbol_queries,
+        "resumed_progress_symbol_queries": resumed_progress_symbol_queries,
+        "reused_legacy_symbol_queries": reused_legacy_symbol_queries,
         "executed_symbol_queries": executed_symbol_queries,
         "resumed_documents": resumed_documents,
         "resumed_current_parser_documents": resumed_current_parser_documents,
