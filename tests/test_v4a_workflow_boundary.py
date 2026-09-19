@@ -128,7 +128,8 @@ def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handof
     assert "FUNDAMENTAL_WORK_UNIT_COUNT" in text
     assert "SPLIT_LEGACY_AND_CURRENT_PROGRESS_STORES_V1" in text
     assert "Restore durable V9 progress" in text
-    assert "Restore read-only legacy V8 checkpoints" in text
+    assert "Restore legacy V8 checkpoints at original cache path" in text
+    assert "Isolate restored legacy V8 checkpoints read-only" in text
     assert "Save durable V9 work-unit progress" in text
     assert ".cache/capital_pit_v4a/derived/progress" in text
     assert ".cache/capital_pit_v4a/derived/legacy" in text
