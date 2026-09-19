@@ -14,7 +14,12 @@ from tech_sentiment.v4a_persistent_stage import (
     PERSISTENT_STAGE_SCHEMA,
     producer_files,
 )
-from tech_sentiment.v4a_stage_artifact import file_sha256, verify_stage_receipt
+from tech_sentiment.v4a_stage_artifact import (
+    build_stage_receipt,
+    file_sha256,
+    verify_stage_receipt,
+    write_stage_receipt,
+)
 
 
 SCHEMA_VERSION = "v4a-fundamental-progress-unit-v1"
@@ -430,6 +435,86 @@ def verify(
     return manifest
 
 
+def rebase_verified_unit(
+    *,
+    stage_root: str | Path,
+    manifest_path: str | Path,
+    source_commit: str,
+) -> dict[str, object]:
+    """Re-seal a verified reusable unit onto the current producer commit.
+
+    Only stage identity/provenance files are rewritten. Data payload files are
+    unchanged, and the persistent bundle identity remains recorded explicitly.
+    """
+
+    root = Path(stage_root).resolve()
+    bundle = _read_json(manifest_path)
+    if bundle.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("Fundamental progress bundle schema mismatch during rebase")
+    unit_index = int(bundle.get("unit_index"))
+    unit_count = int(bundle.get("unit_count"))
+    original_commit = str(bundle.get("original_source_commit") or "")
+    if not original_commit:
+        raise ValueError("Fundamental progress original source commit missing")
+
+    stage_manifest_path = root / "stage_manifest.json"
+    stage_manifest = _read_json(stage_manifest_path)
+    if str(stage_manifest.get("source_commit") or "") != original_commit:
+        raise ValueError("Fundamental progress stage was not verified against original commit")
+    if int(stage_manifest.get("shard_index") or -1) != unit_index:
+        raise ValueError("Fundamental progress rebase unit-index mismatch")
+    if int(stage_manifest.get("shard_count") or -1) != unit_count:
+        raise ValueError("Fundamental progress rebase unit-count mismatch")
+
+    stage_manifest["source_commit"] = str(source_commit)
+    stage_manifest["progress_bundle_reuse"] = {
+        "reused": True,
+        "bundle_identity": str(bundle.get("bundle_identity") or ""),
+        "compatibility_key": str(bundle.get("compatibility_key") or ""),
+        "semantic_fingerprint": str(bundle.get("semantic_fingerprint") or ""),
+        "original_source_commit": original_commit,
+        "rebased_source_commit": str(source_commit),
+        "data_payload_files_modified": False,
+        "formal_evidence_handoff": False,
+        "requires_full_group_assembly": True,
+    }
+    stage_manifest_path.write_text(
+        json.dumps(stage_manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    receipt_path = root / "receipt.json"
+    files = [
+        path
+        for path in root.rglob("*")
+        if path.is_file() and path.resolve() != receipt_path.resolve()
+    ]
+    receipt = build_stage_receipt(
+        root=root,
+        files=files,
+        stage_kind="fundamental_earnings",
+        stage_id=f"fundamental-{unit_index}-of-{unit_count}",
+        source_commit=str(source_commit),
+        start_date=str(bundle.get("start_date") or ""),
+        end_date=str(bundle.get("end_date") or ""),
+        metadata={
+            "reused_progress_bundle_identity": str(bundle.get("bundle_identity") or ""),
+            "original_source_commit": original_commit,
+            "data_payload_files_modified": False,
+        },
+    )
+    write_stage_receipt(receipt_path, receipt)
+    return {
+        "unit_index": unit_index,
+        "unit_count": unit_count,
+        "original_source_commit": original_commit,
+        "source_commit": str(source_commit),
+        "bundle_identity": str(bundle.get("bundle_identity") or ""),
+        "receipt_sha256": str(receipt.get("receipt_sha256") or ""),
+        "data_payload_files_modified": False,
+    }
+
+
 def _emit(payload: Mapping[str, object], path: str | None) -> None:
     rendered = json.dumps(
         dict(payload),
@@ -472,7 +557,22 @@ def main() -> None:
     sub.choices["verify"].add_argument("--manifest", required=True)
     sub.choices["verify"].add_argument("--extract-to", required=True)
 
+    rebase = sub.add_parser("rebase")
+    rebase.add_argument("--stage-root", required=True)
+    rebase.add_argument("--manifest", required=True)
+    rebase.add_argument("--source-commit", required=True)
+    rebase.add_argument("--out", default="")
+
     args = parser.parse_args()
+    if args.command == "rebase":
+        payload = rebase_verified_unit(
+            stage_root=args.stage_root,
+            manifest_path=args.manifest,
+            source_commit=args.source_commit,
+        )
+        _emit(payload, args.out or None)
+        return
+
     common = {
         "repo_root": args.repo_root,
         "symbols_csv": args.symbols_csv,
