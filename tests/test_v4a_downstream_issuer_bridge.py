@@ -54,7 +54,7 @@ def test_aggregate_bridge_remains_provider_refetch_free() -> None:
     assert "materialize_v4a_szse_issuer.py" not in text
 
 
-def test_frozen_bridge_locks_capital_financing_policy_identities() -> None:
+def test_frozen_bridge_locks_downstream_stage_identities() -> None:
     contract = json.loads(Path(BRIDGE).read_text(encoding="utf-8"))
     stages = contract["downstream_stages"]
     assert {
@@ -87,6 +87,15 @@ def test_frozen_bridge_locks_capital_financing_policy_identities() -> None:
             "b9ddb91409a0e93a68e4248ed40baa1ac8f7e9db4bdd5c2860fa9e1f9772ed3b",
             "84a5765143271405857235434f8548dbf739fed86b65fb2be1caf22854e57710",
         ),
+        "fundamental": (
+            35451946515,
+            "f55033f31e00bfed5bda798929dc5dccecbceac7",
+            "v4a-fundamental-20220104-20260917-56e8c44ca678668bfc17",
+            "f558db45af7a9e8b5e69dad1275f98e93e6ee49c09914fa591edd4348cfde4c4",
+            "56e8c44ca678668bfc17fd7ef5da5a9c32503dcbac03eb86fa3963ecd0cf751b",
+            "c1df2ec495657f52cf34935feb5ab94c7159f43e4cbf6f24bb8fbcf43ffdb54e",
+            "2b27a25584e22521811ceebfdc873363d6a8fc43cf82d1b442d8ced121b91770",
+        ),
         "policy": (
             35384604608,
             "29571066bbf69da5ba252982f71b592e07969314",
@@ -104,24 +113,42 @@ def test_frozen_bridge_locks_capital_financing_policy_identities() -> None:
         "policy_gate_semantics_changed",
     ):
         assert drift[key] is False
+    fundamental_drift = contract["stage_allowed_producer_drifts"]["fundamental"]
+    assert fundamental_drift == [
+        {
+            "path": "src/tech_sentiment/v4a_persistent_stage.py",
+            "source_sha256": "8d14c01b31007ef68e2d3a8e5ea1e3b36256ddd4eefbcd13dab9045dae9acfa7",
+            "source_bytes": 20123,
+            "current_sha256": "d7b77125fcd85c67ef19aa9067acc9bbaf3ccba2a58390519fb71f0f2644cd02",
+            "current_bytes": 20269,
+            "classification": "DERIVED_ONLY_COMPATIBILITY_IDENTITY_BINDING",
+            "fundamental_materialization_semantics_changed": False,
+            "fundamental_qualification_semantics_changed": False,
+            "pit_no_lookahead_semantics_changed": False,
+        }
+    ]
 
 
-def test_derived_exact_reuses_frozen_policy_and_binds_verifier_identity() -> None:
+def test_derived_exact_reuses_frozen_fundamental_policy_and_binds_verifier_identity() -> None:
     text = _text("v4a-derived.yml")
+    assert "Download and exact-verify frozen Fundamental bundle" in text
+    assert "Download and verify Prices bundle" in text
     assert "Download and exact-verify frozen Policy bundle" in text
-    assert "for family in fundamental prices; do" in text
+    assert "for family in fundamental prices; do" not in text
     assert "for family in fundamental prices policy; do" not in text
     assert VERIFIER in text
     assert BRIDGE in STAGE_SPECS["derived"].extra_files
     assert VERIFIER in STAGE_SPECS["derived"].extra_files
 
 
-def test_finalizer_exact_reuses_frozen_capital_financing_policy() -> None:
+def test_finalizer_exact_reuses_frozen_capital_financing_fundamental_policy() -> None:
     text = _text("qualify-capital-inputs.yml")
     assert "Download and exact-verify frozen Capital and Financing bundles" in text
+    assert "Download and exact-verify frozen Fundamental bundle" in text
+    assert "Download and verify Prices bundle" in text
     assert "Download and exact-verify frozen Policy bundle" in text
     assert "for family in capital financing; do" in text
-    assert "for family in fundamental prices; do" in text
+    assert "for family in fundamental prices; do" not in text
     assert "for family in fundamental prices policy; do" not in text
     assert VERIFIER in text
     assert "qualify_capital_inputs.py" not in text
