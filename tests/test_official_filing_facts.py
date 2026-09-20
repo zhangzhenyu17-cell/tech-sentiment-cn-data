@@ -1178,3 +1178,69 @@ def test_non_pdf_binary_after_allowed_fallbacks_fails_before_semantic_parser(mon
                 b"<html><body>challenge</body></html>"
             ),
         )
+
+
+def test_sse_star_attachment_fallback_only_for_688_exact_same_path():
+    original = (
+        "https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2022-04-08/688005_20220408_1_lj9AnvdY.pdf"
+    )
+    assert filing_module._sse_star_attachment_fallback(original) == (
+        "https://star.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2022-04-08/688005_20220408_1_lj9AnvdY.pdf"
+    )
+    assert filing_module._sse_star_attachment_fallback(
+        "https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2022-04-08/600000_20220408_TEST.pdf"
+    ) is None
+    assert filing_module._sse_star_attachment_fallback(
+        "https://www.sse.com.cn/example.pdf"
+    ) is None
+
+
+def test_sse_star_same_path_precedes_static_for_688_html_canonical(monkeypatch):
+    original = (
+        "https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2022-04-08/688005_20220408_1_lj9AnvdY.pdf"
+    )
+    star = (
+        "https://star.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2022-04-08/688005_20220408_1_lj9AnvdY.pdf"
+    )
+    pdf = b"%PDF-1.7 exact STAR attachment bytes"
+    requested: list[str] = []
+
+    def opener(request, timeout=None):
+        requested.append(request.full_url)
+        if request.full_url == original:
+            return _FakeResponse(b"<html><body>SSE landing page</body></html>")
+        if request.full_url == star:
+            return _FakeResponse(pdf)
+        raise AssertionError(request.full_url)
+
+    monkeypatch.setattr(
+        filing_module,
+        "_download_exchange_attachment_with_browser_transport",
+        lambda url, *, timeout: (_ for _ in ()).throw(
+            AssertionError("browser fallback must not run when STAR host returns PDF")
+        ),
+    )
+
+    downloaded = download_official_document(original, opener=opener)
+
+    assert requested == [original, star]
+    assert downloaded.url == original
+    assert downloaded.retrieval_url == star
+    assert downloaded.content == pdf
+    assert downloaded.transport_method == "same_provider_star"
+
+
+def test_star_sse_host_is_same_provider_and_allowlisted():
+    original = (
+        "https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2022-04-08/688005_20220408_1_lj9AnvdY.pdf"
+    )
+    star = filing_module._sse_star_attachment_fallback(original)
+    assert star is not None
+    assert filing_module._canonical_host(star) == "star.sse.com.cn"
+    filing_module._validate_same_provider_retrieval(original, star)
