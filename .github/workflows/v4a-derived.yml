@@ -20,7 +20,6 @@ concurrency:
 
 permissions:
   contents: write
-  actions: read
 
 jobs:
   derived:
@@ -256,87 +255,25 @@ jobs:
           cp -a inputs/fundamental/shards/. stage/fundamental/
           cp -a inputs/prices/shards/. stage/prices/
           cp -a inputs/policy/. stage/policy/
-      - name: Restore exact completed Derived stage from failed qualification-gate run
-        id: recovery
-        env:
-          GH_TOKEN: ${{ github.token }}
-          START_DATE: ${{ inputs.start_date }}
-          END_DATE: ${{ inputs.end_date }}
-          RECOVERY_RUN_ID: "35459083286"
-          RECOVERY_ARTIFACT_ID: "10590094910"
-          RECOVERY_ARTIFACT_NAME: "v4a-derived-stage-35459083286"
-          RECOVERY_ARTIFACT_DIGEST: "sha256:afb0a05b7970dbe91f0ed3d6f4eeabd9790daf3b948868f7594a03b0207d477f"
-          RECOVERY_SOURCE_COMMIT: "58f54742fdeb43912fe1a90c647dab908dd890b8"
-          RECOVERY_RECEIPT_SHA256: "c91135821733f656fae1789a3fab3eaa8c8a0f4350d42c60568e90b7d912a29c"
+      - name: Resolve Derived semantic progress identity
         run: |
-          set -euo pipefail
-          mkdir -p recovery-meta
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}/artifacts" > recovery-meta/artifacts.json
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          payload = json.loads(Path("recovery-meta/artifacts.json").read_text(encoding="utf-8"))
-          matches = [
-              item for item in payload.get("artifacts", [])
-              if int(item.get("id") or 0) == int(os.environ["RECOVERY_ARTIFACT_ID"])
-              and item.get("name") == os.environ["RECOVERY_ARTIFACT_NAME"]
-          ]
-          if len(matches) != 1:
-              raise SystemExit("exact Derived recovery artifact metadata missing")
-          artifact = matches[0]
-          if artifact.get("expired") is not False:
-              raise SystemExit("exact Derived recovery artifact expired")
-          if artifact.get("digest") != os.environ["RECOVERY_ARTIFACT_DIGEST"]:
-              raise SystemExit("exact Derived recovery artifact digest mismatch")
-          PY
-          rm -rf stage/derived
-          mkdir -p stage/derived
-          gh run download "${RECOVERY_RUN_ID}" \
-            --name "${RECOVERY_ARTIFACT_NAME}" \
-            --dir stage/derived
-          python - <<'PY'
-          import json
-          import os
-          from tech_sentiment.derived_revision_identity import repair_completed_derived_stage
-
-          result = repair_completed_derived_stage(
-              "stage/derived",
-              expected_source_commit=os.environ["RECOVERY_SOURCE_COMMIT"],
-              start_date=os.environ["START_DATE"],
-              end_date=os.environ["END_DATE"],
-              expected_receipt_sha256=os.environ["RECOVERY_RECEIPT_SHA256"],
-              recovery_run_id=int(os.environ["RECOVERY_RUN_ID"]),
-              recovery_artifact_id=int(os.environ["RECOVERY_ARTIFACT_ID"]),
-              recovery_artifact_digest=os.environ["RECOVERY_ARTIFACT_DIGEST"],
-              new_source_commit=os.environ["GITHUB_SHA"],
-          )
-          print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
-          PY
-          echo "reused=true" >> "$GITHUB_OUTPUT"
-      - name: Resolve Derived resume identity
-        if: ${{ steps.recovery.outputs.reused != 'true' }}
-        run: |
-          python scripts/v4a_persistent_stage_bundle.py key --family derived \
+          python scripts/v4a_persistent_stage_bundle.py progress-key --family derived \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --input-manifest shared=bundle-meta/shared.json \
             --input-manifest issuer=bundle-meta/issuer_aggregate.json \
             --input-manifest fundamental=bundle-meta/fundamental.json \
             --input-manifest prices=bundle-meta/prices.json \
             --input-manifest policy=bundle-meta/policy.json \
-            --out bundle-meta/derived-resume-key.json
-          echo "DERIVED_RESUME_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/derived-resume-key.json"))["compatibility_key"])' )" >> "$GITHUB_ENV"
+            --out bundle-meta/derived-progress-key.json
+          echo "PROGRESS_KEY=$(python -c 'import json; print(json.load(open("bundle-meta/derived-progress-key.json"))["progress_key"])' )" >> "$GITHUB_ENV"
       - name: Restore Derived phase checkpoints
-        if: ${{ steps.recovery.outputs.reused != 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .cache/capital_pit_v4a/derived/assembly
-          key: v4a-derived-assembly-v1-${{ env.DERIVED_RESUME_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-derived-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            v4a-derived-assembly-v1-${{ env.DERIVED_RESUME_KEY }}-
+            v4a-derived-progress-v1-${{ env.PROGRESS_KEY }}-
       - name: Assemble derived PIT rails
-        if: ${{ steps.recovery.outputs.reused != 'true' }}
         id: assemble
         run: |
           ISSUER_COMMIT="$(python -c 'import json; print(json.load(open("bundle-meta/issuer_aggregate.json"))["original_source_commit"])' )"
@@ -359,11 +296,11 @@ jobs:
             --checkpoint-dir .cache/capital_pit_v4a/derived/assembly \
             --out-dir stage/derived/pit_evidence_materialization
       - name: Save Derived phase checkpoints
-        if: ${{ always() && steps.recovery.outputs.reused != 'true' && steps.assemble.outcome != 'skipped' }}
+        if: ${{ always() && steps.assemble.outcome != 'skipped' }}
         uses: actions/cache/save@v4
         with:
           path: .cache/capital_pit_v4a/derived/assembly
-          key: v4a-derived-assembly-v1-${{ env.DERIVED_RESUME_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: v4a-derived-progress-v1-${{ env.PROGRESS_KEY }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Seal derived stage
         run: |
           python scripts/write_v4a_stage_receipt.py --root stage/derived --stage-kind derived --stage-id derived \
