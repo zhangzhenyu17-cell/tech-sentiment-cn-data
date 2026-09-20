@@ -1,0 +1,37 @@
+name: bse50-source-preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: pip install -e ".[data]"
+      - name: Code and contract tests
+        run: |
+          python -m compileall -q src scripts/bse50_source_preflight.py
+          pytest -q tests/test_bse50_official.py
+      - name: Live BSE official-source preflight
+        run: |
+          mkdir -p output/bse50-source-preflight
+          python scripts/bse50_source_preflight.py \
+            --contract reference/bse50_universe_qualification_public_v1.json \
+            --out output/bse50-source-preflight/preflight.json
+      - name: Upload preflight receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bse50-source-preflight
+          path: output/bse50-source-preflight/
+          if-no-files-found: error
