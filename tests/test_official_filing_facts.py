@@ -969,3 +969,38 @@ def test_cninfo_triple_403_uses_browser_fingerprint_https_fallback(monkeypatch):
     assert downloaded.content.startswith(b"%PDF-")
     assert len(downloaded.sha256) == 64
 
+
+
+def test_official_download_decodes_gzip_transport_and_preserves_both_hashes():
+    pdf = b"%PDF-1.7 exact official document bytes"
+    wrapped = filing_module.gzip.compress(pdf)
+    seen_headers: list[str | None] = []
+
+    def opener(request, timeout):
+        seen_headers.append(request.get_header("Accept-encoding"))
+        return _FakeResponse(wrapped)
+
+    downloaded = download_official_document(
+        "https://www.sse.com.cn/example.pdf",
+        opener=opener,
+    )
+
+    assert downloaded.content == pdf
+    assert downloaded.sha256 == filing_module.sha256(pdf).hexdigest()
+    assert downloaded.transport_sha256 == filing_module.sha256(wrapped).hexdigest()
+    assert downloaded.transport_encoding == "gzip"
+    assert seen_headers == ["identity"]
+
+
+def test_official_download_identity_transport_keeps_matching_hashes():
+    pdf = b"%PDF-1.7 identity official document bytes"
+
+    downloaded = download_official_document(
+        "https://www.szse.cn/example.pdf",
+        opener=lambda request, timeout: _FakeResponse(pdf),
+    )
+
+    assert downloaded.content == pdf
+    assert downloaded.sha256 == filing_module.sha256(pdf).hexdigest()
+    assert downloaded.transport_sha256 == downloaded.sha256
+    assert downloaded.transport_encoding is None
