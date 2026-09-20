@@ -33,6 +33,12 @@ def _issuer_rows() -> pd.DataFrame:
                     "entity_id": f"{prefix}{idx:03d}{suffix}",
                     "document_id": f"{source}-{idx}",
                     "evidence_available_date": f"2026-01-0{idx + 1}",
+                    "source_url_identity": (
+                        f"https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+                        f"2026-01-0{idx + 1}/{prefix}{idx:03d}_fixture.pdf"
+                        if source == "SSE_ANNOUNCEMENT_ARCHIVE"
+                        else f"https://disc.static.szse.cn/download/{prefix}{idx:03d}_fixture.PDF"
+                    ),
                 }
             )
     return pd.DataFrame(rows)
@@ -90,3 +96,4 @@ def test_live_preflight_fails_closed_on_transport_error(monkeypatch) -> None:
     assert receipt["status"] == "LIVE_PROVIDER_DOCUMENT_PREFLIGHT_FAIL"
     assert receipt["hard_error_count"] == 4
     assert all(row["status"] == "ERROR" for row in receipt["results"])
+    assert all(row["canonical_document_url"] for row in receipt["results"])
