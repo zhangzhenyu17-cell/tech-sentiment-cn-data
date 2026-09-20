@@ -232,6 +232,32 @@ def _cninfo_https_download_fallback(url: str) -> str | None:
     return f"https://www.cninfo.com.cn/new/announcement/download?{query}"
 
 
+_SSE_LISTED_ATTACHMENT_RE = re.compile(
+    r"^/disclosure/listedinfo/announcement/c/new/.+\\.pdf$",
+    re.IGNORECASE,
+)
+
+
+def _sse_static_attachment_fallback(url: str) -> str | None:
+    """Map one exact SSE listed-company PDF path to SSE's static attachment host.
+
+    The SSE announcement query API can expose a relative path that historical
+    materialization bound to www.sse.com.cn. SSE's own announcement full-text
+    links serve the same path from static.sse.com.cn. This is a transport-only
+    same-provider mapping: the canonical evidence URL remains unchanged and
+    provenance records the actual retrieval URL separately.
+    """
+
+    parsed = urlparse(str(url).strip())
+    if (
+        parsed.scheme != "https"
+        or (parsed.hostname or "").lower() != "www.sse.com.cn"
+        or _SSE_LISTED_ATTACHMENT_RE.fullmatch(parsed.path) is None
+    ):
+        return None
+    return parsed._replace(netloc="static.sse.com.cn").geturl()
+
+
 def _download_once(
     url: str,
     *,
@@ -562,6 +588,37 @@ def download_official_document(
 
     canonical_host = _canonical_host(url)
     provider_family = _official_provider_family(canonical_host)
+
+    if _looks_like_html(document_content) and provider_family == "SSE":
+        static_fallback = _sse_static_attachment_fallback(url)
+        if static_fallback is not None:
+            try:
+                fallback_content = call_with_bounded_network_retry(
+                    lambda: _download_once(
+                        static_fallback,
+                        timeout=timeout,
+                        opener=opener,
+                    ),
+                    attempts=3,
+                    backoff_seconds=0.5,
+                )
+                fallback_document, fallback_encoding = _decode_official_transport_body(
+                    fallback_content
+                )
+                if not _looks_like_html(fallback_document):
+                    _validate_same_provider_retrieval(url, static_fallback)
+                    content = fallback_content
+                    retrieval_url = static_fallback
+                    transport_method = "same_provider_static"
+                    transport_sha256 = sha256(content).hexdigest()
+                    document_content = fallback_document
+                    transport_encoding = fallback_encoding
+            except Exception:
+                # Browser transport below remains the final same-provider
+                # fallback. The static host attempt does not weaken fail-closed
+                # behavior or substitute a different document identity.
+                pass
+
     if _looks_like_html(document_content) and provider_family in {"SSE", "SZSE"}:
         content, retrieval_url = _download_exchange_attachment_with_browser_transport(
             url,
