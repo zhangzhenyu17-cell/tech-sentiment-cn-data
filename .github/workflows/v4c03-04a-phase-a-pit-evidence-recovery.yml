@@ -1,0 +1,182 @@
+name: v4c03-04a-phase-a-pit-evidence-recovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: v4c03-04a-phase-a-pit-evidence-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover-assembly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: python -m pip install -e ".[data,dev]"
+
+      - name: Verify exact reusable artifacts from failed run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          c=json.loads(Path("reference/v4c03_phase_a_pit_evidence_recovery_v1.json").read_text())
+          assert c["status"] == "FROZEN_EXACT_REUSE_RECOVERY"
+          failed=c["failed_run"]
+          for expected in c["exact_reused_artifacts"]:
+              actual=json.loads(subprocess.check_output([
+                  "gh","api",
+                  f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/artifacts/{expected['id']}"
+              ], text=True))
+              assert actual["expired"] is False
+              assert actual["name"] == expected["name"]
+              assert actual["digest"] == expected["digest"]
+              run=actual["workflow_run"]
+              assert int(run["id"]) == int(failed["run_id"])
+              assert run["head_sha"] == failed["head_sha"]
+          print(f"verified {len(c['exact_reused_artifacts'])} reusable artifacts")
+          PY
+
+      - name: Regenerate corrected evidence inputs from immutable market bundles
+        run: |
+          set -euo pipefail
+          mkdir -p input/release input/phase-a input/warmup stage/inputs
+          python - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          c=json.loads(Path("reference/v4c03_phase_a_pit_evidence_v1.json").read_text())
+          for key,out_dir in (("phase_a","input/phase-a"),("warmup","input/warmup")):
+              x=c["public_inputs"][key]
+              base=x["asset_base"]
+              tag=x["release_tag"]
+              url=f"https://github.com/zhangzhenyu17-cell/tech-sentiment-cn-data/releases/download/{tag}"
+              archive=Path("input/release")/f"{base}.tar.gz"
+              manifest=Path("input/release")/f"{base}.manifest.json"
+              subprocess.check_call(["curl","--fail","--location","--retry","3","-o",str(archive),f"{url}/{base}.tar.gz"])
+              subprocess.check_call(["curl","--fail","--location","--retry","3","-o",str(manifest),f"{url}/{base}.manifest.json"])
+              def sha(path):
+                  h=hashlib.sha256()
+                  with path.open("rb") as f:
+                      for chunk in iter(lambda:f.read(1024*1024), b""):
+                          h.update(chunk)
+                  return h.hexdigest()
+              assert sha(archive) == x["archive_sha256"]
+              m=json.loads(manifest.read_text())
+              assert m["bundle_identity"] == x["bundle_identity"]
+              assert m["source_commit"] == x["source_commit"]
+              subprocess.check_call(["tar","-xzf",str(archive),"-C",out_dir])
+          PY
+          python scripts/prepare_v4c03_phase_a_evidence_inputs.py             --phase-a-root input/phase-a             --warmup-root input/warmup             --out-dir stage/inputs
+          python - <<'PY'
+          import pandas as pd
+          s=pd.read_csv("stage/inputs/symbols.csv", dtype={"symbol":str})
+          assert list(s.columns) == ["symbol","market"]
+          assert set(s["market"]) <= {"SH","SZ"}
+          assert not s["market"].isna().any()
+          PY
+
+      - name: Download exact successful producer artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          c=json.loads(Path("reference/v4c03_phase_a_pit_evidence_recovery_v1.json").read_text())
+          run_id=str(c["failed_run"]["run_id"])
+          for item in c["exact_reused_artifacts"]:
+              name=item["name"]
+              if "-issuer-" in name:
+                  dest="downloads/issuer"
+              elif "-fundamental-" in name:
+                  dest="downloads/fundamental"
+              elif "-prices-" in name:
+                  dest="downloads/prices"
+              elif "-policy-" in name:
+                  dest="downloads/policy"
+              elif "-capital-" in name:
+                  dest="downloads/capital"
+              else:
+                  raise SystemExit(f"unmapped recovery artifact: {name}")
+              Path(dest).mkdir(parents=True, exist_ok=True)
+              target=Path(dest)/name
+              target.mkdir(parents=True, exist_ok=True)
+              subprocess.check_call([
+                  "gh","run","download",run_id,
+                  "-n",name,"-D",str(target)
+              ])
+          PY
+
+      - name: Run recovery boundary tests
+        run: |
+          python scripts/audit_public_tree.py
+          python -m compileall -q src scripts
+          pytest -q tests/test_v4c03_phase_a_pit_evidence.py
+
+      - name: Aggregate exact issuer artifacts
+        run: |
+          SOURCE_SHA="1b177f5cc49ac7dab18e02bd51b89a62c989c89a"
+          mkdir -p stage/issuer
+          python scripts/aggregate_v4a_issuer_shards.py             --shard-root downloads/issuer             --symbols-csv stage/inputs/symbols.csv             --source-commit "$SOURCE_SHA"             --start-date 2021-01-04 --end-date 2021-12-31             --out-dir stage/issuer
+          python scripts/write_v4a_stage_receipt.py             --root stage/issuer --stage-kind issuer_aggregate             --stage-id v4c03-recovery-issuer-aggregate             --source-commit "$SOURCE_SHA"             --start-date 2021-01-04 --end-date 2021-12-31             --out stage/issuer/receipt.json
+
+      - name: Assemble verified public PIT evidence from reused work units
+        run: |
+          SOURCE_SHA="1b177f5cc49ac7dab18e02bd51b89a62c989c89a"
+          mkdir -p stage/derived
+          python scripts/assemble_v4a_derived_pit.py             --symbols-csv stage/inputs/symbols.csv             --calendar-csv stage/inputs/trading_calendar.csv             --issuer-dir stage/issuer             --fundamental-root downloads/fundamental             --price-root downloads/prices             --policy-dir downloads/policy             --start-date 2021-01-04 --end-date 2021-12-31             --source-commit "$GITHUB_SHA"             --issuer-source-commit "$SOURCE_SHA"             --fundamental-source-commit "$SOURCE_SHA"             --price-source-commit "$SOURCE_SHA"             --policy-source-commit "$SOURCE_SHA"             --out-dir stage/derived
+
+      - name: Finalize recovered public-only evidence
+        run: |
+          python scripts/finalize_v4c03_phase_a_evidence.py             --inputs-dir stage/inputs             --derived-dir stage/derived             --capital-dir downloads/capital/v4c03-phase-a-capital-35497119739             --source-commit "$GITHUB_SHA"             --out-dir stage/final
+          cp reference/v4c03_phase_a_pit_evidence_recovery_v1.json             stage/final/v4c03_phase_a_pit_evidence_recovery_lineage.json
+
+      - name: Assert recovery never reran provider materialization
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path("stage/final/receipt.json").read_text())
+          assert r["status"] == "V4C03_PHASE_A_PUBLIC_EVIDENCE_MATERIALIZED_OUTCOME_BLIND"
+          assert r["provider_refetch_for_existing_phase_a_or_warmup"] is False
+          assert r["new_context_outcome_read"] is False
+          assert r["outcome_columns_materialized"] is False
+          assert r["real_outcome_study_executed"] is False
+          assert r["context_or_cause_semantics_changed"] is False
+          assert r["evidence_qualification_semantics_changed"] is False
+          assert r["production_authority_changed"] is False
+          assert r["trading_authority_changed"] is False
+          PY
+
+      - name: Package immutable recovered public evidence bundle
+        run: |
+          mkdir -p dist
+          python scripts/package_v4c03_phase_a_evidence_bundle.py             --stage-root stage/final             --contract reference/v4c03_phase_a_pit_evidence_v1.json             --source-commit "$GITHUB_SHA"             --out-dir dist             --out dist/package.json
+
+      - name: Publish immutable recovered public evidence bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BASE="$(python -c 'import json; print(json.load(open("dist/package.json"))["asset_base"])')"
+          bash scripts/publish_v4c03_public_bundle.sh v4c03-public-evidence-v1 dist "$BASE"
+
+      - name: Upload recovered public evidence bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4c03-phase-a-pit-evidence-recovered-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
