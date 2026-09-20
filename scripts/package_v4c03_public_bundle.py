@@ -23,6 +23,7 @@ PRODUCER_FILES = (
     "scripts/materialize_v4c03_phase_a_public_universe.py",
     "scripts/assemble_v4c03_phase_a_public_bundle.py",
     "scripts/package_v4c03_public_bundle.py",
+    "scripts/publish_v4c03_public_bundle.sh",
     "src/tech_sentiment/data_akshare.py",
     "src/tech_sentiment/index_history.py",
     "src/tech_sentiment/index_price.py",
