@@ -13,6 +13,14 @@ on:
         required: true
         default: "2026-09-17"
         type: string
+      mode:
+        description: "Execution mode"
+        required: true
+        default: "full"
+        type: choice
+        options:
+          - full
+          - edge1_earnings_qualification
 
 concurrency:
   group: qualify-capital-inputs-${{ inputs.start_date }}-${{ inputs.end_date }}
@@ -23,6 +31,7 @@ permissions:
 
 jobs:
   finalize:
+    if: ${{ inputs.mode != 'edge1_earnings_qualification' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -376,3 +385,229 @@ jobs:
           path: output/materialization_identity/artifact_receipt.json
           if-no-files-found: error
           retention-days: 90
+
+  edge1_earnings_qualification:
+    if: ${{ inputs.mode == 'edge1_earnings_qualification' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+      actions: read
+    env:
+      BASE_RUN_ID: "35485765220"
+      BASE_ARTIFACT_ID: "10596634296"
+      BASE_ARTIFACT_DIGEST: "sha256:0faffd88a611beee8412de8b5f4f23f5d0cfd0e3068f7c311206b4829fc7faac"
+      BASE_RECEIPT_ARTIFACT_ID: "10596698846"
+      BASE_RECEIPT_ARTIFACT_DIGEST: "sha256:bb8a306fe34f5fb9ad15a1e6a3f8bb1c3b6ecbaafa09d1d79ae484e357c72513"
+      BASE_SOURCE_COMMIT: "e49d7146f64228f5a1fe4a1de3780e1eb2dac6ef"
+      AUTH_CONTRACT: "reference/edge1_earnings_evidence_qualification_authorization_v1.json"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: python -m pip install -e ".[data,dev]"
+
+      - name: Audit public tree and frozen execution tests
+        run: |
+          python scripts/audit_public_tree.py
+          pytest -q
+
+      - name: Exact-verify base qualified artifact envelope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p base-meta
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASE_RUN_ID}/artifacts?per_page=100" > base-meta/artifacts.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path("base-meta/artifacts.json").read_text(encoding="utf-8"))
+          artifacts = payload.get("artifacts", [])
+          expected = {
+              int(os.environ["BASE_ARTIFACT_ID"]): (
+                  "capital-pit-input-materialization",
+                  os.environ["BASE_ARTIFACT_DIGEST"],
+              ),
+              int(os.environ["BASE_RECEIPT_ARTIFACT_ID"]): (
+                  "capital-pit-input-materialization-receipt",
+                  os.environ["BASE_RECEIPT_ARTIFACT_DIGEST"],
+              ),
+          }
+          found = {}
+          for item in artifacts:
+              artifact_id = int(item.get("id") or 0)
+              if artifact_id in expected:
+                  found[artifact_id] = item
+          if set(found) != set(expected):
+              raise SystemExit("exact base artifact IDs not found")
+          for artifact_id, (name, digest) in expected.items():
+              item = found[artifact_id]
+              if item.get("name") != name:
+                  raise SystemExit(f"base artifact name mismatch: {artifact_id}")
+              if item.get("digest") != digest:
+                  raise SystemExit(f"base artifact digest mismatch: {artifact_id}")
+              if item.get("expired") is not False:
+                  raise SystemExit(f"base artifact expired: {artifact_id}")
+          print(json.dumps({
+              str(k): {
+                  "name": v["name"],
+                  "digest": v["digest"],
+                  "expired": v["expired"],
+              }
+              for k, v in found.items()
+          }, sort_keys=True, indent=2))
+          PY
+
+      - name: Download exact base artifact and receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p base/main base/receipt
+          gh run download "${BASE_RUN_ID}"             --name capital-pit-input-materialization             --dir base/main
+          gh run download "${BASE_RUN_ID}"             --name capital-pit-input-materialization-receipt             --dir base/receipt
+          rm -rf output
+          mkdir -p output
+          if [ -d base/main/materialization_identity ]; then
+            cp -a base/main/. output/
+          elif [ -d base/main/output/materialization_identity ]; then
+            cp -a base/main/output/. output/
+          else
+            echo "base materialization root not recognized" >&2
+            find base/main -maxdepth 3 -type f | sort | head -200
+            exit 1
+          fi
+          if [ -f base/receipt/artifact_receipt.json ]; then
+            cp base/receipt/artifact_receipt.json base-artifact-receipt.json
+          elif [ -f base/receipt/materialization_identity/artifact_receipt.json ]; then
+            cp base/receipt/materialization_identity/artifact_receipt.json base-artifact-receipt.json
+          else
+            echo "base artifact receipt not found" >&2
+            find base/receipt -maxdepth 3 -type f | sort
+            exit 1
+          fi
+
+      - name: Restore immutable exchange earnings document checkpoints
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/edge1_exchange_earnings
+          key: edge1-earnings-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            edge1-earnings-v1-
+
+      - name: Apply authorized earnings evidence qualification overlay
+        id: patch
+        continue-on-error: true
+        run: |
+          mkdir -p output/edge1_earnings_qualification_diagnostics
+          python scripts/apply_edge1_exchange_earnings_qualification.py             --artifact-root output             --base-receipt base-artifact-receipt.json             --authorization-contract "${AUTH_CONTRACT}"             --checkpoint-dir .cache/edge1_exchange_earnings             --current-source-commit "${GITHUB_SHA}"             --workflow-run-id "${GITHUB_RUN_ID}"             --diagnostics-dir output/edge1_earnings_qualification_diagnostics
+
+      - name: Save immutable exchange earnings document checkpoints
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/edge1_exchange_earnings
+          key: edge1-earnings-v1-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload earnings qualification diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge1-earnings-qualification-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/edge1_earnings_qualification_diagnostics
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Fail closed on bridge/materialization error
+        if: ${{ steps.patch.outcome != 'success' }}
+        run: |
+          echo "EDGE-1 earnings qualification patch failed; no formal bundle will be emitted." >&2
+          exit 1
+
+      - name: Rebuild immutable public materialization identity
+        run: |
+          rm -rf output/materialization_identity
+          python scripts/finalize_capital_pit_materialization.py             --output-root output             --out-dir output/materialization_identity             --workflow-run-id "${GITHUB_RUN_ID}"             --source-commit "${GITHUB_SHA}"
+
+      - name: Upload immutable materialization artifact
+        id: upload_edge1_materialization
+        uses: actions/upload-artifact@v4
+        with:
+          name: capital-pit-input-materialization
+          path: |
+            output/capital_input_qualification
+            output/financing_materialization
+            output/pit_symbol_scope
+            output/pit_evidence_materialization
+            output/materialization_identity
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Record post-upload artifact identity
+        run: |
+          python scripts/write_capital_pit_artifact_receipt.py             --preupload-identity output/materialization_identity/bundle_identity_preupload.json             --artifact-id "${{ steps.upload_edge1_materialization.outputs.artifact-id }}"             --artifact-digest "${{ steps.upload_edge1_materialization.outputs.artifact-digest }}"             --artifact-url "${{ steps.upload_edge1_materialization.outputs.artifact-url }}"             --workflow-run-id "${GITHUB_RUN_ID}"             --source-commit "${GITHUB_SHA}"             --out output/materialization_identity/artifact_receipt.json
+
+      - name: Upload artifact identity receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: capital-pit-input-materialization-receipt
+          path: output/materialization_identity/artifact_receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Build public private-verifier handoff envelope
+        id: handoff
+        run: |
+          set -euo pipefail
+          mkdir -p handoff/artifact
+          cp -a output/capital_input_qualification handoff/artifact/
+          cp -a output/financing_materialization handoff/artifact/
+          cp -a output/pit_symbol_scope handoff/artifact/
+          cp -a output/pit_evidence_materialization handoff/artifact/
+          cp -a output/materialization_identity handoff/artifact/
+          ASSET="edge1-earnings-evidence-handoff-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz"
+          SHA_ASSET="${ASSET}.sha256"
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner             -czf "handoff/${ASSET}" -C handoff artifact
+          SHA="$(sha256sum "handoff/${ASSET}" | awk '{print $1}')"
+          printf '%s  %s\n' "${SHA}" "${ASSET}" > "handoff/${SHA_ASSET}"
+          echo "asset=${ASSET}" >> "${GITHUB_OUTPUT}"
+          echo "sha_asset=${SHA_ASSET}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=${SHA}" >> "${GITHUB_OUTPUT}"
+          echo "HANDOFF_ASSET=${ASSET}"
+          echo "HANDOFF_SHA256=${SHA}"
+
+      - name: Publish immutable public handoff assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload v4a-stage-bundles-v1             "handoff/${{ steps.handoff.outputs.asset }}"             "handoff/${{ steps.handoff.outputs.sha_asset }}"
+
+      - name: Upload handoff transport receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: edge1-earnings-evidence-handoff-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            handoff/${{ steps.handoff.outputs.sha_asset }}
+            output/edge1_earnings_qualification_diagnostics/result.json
+            output/edge1_earnings_qualification_diagnostics/qualification_overlay.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Print private verifier inputs
+        run: |
+          echo "workflow_name=qualify-capital-inputs"
+          echo "workflow_run_id=${GITHUB_RUN_ID}"
+          echo "source_commit=${GITHUB_SHA}"
+          echo "artifact_id=${{ steps.upload_edge1_materialization.outputs.artifact-id }}"
+          echo "artifact_digest=${{ steps.upload_edge1_materialization.outputs.artifact-digest }}"
+          echo "handoff_asset=${{ steps.handoff.outputs.asset }}"
+          echo "handoff_sha256=${{ steps.handoff.outputs.sha256 }}"
+
