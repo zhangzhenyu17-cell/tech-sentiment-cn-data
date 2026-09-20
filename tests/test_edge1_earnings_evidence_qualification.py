@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
 import pandas as pd
 
-from scripts.apply_edge1_exchange_earnings_qualification import (
-    CLASSIFIER_VERSION,
-    CONTRACT_ID,
-    SOURCES,
-    _negative_events,
-)
-
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts/apply_edge1_exchange_earnings_qualification.py"
+SPEC = importlib.util.spec_from_file_location(
+    "apply_edge1_exchange_earnings_qualification",
+    SCRIPT,
+)
+assert SPEC is not None and SPEC.loader is not None
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+CLASSIFIER_VERSION = MODULE.CLASSIFIER_VERSION
+CONTRACT_ID = MODULE.CONTRACT_ID
+SOURCES = MODULE.SOURCES
+_negative_events = MODULE._negative_events
 CONTRACT = ROOT / "reference/edge1_earnings_evidence_qualification_authorization_v1.json"
 WORKFLOW = ROOT / ".github/workflows/qualify-capital-inputs.yml"
 FINALIZER = ROOT / "scripts/finalize_capital_pit_materialization.py"
