@@ -37,7 +37,7 @@ _AUDIT_REQUIRED = (
 
 def canonicalize_fundamental_state_revision_identity(
     records: pd.DataFrame,
-) -> tuple[pd.DataFrame, tuple[str, ...]]:
+) -> tuple[pd.DataFrame, tuple[str, ...], int]:
     """Drop only byte-semantic duplicate state snapshots for one explicit revision.
 
     A derived FUNDAMENTAL_STATE revision is defined by the existing PIT replay
@@ -50,7 +50,7 @@ def canonicalize_fundamental_state_revision_identity(
     """
 
     if records.empty:
-        return records.copy(), ()
+        return records.copy(), (), 0
     validated = validate_materialized_pit_records(records)
     x = validated.copy()
     x["event_date"] = pd.to_datetime(x["event_date"], errors="raise").dt.normalize()
@@ -60,11 +60,13 @@ def canonicalize_fundamental_state_revision_identity(
 
     duplicate_mask = x.duplicated(list(REVISION_KEY), keep=False)
     if not duplicate_mask.any():
-        return validated.reset_index(drop=True), ()
+        return validated.reset_index(drop=True), (), 0
 
     duplicate_rows = x.loc[duplicate_mask].copy()
     dropped: list[str] = []
+    duplicate_group_count = 0
     for _, group in duplicate_rows.groupby(list(REVISION_KEY), dropna=False, sort=True):
+        duplicate_group_count += 1
         compare_columns = [
             column
             for column in group.columns
@@ -85,13 +87,17 @@ def canonicalize_fundamental_state_revision_identity(
         dropped.extend(ordered.iloc[1:]["evidence_id"].astype(str).tolist())
 
     if not dropped:
-        return validated.reset_index(drop=True), ()
+        return validated.reset_index(drop=True), (), 0
     out = validated[~validated["evidence_id"].astype(str).isin(set(dropped))].copy()
     out = out.sort_values(
         ["evidence_available_date", "source_identity", "entity_id", "evidence_id"],
         kind="mergesort",
     ).reset_index(drop=True)
-    return validate_materialized_pit_records(out), tuple(sorted(dropped))
+    return (
+        validate_materialized_pit_records(out),
+        tuple(sorted(dropped)),
+        duplicate_group_count,
+    )
 
 
 def _rewrite_extended_without_evidence_ids(
@@ -149,6 +155,7 @@ def repair_completed_derived_stage(
     recovery_run_id: int,
     recovery_artifact_id: int,
     recovery_artifact_digest: str,
+    new_source_commit: str,
 ) -> dict[str, object]:
     root = Path(stage_root)
     receipt = root / "receipt.json"
@@ -183,7 +190,7 @@ def repair_completed_derived_stage(
 
     fundamental_path = pit_root / "fundamental_state_evidence.csv"
     fundamental = pd.read_csv(fundamental_path)
-    canonical, dropped = canonicalize_fundamental_state_revision_identity(fundamental)
+    canonical, dropped, duplicate_groups = canonicalize_fundamental_state_revision_identity(fundamental)
     if not dropped:
         raise ValueError("Derived recovery expected redundant fundamental revisions")
     canonical.to_csv(fundamental_path, index=False)
@@ -229,6 +236,7 @@ def repair_completed_derived_stage(
         target_states.eq("DATA_INSUFFICIENT").sum()
     )
 
+    manifest["source_commit"] = str(new_source_commit)
     manifest["pit_audit"] = audit
     manifest["fundamental_state_contract"] = fundamental_contract
     manifest["fundamental_coverage"] = fundamental_coverage
@@ -238,8 +246,9 @@ def repair_completed_derived_stage(
         "recovery_artifact_id": int(recovery_artifact_id),
         "recovery_artifact_digest": str(recovery_artifact_digest),
         "source_stage_receipt_sha256": expected_receipt_sha256,
-        "duplicate_revision_groups": int(len(dropped)),
+        "duplicate_revision_groups": int(duplicate_groups),
         "dropped_redundant_rows": int(len(dropped)),
+        "new_source_commit": str(new_source_commit),
         "retention_rule": "EARLIEST_EVIDENCE_AVAILABLE_DATE_FOR_IDENTICAL_REVISION_PAYLOAD",
         "conflicting_revision_payloads_allowed": False,
         "qualified_state_rows_removed": 0,
