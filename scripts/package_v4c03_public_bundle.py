@@ -21,6 +21,7 @@ PRODUCER_FILES = (
     "data/reference/chinext50_anchor_2026-06-15.csv",
     "data/reference/v4c03_chinext50_adjustments_2021h2_2026.csv",
     "scripts/materialize_v4c03_phase_a_public_universe.py",
+    "scripts/assemble_v4c03_phase_a_public_bundle.py",
     "scripts/package_v4c03_public_bundle.py",
     "src/tech_sentiment/data_akshare.py",
     "src/tech_sentiment/index_history.py",
@@ -99,8 +100,8 @@ def main() -> int:
     if not receipt_path.is_file():
         raise FileNotFoundError("V4C-03 Phase A receipt missing")
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    if receipt.get("status") != "PUBLIC_PIT_UNIVERSE_AND_PRICES_MATERIALIZED":
-        raise ValueError("V4C-03 Phase A receipt status mismatch")
+    if receipt.get("status") != "PUBLIC_PHASE_A_ASSEMBLED":
+        raise ValueError("V4C-03 Phase A assembly receipt status mismatch")
     if receipt.get("start_date") != PHASE_START or receipt.get("end_date") != PHASE_END:
         raise ValueError("V4C-03 Phase A receipt window mismatch")
     if receipt.get("public_only") is not True:
