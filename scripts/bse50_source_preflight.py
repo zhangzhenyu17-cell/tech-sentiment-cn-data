@@ -73,7 +73,10 @@ def main() -> int:
     ]
     session = requests.Session()
     seed_records: list[dict[str, object]] = []
-    notice_urls: set[str] = {sources["initial_sample_notice_url"]}
+    notice_urls: set[str] = {
+        sources["initial_sample_notice_url"],
+        "https://www.bse.cn/bse_indices_news/200013968.html",
+    }
 
     for url in seed_urls:
         response = _get(session, url)
@@ -95,9 +98,22 @@ def main() -> int:
         )
 
     qualified: list[dict[str, object]] = []
-    for url in sorted(notice_urls):
+    visited: set[str] = set()
+    queue = list(sorted(notice_urls))
+    max_chain_pages = 64
+    while queue and len(visited) < max_chain_pages:
+        url = queue.pop(0)
+        if url in visited:
+            continue
+        visited.add(url)
         response = _get(session, url)
         text = response.text
+
+        linked_notices = discover_notice_links(text, base_url=url)
+        for linked in linked_notices:
+            if linked not in visited and linked not in queue:
+                queue.append(linked)
+
         if "北证50" not in text and "899050" not in text:
             continue
         try:
@@ -107,7 +123,10 @@ def main() -> int:
                 effective_date = "2022-11-21"
             else:
                 continue
+
         attachments = discover_attachment_links(text, base_url=url)
+        if url != sources["initial_sample_notice_url"] and not attachments:
+            continue
         qualified.append(
             {
                 "url": url,
@@ -126,6 +145,7 @@ def main() -> int:
         "qualified_notices": qualified,
         "distinct_effective_dates": dates,
         "distinct_effective_date_count": len(dates),
+        "visited_notice_pages": len(visited),
         "minimum_final_snapshot_count": contract["discovery"]["minimum_distinct_effective_snapshots"],
         "qualification_granted": False,
         "forward_outcomes_read": False,
