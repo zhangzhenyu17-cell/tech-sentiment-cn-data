@@ -13,13 +13,13 @@
   "failure_class": "PROVIDER_TRANSPORT_OR_PROTOCOL",
   "execution_class": "SSE_OFFICIAL_ATTACHMENT_TRANSPORT",
   "normalized_failure_signature": "official filing attachment returned HTML instead of PDF after allowed transport fallbacks",
-  "root_cause_status": "VERIFIED",
+  "root_cause_status": "VERIFIED_REVISED_BY_LIVE_PREFLIGHT",
   "verified_root_cause": {
-    "defect": "SSE query API relative listed-announcement paths were historically bound to www.sse.com.cn, while SSE full-text PDF delivery uses static.sse.com.cn for the exact same /disclosure/listedinfo/announcement/c/new/...pdf path.",
-    "observed_runtime_effect": "All 93 SSE earnings forecast documents returned HTML instead of PDF on the historical www.sse.com.cn transport path; all 539 SZSE documents were accounted for as direction or unclassified.",
-    "identity_preservation": "Canonical evidence URL remains the historical www.sse.com.cn URL; only retrieval_url may use static.sse.com.cn with the exact same path inside the same SSE provider family.",
+    "defect": "The frozen public evidence keeps historical www.sse.com.cn canonical URLs for SSE listed-announcement relative paths. For the current SSE evidence class (688xxx STAR market), hosted-runner retrieval must use the official star.sse.com.cn HTTPS host with the exact same /disclosure/listedinfo/announcement/c/new/...pdf path; both historical www and the attempted static host return HTML for representative documents.",
+    "observed_runtime_effect": "Run 35526212480 failed all 93 SSE documents after scanning the full set. The subsequent v2 live preflight run 35529072508 failed both SSE representatives (688005.SH, 688819.SH) before scale-out while both SZSE representatives passed.",
+    "identity_preservation": "Canonical evidence URL remains the frozen historical www.sse.com.cn URL; only retrieval_url may use star.sse.com.cn with the exact same path inside the same SSE provider family.",
     "no_search_or_substitution": true,
-    "replacement_run_validation_status": "PENDING_LIVE_PREFLIGHT"
+    "replacement_run_validation_status": "PENDING_STAR_LIVE_PREFLIGHT"
   },
   "known_evidence": {
     "eligible_documents": 632,
@@ -60,16 +60,18 @@
     "public_private_boundary_changed": false
   },
   "corrective_action": {
-    "transport_fix": "Derive an allowlisted same-provider static.sse.com.cn retrieval candidate only for exact SSE listed-company /disclosure/listedinfo/announcement/c/new/*.pdf paths.",
-    "browser_fallback": "Prefer the exact static-host same-path candidate before retrying the historical www-host candidate.",
+    "transport_fix": "For exact SSE listed-company /disclosure/listedinfo/announcement/c/new/*.pdf paths whose filename begins 688xxx, derive an allowlisted same-provider star.sse.com.cn retrieval candidate with the exact same path and query.",
+    "candidate_order": "For 688xxx use STAR exact-same-path candidate before static and historical www transport; all remain inside the SSE provider family.",
     "content_class_guard": "Require decoded document bytes to have PDF magic before returning to semantic parsers.",
+    "preflight_observability": "Always include the canonical input URL in live-preflight output even when materialization fails before provenance is emitted.",
     "canonical_identity_changed": false,
     "evidence_semantics_changed": false
   },
   "regression_tests": [
-    "test_sse_listed_attachment_static_fallback_preserves_exact_path",
-    "test_sse_html_canonical_uses_same_provider_static_exact_path_before_browser",
-    "test_sse_static_fallback_html_still_reaches_same_provider_browser"
+    "test_sse_star_attachment_fallback_only_for_688_exact_same_path",
+    "test_sse_star_same_path_precedes_static_for_688_html_canonical",
+    "test_star_sse_host_is_same_provider_and_allowlisted",
+    "test_non_pdf_binary_after_allowed_fallbacks_fails_before_semantic_parser"
   ],
   "closeout": {
     "root_cause_verified": true,
@@ -80,5 +82,16 @@
     "replacement_live_preflight_passed": false,
     "replacement_full_run_result": null,
     "status": "OPEN"
+  },
+  "root_cause_revision": {
+    "prior_diagnosis": "static.sse.com.cn exact-same-path would be the sufficient SSE retrieval transport",
+    "disconfirming_run_id": 35529072508,
+    "disconfirming_evidence": "Two representative SSE documents (688005.SH and 688819.SH) still returned HTML in live hosted-runner preflight after the static-host repair, while both SZSE representatives passed.",
+    "revised_root_cause": "Historical www.sse.com.cn canonical identities for 688xxx STAR-market listed announcements need a same-provider STAR HTTPS retrieval candidate at star.sse.com.cn with the exact same path. static.sse.com.cn is not sufficient for this execution class on the hosted runner.",
+    "official_https_evidence_examples": [
+      "https://star.sse.com.cn/disclosure/listedinfo/announcement/c/new/2022-04-08/688005_20220408_1_lj9AnvdY.pdf",
+      "https://star.sse.com.cn/disclosure/listedinfo/announcement/c/new/2022-07-13/688005_20220713_2_K1QBewPr.pdf"
+    ],
+    "canonical_identity_unchanged": true
   }
 }

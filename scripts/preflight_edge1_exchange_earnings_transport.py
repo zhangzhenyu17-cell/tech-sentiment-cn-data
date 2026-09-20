@@ -79,6 +79,7 @@ def run_live_preflight(issuer: pd.DataFrame) -> dict[str, object]:
             "source_identity": str(row["source_identity"]),
             "entity_id": str(row["entity_id"]),
             "document_id": str(row["document_id"]),
+            "canonical_document_url": str(row.get("source_url_identity") or ""),
             "status": status,
             "direction_rows": int(len(result.evidence)),
             "unclassified_rows": int(len(result.unclassified)),

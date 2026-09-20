@@ -54,6 +54,7 @@ _OFFICIAL_ATTACHMENT_HOSTS = {
     "www.cninfo.com.cn",
     "www.sse.com.cn",
     "static.sse.com.cn",
+    "star.sse.com.cn",
     "disc.static.szse.cn",
     "www.szse.cn",
 }
@@ -153,7 +154,7 @@ class DownloadedOfficialDocument:
 
 _OFFICIAL_PROVIDER_HOST_FAMILIES = {
     "CNINFO": {"static.cninfo.com.cn", "www.cninfo.com.cn"},
-    "SSE": {"www.sse.com.cn", "static.sse.com.cn"},
+    "SSE": {"www.sse.com.cn", "static.sse.com.cn", "star.sse.com.cn"},
     "SZSE": {"www.szse.cn", "disc.static.szse.cn"},
 }
 
@@ -236,6 +237,29 @@ _SSE_LISTED_ATTACHMENT_RE = re.compile(
     r"^/disclosure/listedinfo/announcement/c/new/.+\.pdf$",
     re.IGNORECASE,
 )
+
+
+def _sse_star_attachment_fallback(url: str) -> str | None:
+    """Map one exact STAR-market listed PDF path to SSE's STAR HTTPS host.
+
+    Historical public evidence keeps the canonical www.sse.com.cn identity.
+    For 688xxx listed-company announcement PDFs, SSE's STAR disclosure site
+    serves the exact same path over HTTPS. Only the host changes; path, query
+    and document filename remain byte-for-byte identical.
+    """
+
+    parsed = urlparse(str(url).strip())
+    host = (parsed.hostname or "").lower()
+    if (
+        parsed.scheme != "https"
+        or host not in {"www.sse.com.cn", "static.sse.com.cn"}
+        or _SSE_LISTED_ATTACHMENT_RE.fullmatch(parsed.path) is None
+    ):
+        return None
+    filename = parsed.path.rsplit("/", 1)[-1]
+    if re.match(r"^688\d{3}_", filename, flags=re.IGNORECASE) is None:
+        return None
+    return parsed._replace(netloc="star.sse.com.cn").geturl()
 
 
 def _sse_static_attachment_fallback(url: str) -> str | None:
@@ -460,8 +484,11 @@ def _download_exchange_attachment_with_browser_transport(
     }
 
     candidates: list[str] = []
+    star_fallback = _sse_star_attachment_fallback(canonical_url)
+    if star_fallback is not None:
+        candidates.append(star_fallback)
     static_fallback = _sse_static_attachment_fallback(canonical_url)
-    if static_fallback is not None:
+    if static_fallback is not None and static_fallback not in candidates:
         candidates.append(static_fallback)
     candidates.append(canonical_url)
 
@@ -617,12 +644,19 @@ def download_official_document(
     provider_family = _official_provider_family(canonical_host)
 
     if _looks_like_html(document_content) and provider_family == "SSE":
+        same_provider_candidates: list[tuple[str, str]] = []
+        star_fallback = _sse_star_attachment_fallback(url)
+        if star_fallback is not None:
+            same_provider_candidates.append(("same_provider_star", star_fallback))
         static_fallback = _sse_static_attachment_fallback(url)
         if static_fallback is not None:
+            same_provider_candidates.append(("same_provider_static", static_fallback))
+
+        for candidate_method, candidate_url in same_provider_candidates:
             try:
                 fallback_content = call_with_bounded_network_retry(
-                    lambda: _download_once(
-                        static_fallback,
+                    lambda candidate_url=candidate_url: _download_once(
+                        candidate_url,
                         timeout=timeout,
                         opener=opener,
                     ),
@@ -632,19 +666,20 @@ def download_official_document(
                 fallback_document, fallback_encoding = _decode_official_transport_body(
                     fallback_content
                 )
-                if not _looks_like_html(fallback_document):
-                    _validate_same_provider_retrieval(url, static_fallback)
+                if _looks_like_pdf(fallback_document):
+                    _validate_same_provider_retrieval(url, candidate_url)
                     content = fallback_content
-                    retrieval_url = static_fallback
-                    transport_method = "same_provider_static"
+                    retrieval_url = candidate_url
+                    transport_method = candidate_method
                     transport_sha256 = sha256(content).hexdigest()
                     document_content = fallback_document
                     transport_encoding = fallback_encoding
+                    break
             except Exception:
                 # Browser transport below remains the final same-provider
-                # fallback. The static host attempt does not weaken fail-closed
-                # behavior or substitute a different document identity.
-                pass
+                # fallback. A failed candidate never changes evidence identity
+                # or weakens fail-closed behavior.
+                continue
 
     if _looks_like_html(document_content) and provider_family in {"SSE", "SZSE"}:
         content, retrieval_url = _download_exchange_attachment_with_browser_transport(
