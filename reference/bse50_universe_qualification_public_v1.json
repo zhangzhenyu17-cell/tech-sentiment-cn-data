@@ -1,0 +1,62 @@
+{
+  "contract_id": "bse50_universe_qualification_public_v1",
+  "schema_version": 1,
+  "status": "FROZEN_PUBLIC_DATA_SCOPE",
+  "authorization_date": "2026-09-21",
+  "purpose": "Materialize public-only official BSE50 point-in-time membership and price rails for an explicitly authorized new-universe qualification study. No private model semantics or forward outcomes are computed here.",
+  "universe": "BSE50",
+  "index_code": "899050",
+  "index_name": "北证50成份指数",
+  "history_start": "2022-11-21",
+  "history_end": "2026-09-18",
+  "expected_constituents": 50,
+  "limit_pct": 30.0,
+  "official_sources": {
+    "notice_index_url": "https://www.bse.cn/bse_index/notice.html",
+    "initial_sample_notice_url": "https://www.bse.cn/important_news/200013611.html",
+    "historical_index_notice_url": "https://www.bse.cn/bse_indices_news/200013831.html?flag=bse_bz50",
+    "current_index_page_url": "https://www.bse.cn/market_data/bse_indices/bse_bz50.html",
+    "allowed_hosts": ["www.bse.cn", "bse.cn"]
+  },
+  "discovery": {
+    "required_title_tokens": ["北证50", "样本"],
+    "allowed_notice_path_prefixes": ["/bse_indices_news/", "/important_news/"],
+    "require_effective_date": true,
+    "require_exact_50_sample_codes": true,
+    "require_contiguous_membership_from_start_to_end": true,
+    "include_temporary_adjustments": true,
+    "minimum_distinct_effective_snapshots": 16
+  },
+  "price_rails": {
+    "constituent_adjustment": "qfq",
+    "constituent_providers": ["tencent", "eastmoney"],
+    "minimum_symbol_coverage": 0.95,
+    "official_index_required": true,
+    "official_index_code": "899050"
+  },
+  "code_mapping": {
+    "official_mapping_url": "https://www.bse.cn/service/code_mapping.html",
+    "require_historical_alias_normalization": true,
+    "canonical_code_policy": "preserve point-in-time security identity and map provider aliases without changing effective-date membership"
+  },
+  "public_boundary": {
+    "private_model_semantics_allowed": false,
+    "portfolio_or_holdings_data_allowed": false,
+    "forward_result_computation_allowed": false,
+    "private_evidence_allowed": false,
+    "automatic_trigger_allowed": false,
+    "production_or_trading_authority_changed": false
+  },
+  "outputs_allowlist": [
+    "BSE50/universe_point_in_time.csv",
+    "BSE50/universe_snapshots_audit.csv",
+    "BSE50/prices.csv",
+    "BSE50/download_errors.csv",
+    "BSE50/index_prices.csv",
+    "BSE50/source_notices.csv",
+    "BSE50/source_attachments.csv",
+    "BSE50/code_mapping.csv",
+    "receipt.json",
+    "manifest.json"
+  ]
+}
