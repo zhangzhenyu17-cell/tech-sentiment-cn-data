@@ -646,6 +646,17 @@ def main() -> None:
         earnings_negative = _earnings_down_events(earnings_evidence)
         fundamental_coverage = fundamental.coverage
         fundamental_summary = fundamental.summary
+        fundamental_summary["state_records"] = int(len(fundamental_evidence))
+        fundamental_summary["qualified_state_records"] = int(
+            fundamental_evidence["availability_state"].astype(str).eq(
+                "HISTORICAL_RECONSTRUCTABLE"
+            ).sum()
+        ) if len(fundamental_evidence) else 0
+        fundamental_summary["data_insufficient_records"] = int(
+            fundamental_evidence["availability_state"].astype(str).eq(
+                "DATA_INSUFFICIENT"
+            ).sum()
+        ) if len(fundamental_evidence) else 0
         if checkpoint_root is not None and checkpoint_state is not None:
             phase_root = checkpoint_root / "fundamental"
             _write_frame(phase_root / "versioned_filing_facts.csv", facts)
