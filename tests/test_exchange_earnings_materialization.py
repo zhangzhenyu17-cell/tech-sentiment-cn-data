@@ -71,6 +71,8 @@ def test_exchange_bridge_preserves_registered_source_and_frozen_classifier() -> 
             "document_url": url,
             "document_retrieval_url": url,
             "document_sha256": ("a" if "sse" in url else "b") * 64,
+            "transport_sha256": ("c" if "sse" in url else "d") * 64,
+            "transport_encoding": "gzip",
             "text": texts[url],
         }
 
@@ -92,6 +94,9 @@ def test_exchange_bridge_preserves_registered_source_and_frozen_classifier() -> 
         assert provenance["source_identity_inherited_not_new_evidence_source"] is True
         assert provenance["source_archive_refetch"] is False
         assert provenance["future_prices_or_returns_used"] is False
+        assert provenance["transport_encoding"] == "gzip"
+        assert len(provenance["transport_sha256"]) == 64
+        assert provenance["transport_sha256"] != provenance["document_sha256"]
 
     assert directions == {"688001.SH": "DOWN", "300001.SZ": "UP"}
     assert result.summary["formal_bundle_integration_performed"] is False
