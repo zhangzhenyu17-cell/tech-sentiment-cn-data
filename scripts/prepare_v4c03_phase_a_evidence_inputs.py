@@ -12,6 +12,15 @@ SAMPLE_START = pd.Timestamp("2021-06-15")
 END = pd.Timestamp("2021-12-31")
 
 
+def _market_for_symbol(symbol: str) -> str:
+    code = str(symbol).strip().zfill(6)
+    if code.startswith(("688", "689")):
+        return "SH"
+    if code.startswith(("300", "301", "302")):
+        return "SZ"
+    raise ValueError(f"unsupported V4C-03 frozen-scope symbol market: {symbol}")
+
+
 def _read_csv(path: Path, **kwargs: object) -> pd.DataFrame:
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -93,6 +102,7 @@ def main() -> int:
     if not symbols:
         raise ValueError("Phase A symbol scope is empty")
     symbol_frame = pd.DataFrame({"symbol": symbols})
+    symbol_frame["market"] = symbol_frame["symbol"].map(_market_for_symbol)
 
     out = args.out_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
