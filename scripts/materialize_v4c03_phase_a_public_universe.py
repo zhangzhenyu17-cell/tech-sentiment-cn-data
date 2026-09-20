@@ -197,8 +197,12 @@ def main() -> int:
 
     repo_root = args.contract.resolve().parents[1]
     contract = json.loads(args.contract.read_text(encoding="utf-8"))
-    if contract.get("contract_id") != "v4c03_phase_a_public_universe_v1":
-        raise ValueError("unexpected V4C-03 public Phase A contract")
+    allowed_contracts = {
+        "v4c03_phase_a_public_universe_v1",
+        "v4c03_phase_a_warmup_public_universe_v1",
+    }
+    if contract.get("contract_id") not in allowed_contracts:
+        raise ValueError("unexpected V4C-03 public data contract")
     if contract.get("status") != "FROZEN_PUBLIC_DATA_SCOPE":
         raise ValueError("V4C-03 public Phase A contract is not frozen")
     for key in (
@@ -257,7 +261,8 @@ def main() -> int:
         "schema_version": "v4c03-phase-a-public-universe-receipt-v1",
         "status": "PUBLIC_PIT_UNIVERSE_AND_PRICES_MATERIALIZED",
         "source_commit": args.source_commit,
-        "phase": "A",
+        "phase": str(contract.get("phase") or "A"),
+        "sample_eligibility": bool(contract.get("sample_eligibility", True)),
         "universe": universe,
         "start_date": start.date().isoformat(),
         "end_date": end.date().isoformat(),
