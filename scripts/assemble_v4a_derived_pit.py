@@ -913,7 +913,7 @@ def main() -> None:
         "schema_version": "v4a-derived-revision-identity-canonicalization-v1",
         "duplicate_revision_groups": int(duplicate_fundamental_revision_groups),
         "dropped_redundant_rows": int(len(dropped_fundamental_revision_ids)),
-        "retention_rule": "EARLIEST_EVIDENCE_AVAILABLE_DATE_FOR_IDENTICAL_REVISION_PAYLOAD",
+        "retention_rule": "EARLIEST_EVIDENCE_AVAILABLE_DATE_FOR_IDENTICAL_DATA_INSUFFICIENT_REVISION_PAYLOAD",
         "conflicting_revision_payloads_allowed": False,
         "qualified_state_rows_removed": 0,
         "evidence_source_eligibility_changed": False,
