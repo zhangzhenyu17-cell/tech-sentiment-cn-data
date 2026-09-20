@@ -1,0 +1,94 @@
+{
+  "contract_id": "v4c03_phase_a_pit_evidence_v1",
+  "contract_version": 1,
+  "status": "FROZEN_PUBLIC_DATA_SCOPE",
+  "date": "2026-09-20",
+  "purpose": "Materialize public-only point-in-time evidence and capital rails needed to assign frozen V4-C Context/Cause semantics for the authorized V4C-03 Phase A sample without reading forward outcomes.",
+  "evidence_window": {
+    "start_date": "2021-01-04",
+    "end_date": "2021-12-31",
+    "reason": "Provide non-sample warm-up for capital rolling state, valuation T-20 references, and as-of evidence state before the 2021-06-15 sample boundary."
+  },
+  "sample_window": {
+    "start_date": "2021-06-15",
+    "end_date": "2021-12-31"
+  },
+  "pre_sample_evidence_rows_sample_eligible": false,
+  "public_inputs": {
+    "phase_a": {
+      "release_tag": "v4c03-public-data-v1",
+      "asset_base": "v4c03-phase-a-public-universe-20210615-20211231-1efba23d88af6d86505b",
+      "archive_sha256": "23868e45cb77b117eea761e0bcc92ac2908ee7bbcf5b5094459dc87c3bea2ad5",
+      "manifest_sha256": "5c594b79e3b6a3d9579f54c4a0ee468a39c574ddf6bcf285f9d9d2c74a938565",
+      "bundle_identity": "8713ba348104973c3fe206da09511aa7a220363a18d5d47a7e251e36160c8abc",
+      "source_commit": "90cdc261f912c0ebc440d8839bc5231e26de8472"
+    },
+    "warmup": {
+      "release_tag": "v4c03-public-data-v1",
+      "asset_base": "v4c03-phase-a-warmup-public-universe-20210104-20210614-d4a8dd45915531f24af3",
+      "archive_sha256": "b7f718a6554b210e9e92403f94d6767c583f0c81967879ede73a0b79d3790781",
+      "manifest_sha256": "6442c8b5274570f22f44130b3ca65acd1e65b1ff777819faef4c617d656ccac8",
+      "bundle_identity": "ffccc7ffd3d5e2aff8a6fe74c4ed4b76603835646ffe7994a57a49cd508a97e7",
+      "source_commit": "bfc14419d5d9e876cb45d6b7910a17273869af7c"
+    }
+  },
+  "frozen_symbol_scope": "Union of symbols present in the exact Phase A public bundle; no new universe and no symbol search.",
+  "public_materialization": {
+    "issuer_sources": [
+      "CNINFO_ANNOUNCEMENT_ARCHIVE",
+      "SSE_ANNOUNCEMENT_ARCHIVE",
+      "SZSE_ANNOUNCEMENT_ARCHIVE"
+    ],
+    "fundamental_contract": "reference/v4a_fundamental_pit_state_contract_v1.json",
+    "earnings_direction": "existing deterministic V4-A earnings materializer",
+    "valuation": "existing trailing valuation PIT materializer with exact real-trading-date T-20 reference",
+    "policy": "existing official CSRC policy/regulatory materializer",
+    "stock_prices": "existing unadjusted PIT stock-price materializer",
+    "broad_market_turnover": "SSE_SZSE_A_SHARES",
+    "star50_etf_fund_code": "588000",
+    "chinext50_etf_fund_code": "159915",
+    "star50_etf_source": "SSE_ETF_SCALE_DAILY",
+    "chinext50_etf_source": "SZSE_ETF_SCALE_DAILY"
+  },
+  "workflow_semantics": {
+    "manual_only": true,
+    "independent_reusable_work_units": true,
+    "failed_work_unit_only_rerun_preferred": true,
+    "provider_refetch_allowed_only_for_missing_v4c03_public_evidence_work_units": true,
+    "existing_successful_phase_a_or_warmup_bundle_rerun_forbidden": true
+  },
+  "final_bundle": {
+    "release_tag": "v4c03-public-evidence-v1",
+    "immutable": true,
+    "contains": [
+      "exact Phase A sample membership/prices/index rails",
+      "derived PIT evidence",
+      "capital raw/coverage rails",
+      "lineage receipts"
+    ]
+  },
+  "forbidden": [
+    "forward return calculation",
+    "MAE or MFE calculation",
+    "forward max drawdown calculation",
+    "false-bottom evaluation",
+    "false-top evaluation",
+    "post-warning recovery/failure outcome classification",
+    "Context/Cause definition change",
+    "threshold change",
+    "parameter search",
+    "feature search",
+    "ML",
+    "new universe",
+    "portfolio or holdings data",
+    "private evidence or research results",
+    "Production promotion",
+    "trading authority change"
+  ],
+  "private_model_semantics_allowed": false,
+  "portfolio_or_holdings_data_allowed": false,
+  "forward_result_computation_allowed": false,
+  "automatic_trigger_allowed": false,
+  "evidence_qualification_semantics_changed": false,
+  "production_or_trading_authority_changed": false
+}
