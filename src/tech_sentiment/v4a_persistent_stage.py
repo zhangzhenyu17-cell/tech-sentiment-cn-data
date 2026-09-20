@@ -180,6 +180,8 @@ PROGRESS_IDENTITY_SCHEMA = "v4a-engineering-progress-v1"
 _PROGRESS_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
     "capital": ("scripts/qualify_capital_inputs.py",),
     "financing": ("scripts/materialize_financing_history.py",),
+    "fundamental": ("scripts/materialize_v4a_fundamental_earnings_shard.py",),
+    "issuer_aggregate": ("scripts/aggregate_v4a_issuer_shards.py",),
     "issuer_cninfo": ("scripts/materialize_pit_evidence.py",),
     "issuer_sse": ("scripts/materialize_pit_evidence.py",),
     "issuer_szse": (
@@ -191,6 +193,7 @@ _PROGRESS_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
     "derived": ("scripts/assemble_v4a_derived_pit.py",),
 }
 _PROGRESS_EXTRA_FILES: dict[str, tuple[str, ...]] = {
+    "fundamental": ("reference/v4a_fundamental_pit_state_contract_v1.json",),
     "issuer_szse": ("reference/v4a_szse_security_code_migration_contract_v1.json",),
     "derived": ("reference/v4a_fundamental_pit_state_contract_v1.json",),
 }
