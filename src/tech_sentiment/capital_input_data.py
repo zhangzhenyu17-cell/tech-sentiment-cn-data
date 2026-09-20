@@ -496,7 +496,14 @@ def _sse_historical_turnover_payload_frame(payload: object) -> pd.DataFrame:
         raise ValueError(
             f"SSE historical turnover response missing fields: {sorted(missing)}"
         )
-    frame["PRODUCT_TYPE"] = (\n        frame["PRODUCT_TYPE"].astype(str).str.replace(r"\\.0$", "", regex=True)\n    )\n    frame["TX_AMOUNT"] = pd.to_numeric(\n        frame["TX_AMOUNT"].astype(str).str.replace(",", "", regex=False),\n        errors="coerce",\n    )\n    main_a = frame.loc[frame["PRODUCT_TYPE"].eq("1"), "TX_AMOUNT"]
+    frame["PRODUCT_TYPE"] = (
+        frame["PRODUCT_TYPE"].astype(str).str.replace(r"\.0$", "", regex=True)
+    )
+    frame["TX_AMOUNT"] = pd.to_numeric(
+        frame["TX_AMOUNT"].astype(str).str.replace(",", "", regex=False),
+        errors="coerce",
+    )
+    main_a = frame.loc[frame["PRODUCT_TYPE"].eq("1"), "TX_AMOUNT"]
     star = frame.loc[frame["PRODUCT_TYPE"].eq("43"), "TX_AMOUNT"]
     if len(main_a) != 1 or len(star) != 1:
         raise ValueError(
