@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT_PATH = ROOT / "reference" / "long_running_engineering_execution_contract_v1.json"
+CONTRACT_PATH = ROOT / "reference" / "long_running_engineering_execution_contract_v2.json"
 PROTOCOL_PATH = ROOT / "docs" / "long_running_engineering_execution_protocol.md"
 RUN_PLAN_PATH = ROOT / "docs" / "templates" / "long_running_run_plan.md"
 FUNDAMENTAL_WORKFLOW = ROOT / ".github" / "workflows" / "v4a-fundamental-earnings.yml"
@@ -19,7 +19,7 @@ def _contract() -> dict[str, object]:
 
 def test_long_running_engineering_contract_is_frozen_and_boundary_preserving() -> None:
     payload = _contract()
-    assert payload["schema_version"] == "long-running-engineering-execution-contract-v1"
+    assert payload["schema_version"] == "long-running-engineering-execution-contract-v2"
     assert payload["status"] == "FROZEN_ENGINEERING_DEFAULT"
 
     scope = payload["scope"]
@@ -52,6 +52,13 @@ def test_long_running_engineering_contract_is_frozen_and_boundary_preserving() -
         "resume_effectiveness_requires_runtime_counters",
         "post_success_producer_identity_freeze_required",
         "stage_success_distinct_from_pipeline_qualification",
+        "three_layer_preflight_required_after_data_path_change",
+        "representative_production_execution_classes_required",
+        "content_class_checked_before_semantic_parser",
+        "repeated_deterministic_failure_circuit_breaker_required",
+        "progress_heartbeat_required_for_long_steps",
+        "throughput_eta_refresh_required",
+        "phase_isolation_required",
     ):
         assert defaults[key] is True
 
@@ -304,3 +311,95 @@ def test_fundamental_success_closeout_records_handoff_and_freeze_window() -> Non
     assert "Before dispatching `v4a-09-derived`" in runbook
     assert "Do not automatically rerun Fundamental" in runbook
     assert "HISTORICAL_DATA_QUALIFIED" in runbook
+
+
+def test_v2_decomposition_preflight_and_heartbeat_defaults_are_frozen() -> None:
+    payload = _contract()
+
+    decomposition = payload["decomposition"]
+    assert decomposition["estimated_wall_clock_minutes_trigger"] == 30
+    assert decomposition["independent_network_or_document_items_trigger"] == 200
+    assert decomposition["target_max_recomputation_loss_minutes"] == 15
+    assert decomposition["preferred_work_units_min"] == 8
+    assert decomposition["preferred_work_units_max"] == 16
+    assert decomposition["default_provider_max_parallel"] == 4
+    assert decomposition["provider_concurrency_must_remain_bounded"] is True
+    assert decomposition["six_hour_monolith_requires_explicit_run_plan_exception"] is True
+    assert decomposition["p95_unit_duration_should_be_below_half_timeout"] is True
+    assert decomposition["missing_unit_never_valid_empty"] is True
+
+    preflight = payload["preflight"]
+    for key in (
+        "layer_1_code_and_contract",
+        "layer_2_live_provider_transport_and_content",
+        "layer_3_representative_production_execution_class",
+        "reuse_exact_production_selector",
+        "reuse_exact_transport_stack",
+        "provider_family_coverage_required",
+        "gzip_decoded_before_file_parser",
+        "html_or_waf_classified_as_transport_failure",
+        "redirect_must_remain_same_provider_family",
+        "document_magic_checked_before_semantic_parser",
+        "synthetic_test_alone_insufficient_after_hosted_runner_transport_change",
+    ):
+        assert preflight[key] is True
+
+    breaker = payload["circuit_breaker"]
+    for key in (
+        "required_for_repeated_hard_failures",
+        "normalized_failure_signature_required",
+        "provider_or_execution_class_scope_required",
+        "threshold_frozen_in_run_plan",
+        "does_not_convert_failure_to_empty_valid_data",
+        "diagnostics_preserved_before_stop",
+        "checkpoints_preserved_before_stop_when_possible",
+        "unknown_or_data_insufficient_not_counted_as_transport_failure",
+        "qualification_remains_fail_closed",
+    ):
+        assert breaker[key] is True
+
+    heartbeat = payload["progress_heartbeat"]
+    assert heartbeat["required_if_step_expected_minutes_gte"] == 10
+    assert heartbeat["max_silence_minutes"] == 10
+    for key in (
+        "record_total_planned",
+        "record_resumed_and_executed",
+        "record_success_unclassified_hard_error",
+        "record_elapsed_and_throughput",
+        "record_eta_range",
+        "record_checkpoint_watermark",
+    ):
+        assert heartbeat[key] is True
+
+
+def test_protocol_v2_covers_recent_week_failure_classes() -> None:
+    protocol = PROTOCOL_PATH.read_text(encoding="utf-8")
+    run_plan = RUN_PLAN_PATH.read_text(encoding="utf-8")
+
+    for phrase in (
+        "Protocol version 2 — 2026-09-21",
+        "Three-layer preflight before scale-out",
+        "Decompose before extending timeouts",
+        "Fail fast on repeated deterministic transport/parser signatures",
+        "Progress telemetry is part of correctness",
+        "Two-dimensional recovery",
+        "Version 2 live-provider preflight",
+        "Version 2 circuit breaker",
+        "Version 2 progress heartbeat and ETA",
+        "Version 2 failure-isolation ladder",
+        "gzip-wrapped official PDF bytes",
+        "HTML challenge bodies",
+    ):
+        assert phrase in protocol
+
+    for phrase in (
+        "Decomposition trigger hit (>=30 min or >=200 independent items):",
+        "Target maximum recomputation loss per active runner:",
+        "Six-hour monolith exception reason",
+        "Layer 2 — live provider / transport / content",
+        "HTML/WAF/challenge body classified before PDF/file parser",
+        "Circuit-breaker normalized failure signature:",
+        "Maximum expected silent interval",
+        "## Phase isolation",
+    ):
+        assert phrase in run_plan
