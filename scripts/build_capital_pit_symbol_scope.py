@@ -9,6 +9,11 @@ import pandas as pd
 
 
 DEFAULT_INPUTS = (
+    # 2026-06-16 is an in-window carry-in anchor. It is required because
+    # 688065 entered STAR50 before the 2022 adjustment file begins and only
+    # exited on 2026-09-14. Using the post-exit 2026-09-14 anchor plus
+    # 2022+ adjustments alone silently drops this exact frozen member.
+    ("STAR50", "data/reference/kc50_anchor_2026-06-16.csv", "symbol"),
     ("STAR50", "data/reference/kc50_anchor_2026-09-14.csv", "symbol"),
     ("STAR50", "data/reference/kc50_adjustments_2022_2026.csv", "out_symbol"),
     ("STAR50", "data/reference/kc50_adjustments_2022_2026.csv", "in_symbol"),
@@ -66,7 +71,7 @@ def build_scope(root: Path) -> tuple[pd.DataFrame, dict[str, object]]:
         bad = scope.loc[scope["market"].eq("UNKNOWN"), "symbol"].tolist()
         raise ValueError(f"unknown market symbols in frozen scope: {bad}")
     summary = {
-        "scope_version": "capital-pit-frozen-universe-v1",
+        "scope_version": "capital-pit-frozen-universe-v2",
         "symbols": int(len(scope)),
         "sh_symbols": int(scope["market"].eq("SH").sum()),
         "sz_symbols": int(scope["market"].eq("SZ").sum()),
