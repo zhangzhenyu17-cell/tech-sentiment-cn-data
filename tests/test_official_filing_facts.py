@@ -1161,3 +1161,20 @@ def test_sse_static_fallback_html_still_reaches_same_provider_browser(monkeypatc
     assert downloaded.url == original
     assert downloaded.retrieval_url.startswith("https://static.sse.com.cn/")
     assert downloaded.transport_method == "same_provider_browser"
+
+
+def test_non_pdf_binary_after_allowed_fallbacks_fails_before_semantic_parser(monkeypatch):
+    original = "https://www.sse.com.cn/example.pdf"
+    monkeypatch.setattr(
+        filing_module,
+        "_download_exchange_attachment_with_browser_transport",
+        lambda url, *, timeout: (b"not-a-pdf-binary-body", url),
+    )
+
+    with pytest.raises(ValueError, match="returned non-PDF content"):
+        download_official_document(
+            original,
+            opener=lambda request, timeout: _FakeResponse(
+                b"<html><body>challenge</body></html>"
+            ),
+        )
