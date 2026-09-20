@@ -1,0 +1,101 @@
+{
+  "contract_id": "v4c03_phase_a_turnover_repair_v1",
+  "contract_version": 1,
+  "status": "FROZEN_EXACT_PUBLIC_EVIDENCE_INPUT",
+  "date": "2026-09-20",
+  "purpose": "Repair only the incomplete 2021 SSE+SZSE A-share turnover rail in the successful V4C-03 Phase A public evidence bundle by routing SSE dates through the official historical daily-overview interface while preserving all other evidence bytes and semantics.",
+  "base_public_evidence": {
+    "source_run_id": 35504618971,
+    "workflow_name": "v4c03-04a-phase-a-pit-evidence-recovery",
+    "source_commit": "c2852749b8fcdcaab6ac3b76ead89d6f5a1baad1",
+    "artifact_id": 10603213711,
+    "artifact_name": "v4c03-phase-a-pit-evidence-recovered-35504618971",
+    "artifact_digest": "sha256:d7e2ea39884fa15ca0acba5a2b1612f628a74a8e6ba8344449ec879378904bef",
+    "release_tag": "v4c03-public-evidence-v1",
+    "asset_base": "v4c03-phase-a-pit-evidence-20210104-20211231-871e6923cc7ebe477fee",
+    "archive_sha256": "2325986f523f2d5ad634522bc9f040e87ea4778bec1639d3a410c2e461c59056",
+    "manifest_sha256": "ec2e59e336682da3622ad790f8b39c1087012e675d243dc64730ff2a16257da5",
+    "bundle_identity": "6ef568d8c84abd98214eaafab028a62da2fceda46b595461e58f06089b05342d",
+    "producer_fingerprint": "bef6678c92fe02c9f27c8d39506bd3dc7440842a039a5641d1fc43753a65303b",
+    "receipt_status": "V4C03_PHASE_A_PUBLIC_EVIDENCE_MATERIALIZED_OUTCOME_BLIND"
+  },
+  "repair_window": {
+    "start_date": "2021-01-04",
+    "end_date": "2021-12-31",
+    "expected_trading_days": 243
+  },
+  "sse_source": {
+    "source_identity": "SSE_DAILY_STOCK_OVERVIEW",
+    "current_page": "https://www.sse.com.cn/market/stockdata/overview/day/",
+    "historical_page": "https://www.sse.com.cn/market/stockdata/overview/day/index_his.shtml",
+    "query_url": "https://query.sse.com.cn/commonQuery.do",
+    "historical_sql_id": "COMMON_SSE_SJ_GPSJ_CJGK_DAYCJGK_C",
+    "historical_cutoff_inclusive": "2021-12-24",
+    "frozen_measure": "主板A成交金额+科创板成交金额",
+    "canonical_unit": "CNY",
+    "source_unit": "100_million_yuan"
+  },
+  "szse_source": {
+    "source_identity": "SZSE_MARKET_OVERVIEW_DAILY",
+    "frozen_measure": "股票成交金额-主板B股成交金额",
+    "canonical_unit": "CNY"
+  },
+  "byte_preservation": {
+    "unchanged_from_base": [
+      "market/",
+      "derived/",
+      "symbols.csv",
+      "trading_calendar.csv",
+      "input_receipt.json",
+      "capital_input_qualification/etf_shares.csv",
+      "capital_input_qualification/etf_share_coverage.csv",
+      "capital_input_qualification/sse_etf_share_errors.csv",
+      "capital_input_qualification/szse_etf_share_errors.csv"
+    ],
+    "pinned_unchanged_sha256": {
+      "capital_input_qualification/etf_shares.csv": "c921b370c59661d4697c03fc26d0d0fe23c4c08f9d55068dbf0bd3f75ea1466a",
+      "capital_input_qualification/etf_share_coverage.csv": "85b557f844c052ca1f0510d88d1205a59f97301f0651b3a9ee63316f5bda899a",
+      "capital_input_qualification/sse_etf_share_errors.csv": "6dbce147db23918cd22b956e3c09912bd6e267d98da1e1cf3a02e70846e289b2",
+      "capital_input_qualification/szse_etf_share_errors.csv": "1ecea44960b8f1b46e6f5a0ece7ed60f5ca9301969171b13732e475afec809d2"
+    }
+  },
+  "success_gate": {
+    "turnover_complete_days": 243,
+    "turnover_expected_days": 243,
+    "turnover_error_rows": 0,
+    "exact_calendar_equality": true,
+    "positive_canonical_amount_every_day": true,
+    "no_interpolation": true,
+    "no_forward_fill": true
+  },
+  "workflow_semantics": {
+    "manual_only": true,
+    "provider_refetch_scope": "TURNOVER_ONLY",
+    "issuer_rerun": false,
+    "fundamental_rerun": false,
+    "price_rerun": false,
+    "policy_rerun": false,
+    "etf_share_rerun": false,
+    "existing_public_evidence_reused": true
+  },
+  "forbidden": [
+    "forward return calculation",
+    "MAE or MFE calculation",
+    "forward max drawdown calculation",
+    "false-bottom evaluation",
+    "false-top evaluation",
+    "Context/Cause/crowding definition change",
+    "parameter or threshold search",
+    "ML",
+    "new universe",
+    "portfolio or holdings data",
+    "private model semantics",
+    "evidence qualification semantics change",
+    "Production promotion",
+    "trading authority change"
+  ],
+  "new_context_outcome_read": false,
+  "research_run": false,
+  "evidence_qualification_semantics_changed": false,
+  "production_or_trading_authority_changed": false
+}
