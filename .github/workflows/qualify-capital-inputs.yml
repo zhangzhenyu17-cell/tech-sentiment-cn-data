@@ -503,6 +503,11 @@ jobs:
           restore-keys: |
             edge1-earnings-v1-
 
+      - name: Live provider/document preflight before earnings scale-out
+        run: |
+          mkdir -p output/edge1_earnings_qualification_diagnostics
+          timeout --signal=TERM --kill-after=1m 10m             python scripts/preflight_edge1_exchange_earnings_transport.py               --artifact-root output               --out output/edge1_earnings_qualification_diagnostics/live_provider_preflight.json
+
       - name: Apply authorized earnings evidence qualification overlay
         id: patch
         continue-on-error: true

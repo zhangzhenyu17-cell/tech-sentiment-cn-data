@@ -1,5 +1,37 @@
 # Long-Running Engineering Execution Protocol
 
+## Protocol version 2 — 2026-09-21
+
+This file remains the single authoritative long-run protocol. Version 2
+supersedes the original 2026-09-19 defaults without weakening any of them.
+
+The latest week of runs added five mandatory controls:
+
+1. **Three-layer preflight before scale-out**: code/contract, live provider
+   transport/content, and representative production execution-class coverage.
+2. **Decompose before extending timeouts**: independent network/document work
+   expected to exceed 30 minutes or roughly 200 items should normally use
+   8–16 deterministic work units with bounded provider parallelism; a six-hour
+   monolith requires an explicit run-plan exception.
+3. **Fail fast on repeated deterministic transport/parser signatures**: repeated
+   gzip/HTML/WAF/parser failures must trip a circuit breaker before hundreds of
+   equivalent documents are attempted. The breaker stops execution; it never
+   reclassifies missing/failed evidence.
+4. **Progress telemetry is part of correctness**: long steps must emit executed,
+   resumed, succeeded, unclassified, hard-failure counts, elapsed time and a
+   throughput-based ETA often enough that a silent 30–60 minute step is treated
+   as an observability defect.
+5. **Two-dimensional recovery**: shard-level durable progress limits
+   recomputation blast radius, while phase separation ensures transport,
+   materialization, qualification, publication and finalization can be repaired
+   without replaying unrelated successful phases.
+
+The machine-readable defaults are frozen in
+`reference/long_running_engineering_execution_contract_v2.json`. The former
+v1 contract is retained only as historical provenance and is not the current
+default.
+
+
 ## Status
 
 This document defines the default engineering operating protocol for long-running,
@@ -545,3 +577,112 @@ architecture work.
 - [V4-A Manual Reusable Stage Runbook](v4a_manual_reusable_stage_runbook.md)
 - [Parallel Execution Architecture](parallel_execution_architecture.md)
 - [Public Data Qualification Runbook](public_data_qualification_runbook.md)
+
+
+## Version 2 decomposition and wall-clock policy
+
+For independent public-data network/document workloads, design for the expected
+critical path before the first expensive run.
+
+Default triggers for decomposition are intentionally conservative:
+
+- estimated end-to-end wall-clock >= 30 minutes; or
+- >= 200 independent provider/document work items; or
+- one work unit can lose more than about 15 minutes of useful work on timeout or
+  cancellation.
+
+When one of those conditions applies, the preferred architecture is:
+
+- 8–16 deterministic reusable work units when cardinality permits;
+- provider-facing max parallelism of 4 by default, lower when the provider
+  contract requires it;
+- independent query/index and document/parser checkpoints;
+- immutable qualified work-unit publication as soon as each unit passes;
+- a separate aggregate/finalizer phase that never silently treats a missing
+  unit as empty.
+
+These are engineering defaults, not evidence semantics. A different partition
+is allowed when the run plan records why the data dependency is genuinely
+non-decomposable or why a lower provider concurrency is safer.
+
+A 360-minute job timeout is a hard safety ceiling. It must not become a design
+target. If the expected p95 work-unit duration approaches half of its timeout,
+decompose or document the exception before launch.
+
+## Version 2 live-provider preflight
+
+After any material transport, parser, source-routing or hosted-runner change,
+the expensive path must first exercise representative production classes using
+the exact production selector and transport stack.
+
+At minimum, the preflight should prove when applicable:
+
+- each provider family can return the expected content class;
+- gzip/HTTP content-encoding is decoded before file parsing;
+- HTML/WAF/challenge bodies are classified as transport failures, not PDF/data
+  absence;
+- redirects stay inside the frozen provider family;
+- document magic/content class is checked before the semantic parser;
+- one representative document from each materially different production
+  execution class succeeds through the same entrypoint used by the full run;
+- diagnostics preserve canonical URL, retrieval URL, transport method,
+  transport hash and decoded document hash.
+
+A synthetic unit test is necessary but not sufficient for hosted-runner
+transport changes.
+
+## Version 2 circuit breaker
+
+Long loops must not repeat a deterministic hard failure across hundreds of
+equivalent items merely to accumulate the same error.
+
+The run plan must define a bounded circuit breaker for repeated hard failures.
+Its exact numeric threshold is workload-specific, but it must:
+
+- use a normalized failure signature and provider/execution class;
+- never convert failure into valid empty data;
+- persist diagnostics and current checkpoints before stopping when possible;
+- distinguish hard transport/parser failures from legitimate UNKNOWN or
+  DATA_INSUFFICIENT semantic results;
+- leave qualification fail closed.
+
+After a circuit breaker fires, repair the failure class and rerun only the
+non-immutable work.
+
+## Version 2 progress heartbeat and ETA
+
+Any single step expected to run longer than 10 minutes should emit a progress
+heartbeat at least every 10 minutes and preferably every bounded batch.
+
+The heartbeat should include when meaningful:
+
+- total planned work items;
+- completed / resumed / newly executed counts;
+- successful / unclassified / hard-error counts;
+- current work unit;
+- elapsed time;
+- observed throughput;
+- estimated remaining wall-clock range;
+- checkpoint save watermark.
+
+After the first representative batch completes, replace the planning estimate
+with observed throughput by execution class.
+
+## Version 2 failure-isolation ladder
+
+Repair at the smallest layer that failed:
+
+`transport -> document decode -> parser -> materialization -> qualification ->
+publication -> aggregate/finalizer -> private intake`.
+
+A later-layer failure must not be used as a reason to replay a completed earlier
+layer when its immutable output is valid.
+
+Recent examples that this ladder is designed to prevent include:
+
+- gzip-wrapped official PDF bytes being misdiagnosed as parser failure;
+- HTML challenge bodies reaching a PDF parser;
+- a one-line gate CLI bug causing otherwise valid materialization to be rerun;
+- a cache compatibility fix suppressing an independent query cache;
+- a successful producer stage being mistaken for final evidence qualification.
+

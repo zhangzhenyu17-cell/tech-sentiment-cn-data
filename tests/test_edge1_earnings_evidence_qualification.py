@@ -141,3 +141,27 @@ def test_finalizer_carries_authorized_overlay_into_public_provenance() -> None:
         '"edge1_earnings_qualification": '
         'pit_summary.get("edge1_earnings_qualification")'
     ) in text
+
+
+def test_incremental_workflow_runs_live_provider_preflight_before_scale_out() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    preflight = text.index("Live provider/document preflight before earnings scale-out")
+    apply = text.index("Apply authorized earnings evidence qualification overlay")
+    save = text.index("Save immutable exchange earnings document checkpoints")
+    assert preflight < apply < save
+    assert "preflight_edge1_exchange_earnings_transport.py" in text
+    assert "timeout --signal=TERM --kill-after=1m 10m" in text
+
+
+def test_bridge_has_progress_heartbeat_and_repeated_hard_failure_circuit_breaker() -> None:
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert "PROGRESS_HEARTBEAT_ITEMS = 25" in text
+    assert "PROGRESS_HEARTBEAT_SECONDS = 300.0" in text
+    assert "HARD_FAILURE_CIRCUIT_BREAKER = 5" in text
+    assert "edge1_earnings_progress" in text
+    assert "throughput_items_per_minute" in text
+    assert "eta_seconds" in text
+    assert "checkpoint_watermark" in text
+    assert "consecutive_same_hard_failures" in text
+    assert "circuit_breaker_tripped" in text
+    assert "qualification remains fail closed" not in text  # no semantic shortcut string path

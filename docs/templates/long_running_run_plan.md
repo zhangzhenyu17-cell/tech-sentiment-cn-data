@@ -23,11 +23,19 @@ execution before launching the expensive run.
 
 ## Execution units
 
+- Estimated independent network/document work items:
+- Estimated wall-clock before decomposition:
+- Decomposition trigger hit (>=30 min or >=200 independent items):
 - Unit count:
 - Partition rule:
+- Why 8–16 preferred units is used or why an exception is safer:
 - Max parallelism:
+- Provider concurrency cap:
 - Expected entities per unit:
+- Target maximum recomputation loss per active runner:
 - Timeout per job:
+- p95 unit duration expected below half timeout:
+- Six-hour monolith exception reason (required if applicable):
 - Expected median unit time:
 - Expected full wall-clock range:
 - Fully resumed unit expected time:
@@ -64,10 +72,31 @@ Explain any deviation:
 
 ## Preflight
 
+### Layer 1 — code / contract
+
 - [ ] public-tree/security audit green
 - [ ] relevant tests green
 - [ ] actual CLI entrypoints tested
+- [ ] workflow-inline guards/resolvers executed in tests when they control expensive work
+
+### Layer 2 — live provider / transport / content
+
 - [ ] representative provider path checked when data-path changed
+- [ ] every provider family represented
+- [ ] exact production transport stack exercised on hosted runner
+- [ ] content encoding decoded before file parser
+- [ ] HTML/WAF/challenge body classified before PDF/file parser
+- [ ] redirect remains inside frozen provider family
+- [ ] canonical URL, retrieval URL, transport method and transport/document hashes captured
+
+### Layer 3 — representative production execution class
+
+- [ ] production eligibility/selector reused exactly
+- [ ] at least one representative from each materially different execution class succeeds
+- [ ] synthetic-only coverage is not treated as sufficient for hosted-runner transport changes
+
+### Restore / persistence
+
 - [ ] cache restore path checked
 - [ ] cache-producing branch/ref recorded
 - [ ] intended recovery ref can read required caches
@@ -78,6 +107,12 @@ Explain any deviation:
 - [ ] immutable publication verification checked when changed
 
 ## Observability
+
+- Progress heartbeat interval:
+- Maximum expected silent interval (must be <=10 minutes for >=10-minute steps):
+- Circuit-breaker normalized failure signature:
+- Circuit-breaker threshold and scope:
+- ETA refresh after first representative batch:
 
 Required counters/fields:
 
@@ -92,6 +127,11 @@ Required counters/fields:
 - readiness:
 - checkpoint save result:
 - immutable publish result:
+- succeeded / unclassified / hard-error counts:
+- elapsed time / observed throughput:
+- ETA range:
+- checkpoint watermark:
+- transport method / content class:
 
 ## Failure matrix
 
@@ -99,10 +139,23 @@ Required counters/fields:
 | --- | --- | --- | --- | --- |
 | deterministic code/orchestration | | | | |
 | transport/protocol | | | | |
+| content encoding/content class (gzip/HTML/WAF) | | | | |
 | parser/layout | | | | |
 | qualification blocker | | | | |
 | performance regression | | | | |
 | publication/aggregation | | | | |
+
+## Phase isolation
+
+Record whether each phase can be rerun independently without replaying valid prior output:
+
+- [ ] preflight
+- [ ] transport/source-index
+- [ ] document/item materialization
+- [ ] qualification gate
+- [ ] immutable publication
+- [ ] aggregate/finalizer
+- [ ] private intake, if applicable
 
 ## Cancellation criteria
 
