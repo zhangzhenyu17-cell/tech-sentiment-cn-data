@@ -1,0 +1,123 @@
+{
+  "contract_id": "v4c03_phase_a_pit_evidence_recovery_v1",
+  "contract_version": 1,
+  "status": "FROZEN_EXACT_REUSE_RECOVERY",
+  "date": "2026-09-20",
+  "purpose": "Recover only the failed final assembly of V4C-03 Phase A PIT evidence by reusing all successful immutable producer artifacts from run 35497119739 and regenerating the corrected frozen symbol scope with explicit market routing.",
+  "failed_run": {
+    "run_id": 35497119739,
+    "workflow": "v4c03-04-phase-a-pit-evidence",
+    "head_sha": "1b177f5cc49ac7dab18e02bd51b89a62c989c89a",
+    "failed_job_id": 106057590745,
+    "failed_step": "Assemble verified public PIT evidence",
+    "root_cause": "prepared symbols.csv omitted required market column for major-negative coverage ledger"
+  },
+  "exact_reused_artifacts": [
+    {
+      "id": 10601197394,
+      "name": "v4c03-phase-a-issuer-cninfo-0-35497119739",
+      "digest": "sha256:8824a0e547d9153326377deee8b73815be7741eafe17da406fb5541d5b129e73"
+    },
+    {
+      "id": 10601382121,
+      "name": "v4c03-phase-a-issuer-cninfo-1-35497119739",
+      "digest": "sha256:386ed00429929f4cc349cee053735de2088603f35ad8f8d93ad795154275ba0a"
+    },
+    {
+      "id": 10600846886,
+      "name": "v4c03-phase-a-issuer-cninfo-2-35497119739",
+      "digest": "sha256:f0670163222a48d7e407dc08149ad223a3a1cf96d60c9b968465aeb4b99dd4af"
+    },
+    {
+      "id": 10601302417,
+      "name": "v4c03-phase-a-issuer-cninfo-3-35497119739",
+      "digest": "sha256:e78abe0ceaaa4c0a50d1507fe94feee1e468d8531ac1f536c3706dd0c88b10d6"
+    },
+    {
+      "id": 10601602051,
+      "name": "v4c03-phase-a-issuer-sse-0-35497119739",
+      "digest": "sha256:e51696df6bf0ed3c7d9449e8f6e0951e2b61a7831d3c59bafa220ab36a197172"
+    },
+    {
+      "id": 10600913033,
+      "name": "v4c03-phase-a-issuer-szse-0-35497119739",
+      "digest": "sha256:b847999de4b904be3c683e847ee25e816d43849202736a77837d26baf25b7480"
+    },
+    {
+      "id": 10602139694,
+      "name": "v4c03-phase-a-fundamental-0-35497119739",
+      "digest": "sha256:b338ac0054873441da92d4db0e05c2bb2c4fc9677528c399a854a9f49d890708"
+    },
+    {
+      "id": 10602364876,
+      "name": "v4c03-phase-a-fundamental-1-35497119739",
+      "digest": "sha256:ef2b9941e04d5221741ef531da1b5822c85021717f31b7e71f41226b44f7ab11"
+    },
+    {
+      "id": 10602472356,
+      "name": "v4c03-phase-a-fundamental-2-35497119739",
+      "digest": "sha256:d55a1258361a3fcb2c1083bbae6f3211f6d569044792a9b8a88ddf3ab7f1f188"
+    },
+    {
+      "id": 10603011339,
+      "name": "v4c03-phase-a-fundamental-3-35497119739",
+      "digest": "sha256:cdd768159ae74fc702c93a88279c7f4916285f111475270457d688c8533082d2"
+    },
+    {
+      "id": 10600607089,
+      "name": "v4c03-phase-a-prices-0-35497119739",
+      "digest": "sha256:76001a078bdb8fcca8feb53763db7d7a3370859964ecb682c310e5b000590093"
+    },
+    {
+      "id": 10601051834,
+      "name": "v4c03-phase-a-prices-1-35497119739",
+      "digest": "sha256:e61f80cb3473899a482d43761daa30f1d0623bb255370a44eeac1980a314bf16"
+    },
+    {
+      "id": 10600622939,
+      "name": "v4c03-phase-a-prices-2-35497119739",
+      "digest": "sha256:5e01cb5ac206686c2fb31b6fa93fca184f99b7e717dc38e833d0739416d662fd"
+    },
+    {
+      "id": 10601455729,
+      "name": "v4c03-phase-a-prices-3-35497119739",
+      "digest": "sha256:74b29edeba799fd41852688472109a0cc0687151982867d7c4d35ae4dda70948"
+    },
+    {
+      "id": 10600751649,
+      "name": "v4c03-phase-a-policy-35497119739",
+      "digest": "sha256:e854cccf53087e95b2ec9aff37fb65718016d2a517861349fd21c36765224f5b"
+    },
+    {
+      "id": 10601633056,
+      "name": "v4c03-phase-a-capital-35497119739",
+      "digest": "sha256:60bc88f8520914d2a981a5c0a8d11d9100d62667746a22830a6a2237535c665d"
+    }
+  ],
+  "immutable_market_inputs": {
+    "phase_a_bundle_identity": "8713ba348104973c3fe206da09511aa7a220363a18d5d47a7e251e36160c8abc",
+    "warmup_bundle_identity": "ffccc7ffd3d5e2aff8a6fe74c4ed4b76603835646ffe7994a57a49cd508a97e7"
+  },
+  "allowed_operations": [
+    "regenerate evidence input scope from existing immutable public market bundles",
+    "verify and download exact successful artifacts from failed run",
+    "aggregate issuer artifacts",
+    "assemble derived PIT evidence",
+    "finalize public-only evidence",
+    "package and publish immutable public evidence bundle"
+  ],
+  "forbidden": [
+    "provider refetch for issuer/fundamental/prices/policy/capital",
+    "rerun successful producer work units",
+    "forward outcome computation",
+    "parameter or threshold search",
+    "private model semantics",
+    "portfolio or holdings data",
+    "evidence qualification semantics change",
+    "production or trading authority change"
+  ],
+  "new_context_outcome_read": false,
+  "outcome_columns_materialized": false,
+  "research_result_present": false,
+  "production_or_trading_authority_changed": false
+}
