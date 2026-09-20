@@ -526,7 +526,7 @@ def main() -> None:
         fundamental_coverage_summary = dict(phase_meta["fundamental_coverage_summary"])
         earnings_complete = bool(phase_meta["earnings_complete"])
         earnings_state = str(phase_meta["earnings_state"])
-        fundamental_evidence, dropped_fundamental_revision_ids = (
+        fundamental_evidence, dropped_fundamental_revision_ids, duplicate_fundamental_revision_groups = (
             canonicalize_fundamental_state_revision_identity(fundamental_evidence)
         )
         fundamental_state, fundamental_coverage_summary = _fundamental_readiness(
@@ -603,7 +603,7 @@ def main() -> None:
             target_end_date=target_end,
         )
         fundamental_evidence = _canonicalize_provenance(fundamental.evidence)
-        fundamental_evidence, dropped_fundamental_revision_ids = (
+        fundamental_evidence, dropped_fundamental_revision_ids, duplicate_fundamental_revision_groups = (
             canonicalize_fundamental_state_revision_identity(fundamental_evidence)
         )
         fundamental_state, fundamental_coverage_summary = _fundamental_readiness(
@@ -911,7 +911,7 @@ def main() -> None:
 
     revision_identity_canonicalization = {
         "schema_version": "v4a-derived-revision-identity-canonicalization-v1",
-        "duplicate_revision_groups": int(len(dropped_fundamental_revision_ids)),
+        "duplicate_revision_groups": int(duplicate_fundamental_revision_groups),
         "dropped_redundant_rows": int(len(dropped_fundamental_revision_ids)),
         "retention_rule": "EARLIEST_EVIDENCE_AVAILABLE_DATE_FOR_IDENTICAL_REVISION_PAYLOAD",
         "conflicting_revision_payloads_allowed": False,
