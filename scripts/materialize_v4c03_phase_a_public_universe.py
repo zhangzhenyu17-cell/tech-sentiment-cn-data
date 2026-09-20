@@ -194,6 +194,7 @@ def main() -> int:
     )
     parser.add_argument("--contract", type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--universe", choices=("STAR50", "ChiNext50"), required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
     args = parser.parse_args()
 
@@ -218,35 +219,25 @@ def main() -> int:
     out_root = args.out_dir.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    memberships: dict[str, pd.DataFrame] = {}
-    summaries: dict[str, object] = {}
-    files: list[dict[str, object]] = []
-    for universe in ("STAR50", "ChiNext50"):
-        membership, summary, universe_files = _materialize_universe(
-            repo_root=repo_root,
-            out_root=out_root,
-            universe=universe,
-            config=contract["universes"][universe],
-            start=start,
-            end=end,
-        )
-        memberships[universe] = membership
-        summaries[universe] = summary
-        files.extend(universe_files)
-
-    symbol_scopes: dict[str, set[str]] = {}
-    for universe, membership in memberships.items():
-        for symbol in membership["symbol"].astype(str).str.zfill(6):
-            symbol_scopes.setdefault(symbol, set()).add(universe)
-    scope_rows = [
-        {
-            "symbol": symbol,
-            "market": "SH" if symbol.startswith(("6", "9")) else "SZ",
-            "historical_scope": ";".join(sorted(scopes)),
-        }
-        for symbol, scopes in sorted(symbol_scopes.items())
-    ]
-    scope = pd.DataFrame(scope_rows)
+    universe = args.universe
+    membership, summary, files = _materialize_universe(
+        repo_root=repo_root,
+        out_root=out_root,
+        universe=universe,
+        config=contract["universes"][universe],
+        start=start,
+        end=end,
+    )
+    scope = pd.DataFrame(
+        [
+            {
+                "symbol": symbol,
+                "market": "SH" if symbol.startswith(("6", "9")) else "SZ",
+                "historical_scope": universe,
+            }
+            for symbol in sorted(membership["symbol"].astype(str).str.zfill(6).unique())
+        ]
+    )
     files.append(
         _write_frame(
             scope,
@@ -270,9 +261,10 @@ def main() -> int:
         "status": "PUBLIC_PIT_UNIVERSE_AND_PRICES_MATERIALIZED",
         "source_commit": args.source_commit,
         "phase": "A",
+        "universe": universe,
         "start_date": start.date().isoformat(),
         "end_date": end.date().isoformat(),
-        "universes": summaries,
+        "universes": {universe: summary},
         "symbol_scope": {
             "symbols": int(len(scope)),
             "sh_symbols": int(scope["market"].eq("SH").sum()),
