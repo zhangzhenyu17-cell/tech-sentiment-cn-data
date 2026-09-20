@@ -1,0 +1,183 @@
+name: v4c03-04b-phase-a-turnover-repair
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v4c03-04b-phase-a-turnover-repair
+  cancel-in-progress: false
+
+jobs:
+  turnover-repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: python -m pip install -e ".[data,dev]"
+
+      - name: Verify frozen turnover-repair contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          c=json.loads(Path("reference/v4c03_phase_a_turnover_repair_v1.json").read_text())
+          assert c["status"] == "FROZEN_EXACT_PUBLIC_EVIDENCE_INPUT"
+          assert c["workflow_semantics"]["manual_only"] is True
+          assert c["workflow_semantics"]["provider_refetch_scope"] == "TURNOVER_ONLY"
+          assert c["workflow_semantics"]["issuer_rerun"] is False
+          assert c["workflow_semantics"]["fundamental_rerun"] is False
+          assert c["workflow_semantics"]["price_rerun"] is False
+          assert c["workflow_semantics"]["policy_rerun"] is False
+          assert c["workflow_semantics"]["etf_share_rerun"] is False
+          assert c["new_context_outcome_read"] is False
+          assert c["research_run"] is False
+          assert c["evidence_qualification_semantics_changed"] is False
+          assert c["production_or_trading_authority_changed"] is False
+          PY
+
+      - name: Download exact immutable base public evidence bundle
+        run: |
+          set -euo pipefail
+          mkdir -p input/release input/base
+          python - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+
+          c=json.loads(Path("reference/v4c03_phase_a_turnover_repair_v1.json").read_text())
+          x=c["base_public_evidence"]
+          base=x["asset_base"]
+          url=f"https://github.com/{x['public_repository'] if 'public_repository' in x else 'zhangzhenyu17-cell/tech-sentiment-cn-data'}/releases/download/{x['release_tag']}"
+          archive=Path("input/release")/f"{base}.tar.gz"
+          manifest=Path("input/release")/f"{base}.manifest.json"
+          subprocess.check_call(["curl","--fail","--location","--retry","3","-o",str(archive),f"{url}/{base}.tar.gz"])
+          subprocess.check_call(["curl","--fail","--location","--retry","3","-o",str(manifest),f"{url}/{base}.manifest.json"])
+
+          def sha(path):
+              h=hashlib.sha256()
+              with path.open("rb") as f:
+                  for chunk in iter(lambda:f.read(1024*1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          assert sha(archive) == x["archive_sha256"]
+          assert sha(manifest) == x["manifest_sha256"]
+          m=json.loads(manifest.read_text())
+          assert m["bundle_identity"] == x["bundle_identity"]
+          assert m["producer_fingerprint"] == x["producer_fingerprint"]
+          assert m["source_commit"] == x["source_commit"]
+          assert m["asset_base"] == x["asset_base"]
+          assert m["archive_sha256"] == x["archive_sha256"]
+          assert m["public_only"] is True
+          assert m["new_context_outcome_read"] is False
+          assert m["outcome_columns_materialized"] is False
+          PY
+          tar -xzf "input/release/v4c03-phase-a-pit-evidence-20210104-20211231-871e6923cc7ebe477fee.tar.gz" -C input/base
+
+      - name: Run turnover repair boundary tests
+        run: |
+          python scripts/audit_public_tree.py
+          python -m compileall -q src scripts
+          pytest -q             tests/test_capital_input_data.py             tests/test_v4c03_phase_a_turnover_repair.py
+
+      - name: Repair exact 2021 turnover rail only
+        run: |
+          python scripts/repair_v4c03_phase_a_turnover.py             --base-evidence-dir input/base             --source-commit "$GITHUB_SHA"             --out-dir stage/capital
+
+      - name: Assert repaired turnover is exact and ETF bytes were preserved
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          r=json.loads(Path("stage/capital/receipt.json").read_text())
+          assert r["status"] == "V4C03_PUBLIC_CAPITAL_TURNOVER_REPAIRED"
+          assert r["turnover_complete_days"] == 243
+          assert r["turnover_expected_days"] == 243
+          assert r["turnover_error_rows"] == 0
+          assert r["provider_refetch_scope"] == "TURNOVER_ONLY"
+          assert r["etf_share_provider_refetch"] is False
+          for key in (
+              "issuer_provider_refetch","fundamental_provider_refetch",
+              "price_provider_refetch","policy_provider_refetch",
+              "new_context_outcome_read","new_context_forward_outcomes_read",
+              "outcome_columns_materialized","real_outcome_study_executed",
+              "parameter_search_run","feature_search_run","threshold_search_run",
+              "ml_run","context_or_cause_semantics_changed","universe_changed",
+              "evidence_qualification_semantics_changed",
+              "production_authority_changed","trading_authority_changed",
+          ):
+              assert r[key] is False, key
+          x=pd.read_csv("stage/capital/sse_szse_a_share_turnover.csv")
+          assert len(x) == 243
+          assert pd.to_numeric(x["amount"], errors="raise").gt(0).all()
+          assert pd.read_csv("stage/capital/sse_szse_turnover_errors.csv").empty
+          PY
+
+      - name: Reconstruct immutable finalizer inputs without changing market or derived evidence
+        run: |
+          mkdir -p stage/inputs
+          cp input/base/symbols.csv stage/inputs/symbols.csv
+          cp input/base/trading_calendar.csv stage/inputs/trading_calendar.csv
+          cp input/base/input_receipt.json stage/inputs/receipt.json
+          cp -a input/base/market stage/inputs/market
+
+      - name: Finalize repaired public-only evidence
+        run: |
+          python scripts/finalize_v4c03_phase_a_evidence.py             --inputs-dir stage/inputs             --derived-dir input/base/derived/pit_evidence_materialization             --capital-dir stage/capital             --source-commit "$GITHUB_SHA"             --out-dir stage/final
+          cp reference/v4c03_phase_a_turnover_repair_v1.json             stage/final/v4c03_phase_a_turnover_repair_lineage.json
+
+      - name: Assert final evidence remains outcome blind
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          r=json.loads(Path("stage/final/receipt.json").read_text())
+          assert r["status"] == "V4C03_PHASE_A_PUBLIC_EVIDENCE_MATERIALIZED_OUTCOME_BLIND"
+          assert r["capital_readiness"]["turnover_complete_days"] == 243
+          assert r["capital_readiness"]["turnover_expected_days"] == 243
+          assert r["capital_readiness"]["turnover_error_rows"] == 0
+          assert r["public_only"] is True
+          for key in (
+              "private_model_semantics_present","portfolio_or_holdings_data_present",
+              "new_context_outcome_read","new_context_forward_outcomes_read",
+              "outcome_columns_materialized","real_outcome_study_executed",
+              "parameter_search_run","feature_search_run","threshold_search_run",
+              "ml_run","context_or_cause_semantics_changed","universe_changed",
+              "evidence_qualification_semantics_changed","score_mapping_changed",
+              "production_authority_changed","trading_authority_changed",
+          ):
+              assert r[key] is False, key
+          PY
+
+      - name: Package immutable repaired public evidence bundle
+        run: |
+          mkdir -p dist
+          python scripts/package_v4c03_phase_a_evidence_bundle.py             --stage-root stage/final             --contract reference/v4c03_phase_a_pit_evidence_v1.json             --source-commit "$GITHUB_SHA"             --out-dir dist             --out dist/package.json
+
+      - name: Publish immutable repaired public evidence bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BASE="$(python -c 'import json; print(json.load(open("dist/package.json"))["asset_base"])')"
+          bash scripts/publish_v4c03_public_bundle.sh v4c03-public-evidence-v1 dist "$BASE"
+
+      - name: Upload convenient 90-day repaired public evidence bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4c03-phase-a-pit-evidence-turnover-repaired-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90

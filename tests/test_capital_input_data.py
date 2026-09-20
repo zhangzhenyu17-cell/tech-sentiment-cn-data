@@ -4,6 +4,10 @@ from tech_sentiment.capital_input_data import (
     SSE_ETF_SCALE_QUERY_URL,
     SSE_ETF_SCALE_SOA_QUERY_URL,
     SSE_ETF_SHARE_SOURCE_URL,
+    SSE_TURNOVER_HISTORICAL_SQL_ID,
+    SSE_TURNOVER_QUERY_URL,
+    _fetch_sse_historical_daily_overview,
+    _sse_historical_turnover_payload_frame,
     _fetch_sse_etf_scale_direct,
     _sse_etf_scale_payload_frame,
     combine_sse_szse_a_share_turnover,
@@ -413,3 +417,64 @@ def test_turnover_fetcher_retries_transient_transport_failure():
     assert calls == 2
     assert result.errors.empty
     assert len(result.combined) == 1
+
+
+def test_sse_historical_turnover_payload_maps_main_a_and_star_trade_amount():
+    payload = {
+        "result": [
+            {"PRODUCT_TYPE": "1", "TX_AMOUNT": "3713.66"},
+            {"PRODUCT_TYPE": "2", "TX_AMOUNT": "1.36"},
+            {"PRODUCT_TYPE": "43", "TX_AMOUNT": "378.23"},
+            {"PRODUCT_TYPE": "40", "TX_AMOUNT": "4093.25"},
+        ]
+    }
+    frame = _sse_historical_turnover_payload_frame(payload)
+    assert frame.to_dict("records") == [
+        {"单日情况": "成交金额", "主板A": 3713.66, "科创板": 378.23}
+    ]
+    normalized = normalize_sse_a_share_turnover(
+        frame, observation_date="2021-12-23"
+    )
+    assert normalized["sse_a_share_turnover_yuan"] == (
+        3713.66 + 378.23
+    ) * 100_000_000.0
+
+
+def test_sse_historical_turnover_fetch_uses_official_historical_sql_contract():
+    seen = {}
+
+    class FakeResponse:
+        url = SSE_TURNOVER_QUERY_URL
+        text = ""
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "result": [
+                    {"PRODUCT_TYPE": "1", "TX_AMOUNT": "3000.0"},
+                    {"PRODUCT_TYPE": "43", "TX_AMOUNT": "400.0"},
+                ]
+            }
+
+    def fake_get(url, **kwargs):
+        seen["url"] = url
+        seen["params"] = kwargs["params"]
+        seen["headers"] = kwargs["headers"]
+        return FakeResponse()
+
+    frame = _fetch_sse_historical_daily_overview(
+        "20211223",
+        plain_get=fake_get,
+    )
+    assert seen["url"] == SSE_TURNOVER_QUERY_URL
+    assert seen["params"] == {
+        "searchDate": "2021-12-23",
+        "sqlId": SSE_TURNOVER_HISTORICAL_SQL_ID,
+        "stockType": "90",
+    }
+    assert "index_his.shtml" in seen["headers"]["Referer"]
+    assert frame.loc[0, "主板A"] == 3000.0
+    assert frame.loc[0, "科创板"] == 400.0
+    assert frame.attrs["historical_sql_id"] == SSE_TURNOVER_HISTORICAL_SQL_ID
