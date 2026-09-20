@@ -686,3 +686,51 @@ Recent examples that this ladder is designed to prevent include:
 - a cache compatibility fix suppressing an independent query cache;
 - a successful producer stage being mistaken for final evidence qualification.
 
+
+
+## Mandatory failure-learning loop
+
+Every failed or timed-out GitHub run materially related to an active engineering
+task must create a durable **Failure Lesson Receipt**. A later green run does not
+close the failure by itself.
+
+The first receipt may use:
+
+`root_cause_status = PENDING_ROOT_CAUSE`
+
+when diagnosis is incomplete. After repair it must be finalized with exactly one
+protocol decision:
+
+- `PROTOCOL_CHANGE_REQUIRED`; or
+- `NO_PROTOCOL_CHANGE_NEEDED`, with an explicit reason.
+
+The receipt records at minimum:
+
+- repo / workflow / run id / attempt / branch-ref / exact SHA;
+- failed job and step;
+- elapsed time;
+- normalized failure signature and failure class;
+- verified root cause;
+- why current preflight/test/guard missed it;
+- durable progress and immutable outputs preserved;
+- work recomputed and avoidable runner waste;
+- mechanical corrective action;
+- exact regression test;
+- smallest rerun scope;
+- protocol/runbook/guard decision;
+- explicit research/evidence/Production/trading boundary status.
+
+Repeated failures with the same normalized signature, provider execution class,
+workflow phase, or missing guard are class-wide engineering defects. The
+corrective action must escalate from a local patch to a generalized prevention
+mechanism when repetition proves a pattern.
+
+Failure lessons are persisted in GitHub, not left only in chat/log context.
+Prefer immutable run-keyed receipts plus an append-only index/ledger.
+
+A deterministic failure is not fully closed until the exact failure path has
+regression coverage and the Failure Lesson Receipt is finalized.
+
+This learning loop is engineering governance only. It does not authorize changes
+to evidence eligibility, PIT/no-lookahead rules, research scope, model behavior,
+Production, trading authority, or the public/private security boundary.
