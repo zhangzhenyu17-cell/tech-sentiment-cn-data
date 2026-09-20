@@ -1,0 +1,56 @@
+{
+  "schema_version": "engineering-failure-lesson-v1",
+  "status": "OPEN",
+  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "workflow": "qualify-capital-inputs",
+  "run_id": 35526212480,
+  "run_attempt": 1,
+  "branch_ref": "main",
+  "source_sha": "0c7a42cde0f11ce782d39cfa249105b6ba15eae5",
+  "conclusion": "failure",
+  "failed_job": "edge1_earnings_qualification",
+  "failed_step": "Fail closed on bridge/materialization error",
+  "failure_class": "PROVIDER_TRANSPORT_OR_PROTOCOL",
+  "execution_class": "SSE_OFFICIAL_ATTACHMENT_TRANSPORT",
+  "normalized_failure_signature": "official filing attachment returned HTML instead of PDF after allowed transport fallbacks",
+  "root_cause_status": "PENDING_ROOT_CAUSE",
+  "verified_root_cause": null,
+  "known_evidence": {
+    "eligible_documents": 632,
+    "resumed_documents": 413,
+    "newly_executed_successfully": 126,
+    "hard_error_documents": 93,
+    "direction_documents": 273,
+    "unclassified_documents": 266,
+    "szse_documents_accounted_for": 539,
+    "inferred_all_93_errors_are_sse_provider_class": true
+  },
+  "lesson": {
+    "preflight_gap": "Full scale-out was allowed before exact live SSE/SZSE representative-document transport validation.",
+    "waste_pattern": "A provider-class deterministic blocker was discovered only after the full document loop.",
+    "persistence_value": "Per-document immutable checkpoints preserved 413 prior documents and 126 newly successful documents.",
+    "generalized_prevention": [
+      "three-layer live provider/document preflight before scale-out",
+      "normalized repeated-hard-failure circuit breaker",
+      "progress heartbeat with executed/resumed/error counters and ETA"
+    ]
+  },
+  "protocol_decision": "PROTOCOL_CHANGE_REQUIRED",
+  "protocol_changes": [
+    "long-running engineering execution protocol v2 failure-learning loop",
+    "live provider/document preflight",
+    "repeated hard-failure circuit breaker",
+    "automatic failure capture issue workflow"
+  ],
+  "regression_status": "ENGINEERING_GUARDS_ADDED",
+  "smallest_next_rerun_scope": "SSE representative live transport preflight before any full 632-document scale-out",
+  "boundaries": {
+    "research_scope_changed": false,
+    "evidence_qualification_changed": false,
+    "model_threshold_signal_changed": false,
+    "outcome_read": false,
+    "production_changed": false,
+    "trading_authority_changed": false,
+    "public_private_boundary_changed": false
+  }
+}

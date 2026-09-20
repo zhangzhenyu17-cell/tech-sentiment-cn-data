@@ -222,5 +222,54 @@
     "pre_downstream_upstream_identity_preflight_required": true,
     "do_not_auto_rerun_upstream_on_identity_mismatch": true,
     "inspect_producer_drift_before_recomputation": true
+  },
+  "failure_learning": {
+    "mandatory_after_failure_or_timeout": true,
+    "later_green_run_alone_does_not_close_failure": true,
+    "initial_root_cause_status": "PENDING_ROOT_CAUSE",
+    "finalized_protocol_decisions": [
+      "PROTOCOL_CHANGE_REQUIRED",
+      "NO_PROTOCOL_CHANGE_NEEDED"
+    ],
+    "receipt_requires_run_identity": true,
+    "receipt_requires_failed_job_and_step": true,
+    "receipt_requires_elapsed_time": true,
+    "receipt_requires_normalized_failure_signature": true,
+    "receipt_requires_failure_class": true,
+    "receipt_requires_verified_root_cause": true,
+    "receipt_requires_missed_preflight_explanation": true,
+    "receipt_requires_persistence_and_recompute_accounting": true,
+    "receipt_requires_corrective_action": true,
+    "receipt_requires_exact_regression_test": true,
+    "receipt_requires_smallest_rerun_scope": true,
+    "receipt_requires_protocol_decision": true,
+    "receipt_requires_boundary_statement": true,
+    "repeated_signature_requires_class_wide_escalation": true,
+    "durable_github_persistence_required": true,
+    "chat_only_record_is_insufficient": true,
+    "failure_close_requires_finalized_receipt": true,
+    "automatic_capture": {
+      "workflow": ".github/workflows/engineering-failure-capture.yml",
+      "trigger": "workflow_run",
+      "explicitly_user_authorized": true,
+      "monitored_workflows_are_explicitly_enumerated": true,
+      "completion_types": [
+        "completed"
+      ],
+      "conclusions": [
+        "failure",
+        "timed_out",
+        "action_required"
+      ],
+      "writes": "github_issue_first_pass_receipt",
+      "root_cause_guessing_forbidden": true,
+      "initial_root_cause_status": "PENDING_ROOT_CAUSE",
+      "checkout_triggering_code": false,
+      "artifact_read": false,
+      "secrets_read": false,
+      "actions_metadata_read_only": true,
+      "issues_write_only": true,
+      "self_trigger_excluded": true
+    }
   }
 }

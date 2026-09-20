@@ -403,3 +403,82 @@ def test_protocol_v2_covers_recent_week_failure_classes() -> None:
         "## Phase isolation",
     ):
         assert phrase in run_plan
+
+
+def test_failure_learning_loop_is_mandatory_and_machine_frozen() -> None:
+    payload = _contract()
+    learning = payload["failure_learning"]
+    assert learning["mandatory_after_failure_or_timeout"] is True
+    assert learning["later_green_run_alone_does_not_close_failure"] is True
+    assert learning["initial_root_cause_status"] == "PENDING_ROOT_CAUSE"
+    assert learning["finalized_protocol_decisions"] == [
+        "PROTOCOL_CHANGE_REQUIRED",
+        "NO_PROTOCOL_CHANGE_NEEDED",
+    ]
+    for key in (
+        "receipt_requires_run_identity",
+        "receipt_requires_failed_job_and_step",
+        "receipt_requires_elapsed_time",
+        "receipt_requires_normalized_failure_signature",
+        "receipt_requires_failure_class",
+        "receipt_requires_verified_root_cause",
+        "receipt_requires_missed_preflight_explanation",
+        "receipt_requires_persistence_and_recompute_accounting",
+        "receipt_requires_corrective_action",
+        "receipt_requires_exact_regression_test",
+        "receipt_requires_smallest_rerun_scope",
+        "receipt_requires_protocol_decision",
+        "receipt_requires_boundary_statement",
+        "repeated_signature_requires_class_wide_escalation",
+        "durable_github_persistence_required",
+        "chat_only_record_is_insufficient",
+        "failure_close_requires_finalized_receipt",
+    ):
+        assert learning[key] is True
+
+    protocol = PROTOCOL_PATH.read_text(encoding="utf-8")
+    for phrase in (
+        "Mandatory failure-learning loop",
+        "Failure Lesson Receipt",
+        "PENDING_ROOT_CAUSE",
+        "PROTOCOL_CHANGE_REQUIRED",
+        "NO_PROTOCOL_CHANGE_NEEDED",
+        "class-wide engineering defects",
+        "persisted in GitHub",
+    ):
+        assert phrase in protocol
+
+
+def test_automatic_failure_capture_is_narrow_and_non_recursive() -> None:
+    payload = _contract()
+    capture = payload["failure_learning"]["automatic_capture"]
+    assert capture["workflow"] == ".github/workflows/engineering-failure-capture.yml"
+    assert capture["trigger"] == "workflow_run"
+    assert capture["explicitly_user_authorized"] is True
+    assert capture["monitored_workflows_are_explicitly_enumerated"] is True
+    assert capture["completion_types"] == ["completed"]
+    assert capture["conclusions"] == ["failure", "timed_out", "action_required"]
+    assert capture["writes"] == "github_issue_first_pass_receipt"
+    assert capture["root_cause_guessing_forbidden"] is True
+    assert capture["initial_root_cause_status"] == "PENDING_ROOT_CAUSE"
+    assert capture["checkout_triggering_code"] is False
+    assert capture["artifact_read"] is False
+    assert capture["secrets_read"] is False
+    assert capture["actions_metadata_read_only"] is True
+    assert capture["issues_write_only"] is True
+    assert capture["self_trigger_excluded"] is True
+
+    workflow = (ROOT / ".github" / "workflows" / "engineering-failure-capture.yml").read_text(
+        encoding="utf-8"
+    )
+    assert workflow.startswith("name: engineering-failure-capture\n")
+    assert "workflow_run:" in workflow
+    assert "types: [completed]" in workflow
+    assert "issues: write" in workflow
+    assert "actions: read" in workflow
+    assert "contents: read" in workflow
+    assert "actions/checkout" not in workflow
+    assert "secrets." not in workflow
+    assert "PENDING_ROOT_CAUSE" in workflow
+    trigger = workflow.split("permissions:", 1)[0]
+    assert '"engineering-failure-capture"' not in trigger

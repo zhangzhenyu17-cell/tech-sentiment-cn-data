@@ -185,6 +185,22 @@ After cancelling, verify actual save outcomes before the replacement run.
 - Physical cleanup deferred until downstream handoff:
 - Stage success explicitly distinguished from final pipeline qualification:
 
+## Failure-learning closeout
+
+For every failed/timed-out predecessor run relevant to this execution:
+
+- Failure Lesson Receipt path:
+- Root-cause status:
+- Normalized failure signature:
+- Why prior preflight/test/guard missed it:
+- Durable progress preserved:
+- Recomputation/waste:
+- Exact regression test:
+- Protocol decision: `PROTOCOL_CHANGE_REQUIRED | NO_PROTOCOL_CHANGE_NEEDED`
+- Generalized protocol/runbook/guard change:
+- Boundary statement:
+- Lesson closeout status:
+
 ## Acceptance
 
 - [ ] all required units accounted for
@@ -197,4 +213,5 @@ After cancelling, verify actual save outcomes before the replacement run.
 - [ ] downstream producer-identity freeze window declared where applicable
 - [ ] no unauthorized boundary change
 - [ ] known limitations recorded
+- [ ] every relevant predecessor failure has a finalized Failure Lesson Receipt
 - [ ] stop condition reached

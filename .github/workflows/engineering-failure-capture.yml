@@ -1,0 +1,143 @@
+name: engineering-failure-capture
+
+on:
+  workflow_run:
+    workflows:
+      - "publish-market-bundle"
+      - "qualify-931152-oos-inputs"
+      - "qualify-capital-inputs"
+      - "tests"
+      - "v4a-01-shared-inputs"
+      - "v4a-02-capital"
+      - "v4a-03-financing"
+      - "v4a-04-issuer-source"
+      - "v4a-04b-issuer-szse-migration"
+      - "v4a-05-issuer-aggregate"
+      - "v4a-06-fundamental-earnings"
+      - "v4a-07-prices"
+      - "v4a-08-policy"
+      - "v4a-09-derived"
+      - "v4c03-01-phase-a-public-universe"
+      - "v4c03-02-phase-a-warmup"
+      - "v4c03-04-phase-a-pit-evidence"
+      - "v4c03-04a-phase-a-pit-evidence-recovery"
+      - "v4c03-04b-phase-a-turnover-repair"
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  capture:
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'failure' ||
+          github.event.workflow_run.conclusion == 'timed_out' ||
+          github.event.workflow_run.conclusion == 'action_required' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Create first-pass Failure Lesson Receipt issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const response = await github.rest.actions.listJobsForWorkflowRun({
+              owner,
+              repo,
+              run_id: run.id,
+              per_page: 100,
+              filter: "latest",
+            });
+            const failedJobs = response.data.jobs.filter(job =>
+              ["failure", "timed_out", "action_required"].includes(job.conclusion)
+            );
+            const failedSteps = [];
+            for (const job of failedJobs) {
+              for (const step of (job.steps || [])) {
+                if (["failure", "timed_out", "action_required"].includes(step.conclusion)) {
+                  failedSteps.push(job.name + " :: " + step.name);
+                }
+              }
+            }
+
+            const attempt = run.run_attempt || 1;
+            const marker = "<!-- failure-lesson:" + run.id + ":" + attempt + " -->";
+            const title = "[Failure Lesson] " + run.name + " run " + run.id + " attempt " + attempt;
+            const query = "repo:" + owner + "/" + repo + " is:issue in:title \"" + title.replace(/"/g, "") + "\"";
+            const found = await github.rest.search.issuesAndPullRequests({ q: query });
+            if (found.data.total_count > 0) {
+              core.info("Failure Lesson issue already exists for run " + run.id + " attempt " + attempt);
+              return;
+            }
+
+            const started = run.run_started_at || run.created_at || "unknown";
+            const completed = run.updated_at || "unknown";
+            const jobLines = failedJobs.length
+              ? failedJobs.map(job => "- " + job.name + ": " + job.conclusion).join("\n")
+              : "- No failed job metadata returned; inspect run directly.";
+            const stepLines = failedSteps.length
+              ? failedSteps.map(step => "- " + step).join("\n")
+              : "- No failed step metadata returned; inspect run directly.";
+
+            const body = [
+              marker,
+              "# Automatic Failure Lesson Receipt — first pass",
+              "",
+              "This issue was created automatically by the engineering failure-learning loop.",
+              "It is a first-pass capture, not a guessed root-cause conclusion.",
+              "",
+              "## Identity",
+              "",
+              "- Repository: " + owner + "/" + repo,
+              "- Workflow: " + run.name,
+              "- Run ID: " + run.id,
+              "- Run attempt: " + attempt,
+              "- Conclusion: " + run.conclusion,
+              "- Branch/ref: " + (run.head_branch || "unknown"),
+              "- Exact SHA: " + (run.head_sha || "unknown"),
+              "- Started: " + started,
+              "- Completed/updated: " + completed,
+              "- Run URL: " + run.html_url,
+              "",
+              "## Failed jobs",
+              "",
+              jobLines,
+              "",
+              "## Failed steps",
+              "",
+              stepLines,
+              "",
+              "## First-pass lesson status",
+              "",
+              "- Root-cause status: `PENDING_ROOT_CAUSE`",
+              "- Failure class: `UNCLASSIFIED_PENDING_ROOT_CAUSE`",
+              "- Normalized signature: `PENDING_LOG_DIAGNOSIS`",
+              "- Protocol decision: `PENDING`",
+              "- Later green run alone closes this failure: **false**",
+              "",
+              "## Mandatory closeout",
+              "",
+              "The repairing agent must finalize the lesson with:",
+              "",
+              "- verified root cause;",
+              "- why the existing preflight/test/guard missed it;",
+              "- durable progress / immutable outputs preserved;",
+              "- recomputation and avoidable runner waste;",
+              "- exact regression test;",
+              "- smallest rerun scope;",
+              "- `PROTOCOL_CHANGE_REQUIRED` or `NO_PROTOCOL_CHANGE_NEEDED` with reason;",
+              "- research/evidence/Production/trading boundary statement.",
+              "",
+              "This issue reads Actions metadata only and grants no research/evidence/model authority.",
+            ].join("\n");
+
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+            });
