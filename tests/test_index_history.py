@@ -207,3 +207,29 @@ def test_variable_size_ledger_still_fails_in_fixed_count_mode():
             index_code="TEST",
         )
 
+
+
+def test_reconstruction_preserves_explicit_board_limit_pct_for_bse50():
+    anchor = pd.DataFrame({"symbol": [f"83{i:04d}" for i in range(50)]})
+    adjustments = pd.DataFrame(
+        {
+            "effective_date": ["2026-06-15"],
+            "out_symbol": ["830000"],
+            "in_symbol": ["920001"],
+        }
+    )
+    # Anchor represents the post-adjustment membership.
+    anchor.loc[0, "symbol"] = "920001"
+    compact, _, _ = reconstruct_index_history(
+        anchor,
+        adjustments,
+        history_start="2026-01-01",
+        history_end="2026-09-18",
+        anchor_effective_date="2026-06-15",
+        expected_constituents=50,
+        index_code="899050",
+        limit_pct=30.0,
+    )
+    assert set(compact["source_index"]) == {"899050"}
+    assert set(compact["board"]) == {"beijing"}
+    assert set(compact["limit_pct"]) == {30.0}

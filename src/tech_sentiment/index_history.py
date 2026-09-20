@@ -149,6 +149,7 @@ def reconstruct_index_history(
     anchor_effective_date: str | pd.Timestamp | None = None,
     expected_constituents: int | None = 50,
     index_code: str = "000688",
+    limit_pct: float = 20.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame, ReconstructionDiagnostics]:
     """Reconstruct point-in-time membership by reversing dated adjustments.
 
@@ -178,6 +179,8 @@ def reconstruct_index_history(
         raise ValueError("history_start must be <= history_end")
     if expected_constituents is not None and expected_constituents <= 0:
         raise ValueError("expected_constituents must be > 0 or None")
+    if not 0 < float(limit_pct) <= 100:
+        raise ValueError("limit_pct must be in (0, 100]")
 
     anchor_symbols = {normalize_symbol(v) for v in anchor["symbol"]}
     if not anchor_symbols:
@@ -276,7 +279,7 @@ def reconstruct_index_history(
     compact["universe_mode"] = "point_in_time"
     compact["source_index"] = str(index_code).zfill(6)
     compact["board"] = compact["symbol"].map(infer_board)
-    compact["limit_pct"] = 20.0
+    compact["limit_pct"] = float(limit_pct)
     compact = compact.sort_values(["effective_start", "symbol"]).reset_index(drop=True)
 
     min_count = int(counts.min())
@@ -308,6 +311,7 @@ def write_reconstruction(
     anchor_effective_date: str,
     expected_constituents: int | None = 50,
     index_code: str = "000688",
+    limit_pct: float = 20.0,
 ) -> ReconstructionDiagnostics:
     anchor = read_anchor_csv(anchor_path)
     adjustments = read_adjustments_csv(adjustments_path)
@@ -319,6 +323,7 @@ def write_reconstruction(
         anchor_effective_date=anchor_effective_date,
         expected_constituents=expected_constituents,
         index_code=index_code,
+        limit_pct=limit_pct,
     )
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
