@@ -17,7 +17,7 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Install
-        run: pip install -e ".[data]"
+        run: pip install -e ".[data]" pytest
       - name: Code and contract tests
         run: |
           python -m compileall -q src scripts/bse50_source_preflight.py
