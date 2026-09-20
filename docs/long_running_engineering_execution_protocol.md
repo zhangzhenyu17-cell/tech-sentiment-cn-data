@@ -734,3 +734,25 @@ regression coverage and the Failure Lesson Receipt is finalized.
 This learning loop is engineering governance only. It does not authorize changes
 to evidence eligibility, PIT/no-lookahead rules, research scope, model behavior,
 Production, trading authority, or the public/private security boundary.
+
+
+## Automatic first-pass failure capture
+
+The user explicitly authorized one new automatic-trigger class for this purpose:
+`.github/workflows/engineering-failure-capture.yml`.
+
+It is deliberately narrow:
+
+- trigger: `workflow_run` for the explicitly enumerated existing workflows;
+- job executes only for `failure`, `timed_out`, or `action_required`;
+- reads Actions run/job/step metadata only;
+- does not checkout triggering-run code;
+- does not read artifacts or secrets;
+- writes only a GitHub Issue containing a first-pass Failure Lesson Receipt;
+- uses `PENDING_ROOT_CAUSE` instead of guessing a diagnosis;
+- excludes itself from its trigger list.
+
+The issue is stage 1 of the learning loop. Engineering diagnosis must still
+finalize the verified root cause, regression test, rerun scope and protocol
+decision. This automatic capture is necessary to prevent failed runs from being
+forgotten after a later successful rerun.
