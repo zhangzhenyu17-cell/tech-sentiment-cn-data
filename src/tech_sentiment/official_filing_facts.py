@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
+import gzip
 import io
 import json
 import re
@@ -137,11 +138,16 @@ def classify_official_filing_presentation(text: object) -> str:
 class DownloadedOfficialDocument:
     # Canonical immutable source identity requested by the materializer.
     url: str
+    # Hash of the decoded exact official document bytes consumed by parsers.
     sha256: str
     content: bytes
     # Actual same-provider HTTPS transport endpoint used to retrieve bytes.
     # Optional keeps existing injected test doubles/backward-compatible callers valid.
     retrieval_url: str | None = None
+    # Raw HTTP entity-body identity before transport decoding. This is distinct
+    # from sha256 only when an official host returns a gzip-wrapped PDF body.
+    transport_sha256: str | None = None
+    transport_encoding: str | None = None
 
 
 def _canonical_host(url: str) -> str:
@@ -188,6 +194,7 @@ def _download_once(
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
         "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
+        "Accept-Encoding": "identity",
     }
     if host in {"static.cninfo.com.cn", "www.cninfo.com.cn"}:
         headers["Referer"] = "https://www.cninfo.com.cn/"
@@ -216,6 +223,7 @@ def _download_cninfo_with_https_session(
     headers = {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
         "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
+        "Accept-Encoding": "identity",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Referer": "https://www.cninfo.com.cn/",
     }
@@ -300,6 +308,7 @@ def _download_cninfo_with_browser_transport(
 
     headers = {
         "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
+        "Accept-Encoding": "identity",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         "Referer": "https://www.cninfo.com.cn/",
     }
@@ -334,6 +343,28 @@ def _download_cninfo_with_browser_transport(
             "CNINFO browser HTTPS transport exhausted without official PDF bytes"
         ) from last_error
     raise RuntimeError("CNINFO browser HTTPS transport produced no attempt")
+
+
+def _decode_official_transport_body(content: bytes) -> tuple[bytes, str | None]:
+    """Decode transport wrapping without changing the official document identity.
+
+    Some SSE/SZSE attachment endpoints return a gzip-wrapped PDF entity body to
+    urllib clients even when the URL itself identifies a PDF. PDF parsers must
+    consume the decoded document bytes, while provenance separately preserves
+    the raw transport-body hash. Only the deterministic gzip container signaled
+    by its RFC 1952 magic bytes is decoded; every other payload is passed
+    through unchanged and remains subject to the normal fail-closed PDF parser.
+    """
+
+    if content.startswith(b"\x1f\x8b\x08"):
+        try:
+            decoded = gzip.decompress(content)
+        except (OSError, EOFError) as exc:
+            raise ValueError("official filing gzip transport body is invalid") from exc
+        if not decoded:
+            raise ValueError("official filing gzip transport body decoded empty")
+        return decoded, "gzip"
+    return content, None
 
 
 def download_official_document(
@@ -392,11 +423,15 @@ def download_official_document(
 
     if not content:
         raise ValueError("official filing attachment is empty")
+    transport_sha256 = sha256(content).hexdigest()
+    document_content, transport_encoding = _decode_official_transport_body(content)
     return DownloadedOfficialDocument(
         url=url,
         retrieval_url=retrieval_url,
-        sha256=sha256(content).hexdigest(),
-        content=content,
+        sha256=sha256(document_content).hexdigest(),
+        content=document_content,
+        transport_sha256=transport_sha256,
+        transport_encoding=transport_encoding,
     )
 
 
