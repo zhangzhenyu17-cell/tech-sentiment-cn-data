@@ -55,6 +55,7 @@ def _default_document_loader(url: str) -> dict[str, str]:
         "document_sha256": str(downloaded.sha256),
         "transport_sha256": str(downloaded.transport_sha256 or downloaded.sha256),
         "transport_encoding": str(downloaded.transport_encoding or "identity"),
+        "transport_method": str(downloaded.transport_method or "urllib"),
         "text": extract_pdf_text(downloaded.content),
     }
 
@@ -71,7 +72,7 @@ def _load_document(
     if missing:
         raise ValueError(f"document_loader missing fields: {sorted(missing)}")
     out = {key: str(payload[key]) for key in required}
-    for optional_key in ("transport_sha256", "transport_encoding"):
+    for optional_key in ("transport_sha256", "transport_encoding", "transport_method"):
         value = payload.get(optional_key)
         if value is not None and str(value):
             out[optional_key] = str(value)
@@ -232,6 +233,7 @@ def materialize_registered_exchange_earnings_directions(
                     "transport_sha256", document["document_sha256"]
                 ),
                 "transport_encoding": document.get("transport_encoding", "identity"),
+                "transport_method": document.get("transport_method", "urllib"),
                 "classifier_version": EARNINGS_CLASSIFIER_VERSION,
                 "availability_rule": availability_rule,
                 "source_identity_inherited_not_new_evidence_source": True,

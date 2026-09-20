@@ -1004,3 +1004,73 @@ def test_official_download_identity_transport_keeps_matching_hashes():
     assert downloaded.sha256 == filing_module.sha256(pdf).hexdigest()
     assert downloaded.transport_sha256 == downloaded.sha256
     assert downloaded.transport_encoding is None
+
+
+def test_sse_html_attachment_response_uses_same_provider_browser_fallback(monkeypatch):
+    original = "https://www.sse.com.cn/example.pdf"
+    calls: list[tuple[str, float]] = []
+
+    def browser_fallback(url: str, *, timeout: float):
+        calls.append((url, timeout))
+        return b"%PDF-1.7 browser recovered exact sse bytes", url
+
+    monkeypatch.setattr(
+        filing_module,
+        "_download_exchange_attachment_with_browser_transport",
+        browser_fallback,
+    )
+
+    downloaded = download_official_document(
+        original,
+        opener=lambda request, timeout: _FakeResponse(
+            b"<html><body>challenge</body></html>"
+        ),
+    )
+
+    assert calls == [(original, 30.0)]
+    assert downloaded.url == original
+    assert downloaded.retrieval_url == original
+    assert downloaded.content.startswith(b"%PDF-")
+    assert downloaded.transport_method == "same_provider_browser"
+    assert downloaded.transport_encoding is None
+
+
+def test_szse_html_after_browser_fallback_stays_fail_closed(monkeypatch):
+    original = "https://disc.static.szse.cn/download/example.pdf"
+
+    monkeypatch.setattr(
+        filing_module,
+        "_download_exchange_attachment_with_browser_transport",
+        lambda url, *, timeout: (
+            b"<!doctype html><html><body>still blocked</body></html>",
+            url,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="returned HTML instead of PDF"):
+        download_official_document(
+            original,
+            opener=lambda request, timeout: _FakeResponse(
+                b"<html><body>challenge</body></html>"
+            ),
+        )
+
+
+def test_same_provider_attachment_redirect_guard_rejects_cross_exchange():
+    with pytest.raises(ValueError, match="outside the canonical provider family"):
+        filing_module._validate_same_provider_retrieval(
+            "https://www.sse.com.cn/example.pdf",
+            "https://www.szse.cn/example.pdf",
+        )
+
+
+def test_gzip_transport_records_urllib_method():
+    pdf = b"%PDF-1.7 exact official document bytes"
+    wrapped = filing_module.gzip.compress(pdf)
+
+    downloaded = download_official_document(
+        "https://www.sse.com.cn/example.pdf",
+        opener=lambda request, timeout: _FakeResponse(wrapped),
+    )
+
+    assert downloaded.transport_method == "urllib"
