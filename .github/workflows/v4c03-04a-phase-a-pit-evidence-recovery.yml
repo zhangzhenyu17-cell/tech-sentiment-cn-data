@@ -137,7 +137,7 @@ jobs:
         run: |
           SOURCE_SHA="1b177f5cc49ac7dab18e02bd51b89a62c989c89a"
           mkdir -p stage/derived
-          python scripts/assemble_v4a_derived_pit.py             --symbols-csv stage/inputs/symbols.csv             --calendar-csv stage/inputs/trading_calendar.csv             --issuer-dir stage/issuer             --fundamental-root downloads/fundamental             --price-root downloads/prices             --policy-dir downloads/policy             --start-date 2021-01-04 --end-date 2021-12-31             --source-commit "$GITHUB_SHA"             --issuer-source-commit "$SOURCE_SHA"             --fundamental-source-commit "$SOURCE_SHA"             --price-source-commit "$SOURCE_SHA"             --policy-source-commit "$SOURCE_SHA"             --out-dir stage/derived
+          python scripts/assemble_v4a_derived_pit.py             --symbols-csv stage/inputs/symbols.csv             --calendar-csv stage/inputs/trading_calendar.csv             --issuer-dir stage/issuer             --fundamental-root downloads/fundamental             --price-root downloads/prices             --policy-dir downloads/policy/v4c03-phase-a-policy-35497119739             --start-date 2021-01-04 --end-date 2021-12-31             --source-commit "$GITHUB_SHA"             --issuer-source-commit "$SOURCE_SHA"             --fundamental-source-commit "$SOURCE_SHA"             --price-source-commit "$SOURCE_SHA"             --policy-source-commit "$SOURCE_SHA"             --out-dir stage/derived
 
       - name: Finalize recovered public-only evidence
         run: |

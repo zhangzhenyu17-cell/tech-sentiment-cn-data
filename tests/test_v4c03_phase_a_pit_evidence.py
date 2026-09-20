@@ -415,3 +415,6 @@ def test_recovery_workflow_reuses_exact_artifacts_without_provider_rerun() -> No
     assert "--fundamental-source-commit" in text
     assert "--price-source-commit" in text
     assert "--policy-source-commit" in text
+    assert "--policy-dir downloads/policy/v4c03-phase-a-policy-35497119739" in text
+    assert "--policy-dir downloads/policy             " not in text
+    assert "--capital-dir downloads/capital/v4c03-phase-a-capital-35497119739" in text
