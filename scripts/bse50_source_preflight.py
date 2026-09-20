@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import time
 
+from bs4 import BeautifulSoup
 import requests
 
 from tech_sentiment.bse50_official import (
@@ -17,6 +18,16 @@ from tech_sentiment.bse50_official import (
 
 def _digest(data: bytes) -> str:
     return sha256(data).hexdigest()
+
+
+def _html_text(response: requests.Response) -> str:
+    # BSE pages are served without a reliable charset header on some hosted
+    # runners. requests then defaults to ISO-8859-1 and corrupts Chinese text.
+    # Decode from raw bytes using the response's apparent encoding, while
+    # preserving the original bytes for provenance hashing.
+    encoding = response.apparent_encoding or response.encoding or "utf-8"
+    decoded = response.content.decode(encoding, errors="replace")
+    return BeautifulSoup(decoded, "html.parser").get_text(" ", strip=True)
 
 
 def _get(session: requests.Session, url: str, *, timeout: float = 20.0) -> requests.Response:
@@ -81,9 +92,10 @@ def main() -> int:
     for url in seed_urls:
         response = _get(session, url)
         body = response.content
-        text = response.text
-        links = discover_notice_links(text, base_url=url)
-        attachments = discover_attachment_links(text, base_url=url)
+        html = response.content.decode(response.apparent_encoding or response.encoding or "utf-8", errors="replace")
+        text = _html_text(response)
+        links = discover_notice_links(html, base_url=url)
+        attachments = discover_attachment_links(html, base_url=url)
         notice_urls.update(links)
         seed_records.append(
             {
@@ -100,21 +112,28 @@ def main() -> int:
     qualified: list[dict[str, object]] = []
     visited: set[str] = set()
     queue = list(sorted(notice_urls))
-    max_chain_pages = 64
+    max_chain_pages = 128
+    history_end = contract["history_end"]
     while queue and len(visited) < max_chain_pages:
         url = queue.pop(0)
         if url in visited:
             continue
         visited.add(url)
         response = _get(session, url)
-        text = response.text
+        html = response.content.decode(response.apparent_encoding or response.encoding or "utf-8", errors="replace")
+        text = _html_text(response)
 
-        linked_notices = discover_notice_links(text, base_url=url)
-        for linked in linked_notices:
-            if linked not in visited and linked not in queue:
-                queue.append(linked)
+        # Only expand the chain through pages that are themselves about BSE50.
+        # Otherwise a generic neighbouring index notice can fan out into the
+        # entire BSE indices-news archive and exhaust the traversal budget.
+        is_bse50_page = "北证50" in text or "899050" in text
+        linked_notices = discover_notice_links(html, base_url=url)
+        if is_bse50_page:
+            for linked in linked_notices:
+                if linked not in visited and linked not in queue:
+                    queue.append(linked)
 
-        if "北证50" not in text and "899050" not in text:
+        if not is_bse50_page:
             continue
         try:
             effective_date = extract_effective_date(text).date().isoformat()
@@ -124,7 +143,10 @@ def main() -> int:
             else:
                 continue
 
-        attachments = discover_attachment_links(text, base_url=url)
+        if effective_date > history_end:
+            continue
+
+        attachments = discover_attachment_links(html, base_url=url)
         if url != sources["initial_sample_notice_url"] and not attachments:
             continue
         qualified.append(
@@ -137,7 +159,8 @@ def main() -> int:
         )
 
     dates = sorted({row["effective_date"] for row in qualified})
-    status = "PASS" if len(dates) >= 2 else "FAIL_CLOSED"
+    required_snapshots = int(contract["discovery"]["minimum_distinct_effective_snapshots"])
+    status = "PASS" if len(dates) >= required_snapshots else "FAIL_CLOSED"
     result = {
         "schema_version": "bse50-source-preflight-v1",
         "status": status,
@@ -146,7 +169,7 @@ def main() -> int:
         "distinct_effective_dates": dates,
         "distinct_effective_date_count": len(dates),
         "visited_notice_pages": len(visited),
-        "minimum_final_snapshot_count": contract["discovery"]["minimum_distinct_effective_snapshots"],
+        "minimum_final_snapshot_count": required_snapshots,
         "qualification_granted": False,
         "forward_outcomes_read": False,
         "note": "Transport/source-discovery preflight only. Full PIT qualification remains fail closed.",

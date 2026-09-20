@@ -71,3 +71,8 @@ def test_discover_notice_links_supports_bidirectional_official_chain():
         "https://www.bse.cn/bse_indices_news/200013831.html",
         "https://www.bse.cn/bse_indices_news/200015404.html",
     ]
+
+
+def test_extract_effective_date_from_bse_visible_text():
+    text = "根据指数编制方案，对北证50（899050）样本股进行定期调整，于2025年6月16日正式生效。"
+    assert extract_effective_date(text) == pd.Timestamp("2025-06-16")
