@@ -198,6 +198,7 @@ def test_prepare_evidence_inputs_combines_calendar_but_emits_sample_market_only(
     ]
     symbols = pd.read_csv(out / "symbols.csv", dtype={"symbol": str})
     assert set(symbols["symbol"].astype(str).str.zfill(6)) == {"300001", "688001"}
+    assert dict(zip(symbols["symbol"].astype(str).str.zfill(6), symbols["market"])) == {"300001": "SZ", "688001": "SH"}
     sample_star = pd.read_csv(out / "market/STAR50/index_prices.csv")
     assert sample_star["date"].tolist() == ["2021-06-15", "2021-12-31"]
     receipt = json.loads((out / "receipt.json").read_text())
@@ -252,7 +253,7 @@ def _minimal_finalizer_inputs(root: Path) -> tuple[Path, Path, Path]:
         ),
         encoding="utf-8",
     )
-    _write_csv(inputs / "symbols.csv", pd.DataFrame({"symbol": ["688001", "300001"]}))
+    _write_csv(inputs / "symbols.csv", pd.DataFrame({"symbol": ["688001", "300001"], "market": ["SH", "SZ"]}))
     _write_csv(
         inputs / "trading_calendar.csv",
         pd.DataFrame({"date": ["2021-01-04", "2021-12-31"]}),
