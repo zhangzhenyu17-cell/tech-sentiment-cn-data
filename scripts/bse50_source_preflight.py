@@ -112,7 +112,8 @@ def main() -> int:
     qualified: list[dict[str, object]] = []
     visited: set[str] = set()
     queue = list(sorted(notice_urls))
-    max_chain_pages = 64
+    max_chain_pages = 128
+    history_end = contract["history_end"]
     while queue and len(visited) < max_chain_pages:
         url = queue.pop(0)
         if url in visited:
@@ -122,12 +123,17 @@ def main() -> int:
         html = response.content.decode(response.apparent_encoding or response.encoding or "utf-8", errors="replace")
         text = _html_text(response)
 
+        # Only expand the chain through pages that are themselves about BSE50.
+        # Otherwise a generic neighbouring index notice can fan out into the
+        # entire BSE indices-news archive and exhaust the traversal budget.
+        is_bse50_page = "北证50" in text or "899050" in text
         linked_notices = discover_notice_links(html, base_url=url)
-        for linked in linked_notices:
-            if linked not in visited and linked not in queue:
-                queue.append(linked)
+        if is_bse50_page:
+            for linked in linked_notices:
+                if linked not in visited and linked not in queue:
+                    queue.append(linked)
 
-        if "北证50" not in text and "899050" not in text:
+        if not is_bse50_page:
             continue
         try:
             effective_date = extract_effective_date(text).date().isoformat()
@@ -136,6 +142,9 @@ def main() -> int:
                 effective_date = "2022-11-21"
             else:
                 continue
+
+        if effective_date > history_end:
+            continue
 
         attachments = discover_attachment_links(html, base_url=url)
         if url != sources["initial_sample_notice_url"] and not attachments:
