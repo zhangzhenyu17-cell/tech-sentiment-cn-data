@@ -130,7 +130,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           BASE="$(python -c 'import json; print(json.load(open("dist/package.json"))["asset_base"])')"
-          bash scripts/publish_v4a_release_bundle.sh v4c03-public-data-v1 dist "$BASE"
+          bash scripts/publish_v4c03_public_bundle.sh v4c03-public-data-v1 dist "$BASE"
       - name: Upload convenient 90-day copy
         uses: actions/upload-artifact@v4
         with:
