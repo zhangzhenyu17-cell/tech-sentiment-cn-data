@@ -57,3 +57,17 @@ def test_snapshots_build_contiguous_point_in_time_membership():
     second = out[out["effective_start"].eq(pd.Timestamp("2022-12-12"))]
     assert first["effective_end"].iloc[0] == pd.Timestamp("2022-12-11")
     assert second["effective_end"].iloc[0] == pd.Timestamp("2022-12-31")
+
+
+def test_discover_notice_links_supports_bidirectional_official_chain():
+    html = """
+    <a href="/bse_indices_news/200015404.html">下一条</a>
+    <a href="/bse_indices_news/200013831.html">上一条</a>
+    """
+    assert discover_notice_links(
+        html,
+        base_url="https://www.bse.cn/bse_indices_news/200013968.html",
+    ) == [
+        "https://www.bse.cn/bse_indices_news/200013831.html",
+        "https://www.bse.cn/bse_indices_news/200015404.html",
+    ]
