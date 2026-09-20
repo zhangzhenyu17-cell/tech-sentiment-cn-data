@@ -247,6 +247,29 @@
     "repeated_signature_requires_class_wide_escalation": true,
     "durable_github_persistence_required": true,
     "chat_only_record_is_insufficient": true,
-    "failure_close_requires_finalized_receipt": true
+    "failure_close_requires_finalized_receipt": true,
+    "automatic_capture": {
+      "workflow": ".github/workflows/engineering-failure-capture.yml",
+      "trigger": "workflow_run",
+      "explicitly_user_authorized": true,
+      "monitored_workflows_are_explicitly_enumerated": true,
+      "completion_types": [
+        "completed"
+      ],
+      "conclusions": [
+        "failure",
+        "timed_out",
+        "action_required"
+      ],
+      "writes": "github_issue_first_pass_receipt",
+      "root_cause_guessing_forbidden": true,
+      "initial_root_cause_status": "PENDING_ROOT_CAUSE",
+      "checkout_triggering_code": false,
+      "artifact_read": false,
+      "secrets_read": false,
+      "actions_metadata_read_only": true,
+      "issues_write_only": true,
+      "self_trigger_excluded": true
+    }
   }
 }
