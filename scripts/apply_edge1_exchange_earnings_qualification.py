@@ -4,6 +4,8 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
+import time
 from typing import Any
 
 import pandas as pd
@@ -21,6 +23,9 @@ from tech_sentiment.pit_replay_audit import audit_pit_replay
 CONTRACT_ID = "EDGE1_EARNINGS_EVIDENCE_QUALIFICATION_V1"
 CLASSIFIER_VERSION = "issuer-explicit-guidance-v1"
 SOURCES = {"SSE_ANNOUNCEMENT_ARCHIVE", "SZSE_ANNOUNCEMENT_ARCHIVE"}
+PROGRESS_HEARTBEAT_ITEMS = 25
+PROGRESS_HEARTBEAT_SECONDS = 300.0
+HARD_FAILURE_CIRCUIT_BREAKER = 5
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -248,6 +253,14 @@ def _checkpoint_identity(row: pd.Series) -> CheckpointIdentity:
     )
 
 
+def _normalized_failure_signature(error: object) -> str:
+    text = str(error).strip()
+    text = re.sub(r"https://\\S+", "<url>", text)
+    text = re.sub(r"\\b[0-9a-fA-F]{32,}\\b", "<hash>", text)
+    text = re.sub(r"\\b\\d{6,}\\b", "<id>", text)
+    return text[:240]
+
+
 def _run_bridge_with_checkpoints(
     source: pd.DataFrame,
     *,
@@ -259,10 +272,21 @@ def _run_bridge_with_checkpoints(
     errors: list[dict[str, str]] = []
     resumed = 0
     executed = 0
+    attempted_new = 0
+    processed = 0
+    total = int(len(source))
+    started = time.monotonic()
+    last_heartbeat = started
+    last_failure_signature: str | None = None
+    consecutive_same_hard_failures = 0
+    circuit_breaker_tripped = False
+    circuit_breaker_signature: str | None = None
 
-    for _, row in source.sort_values(
+    ordered = source.sort_values(
         ["source_identity", "entity_id", "evidence_available_date", "document_id"]
-    ).iterrows():
+    )
+
+    for _, row in ordered.iterrows():
         identity = _checkpoint_identity(row)
         loaded = store.load(identity)
         if loaded is not None:
@@ -270,13 +294,55 @@ def _run_bridge_with_checkpoints(
             unclassified = loaded.frames.get("unclassified", pd.DataFrame())
             resumed += 1
         else:
+            attempted_new += 1
             result = materialize_registered_exchange_earnings_directions(
                 pd.DataFrame([row])
             )
             if len(result.errors):
-                for error in result.errors.to_dict("records"):
-                    errors.append({k: str(v) for k, v in error.items()})
+                records = [
+                    {k: str(v) for k, v in error.items()}
+                    for error in result.errors.to_dict("records")
+                ]
+                errors.extend(records)
+                signature = _normalized_failure_signature(
+                    records[0].get("error", "UNKNOWN_HARD_FAILURE")
+                )
+                if signature == last_failure_signature:
+                    consecutive_same_hard_failures += 1
+                else:
+                    last_failure_signature = signature
+                    consecutive_same_hard_failures = 1
+
+                processed += 1
+                print(
+                    json.dumps(
+                        {
+                            "event": "edge1_earnings_progress",
+                            "processed": processed,
+                            "total": total,
+                            "resumed": resumed,
+                            "attempted_new": attempted_new,
+                            "executed_success": executed,
+                            "direction_rows": sum(len(x) for x in evidence_parts),
+                            "unclassified_rows": sum(len(x) for x in unclassified_parts),
+                            "hard_errors": len(errors),
+                            "last_failure_signature": signature,
+                            "consecutive_same_hard_failures": consecutive_same_hard_failures,
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+
+                if consecutive_same_hard_failures >= HARD_FAILURE_CIRCUIT_BREAKER:
+                    circuit_breaker_tripped = True
+                    circuit_breaker_signature = signature
+                    break
                 continue
+
+            last_failure_signature = None
+            consecutive_same_hard_failures = 0
             evidence = result.evidence
             unclassified = result.unclassified
             store.save(
@@ -301,6 +367,45 @@ def _run_bridge_with_checkpoints(
         if len(unclassified):
             unclassified_parts.append(unclassified)
 
+        processed += 1
+        now = time.monotonic()
+        if (
+            processed % PROGRESS_HEARTBEAT_ITEMS == 0
+            or now - last_heartbeat >= PROGRESS_HEARTBEAT_SECONDS
+            or processed == total
+        ):
+            elapsed = max(now - started, 1e-9)
+            throughput = processed / elapsed
+            remaining = max(total - processed, 0)
+            eta_seconds = remaining / throughput if throughput > 0 else None
+            print(
+                json.dumps(
+                    {
+                        "event": "edge1_earnings_progress",
+                        "processed": processed,
+                        "total": total,
+                        "resumed": resumed,
+                        "attempted_new": attempted_new,
+                        "executed_success": executed,
+                        "direction_rows": sum(len(x) for x in evidence_parts),
+                        "unclassified_rows": sum(len(x) for x in unclassified_parts),
+                        "hard_errors": len(errors),
+                        "elapsed_seconds": round(elapsed, 1),
+                        "throughput_items_per_minute": round(throughput * 60.0, 3),
+                        "eta_seconds": (
+                            round(float(eta_seconds), 1)
+                            if eta_seconds is not None
+                            else None
+                        ),
+                        "checkpoint_watermark": resumed + executed,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            last_heartbeat = now
+
     evidence = (
         validate_materialized_pit_records(
             pd.concat(evidence_parts, ignore_index=True, sort=False)
@@ -315,16 +420,22 @@ def _run_bridge_with_checkpoints(
     )
     error_frame = pd.DataFrame(errors)
     summary = {
-        "eligible_documents": int(len(source)),
+        "eligible_documents": total,
+        "processed_documents": int(processed),
         "resumed_documents": int(resumed),
+        "attempted_new_documents": int(attempted_new),
         "executed_documents": int(executed),
         "direction_documents": int(len(evidence)),
         "unclassified_documents": int(len(unclassified)),
         "error_documents": int(len(error_frame)),
         "checkpoint_mode": "IMMUTABLE_PER_DOCUMENT_V1",
+        "progress_heartbeat_items": PROGRESS_HEARTBEAT_ITEMS,
+        "progress_heartbeat_seconds": PROGRESS_HEARTBEAT_SECONDS,
+        "hard_failure_circuit_breaker": HARD_FAILURE_CIRCUIT_BREAKER,
+        "circuit_breaker_tripped": circuit_breaker_tripped,
+        "circuit_breaker_signature": circuit_breaker_signature,
     }
     return evidence, unclassified, error_frame, summary
-
 
 def _coverage_by_entity(
     source: pd.DataFrame,
