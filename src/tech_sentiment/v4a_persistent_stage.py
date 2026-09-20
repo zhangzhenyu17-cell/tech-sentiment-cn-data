@@ -110,7 +110,11 @@ STAGE_SPECS: dict[str, StageSpec] = {
             "scripts/aggregate_v4a_issuer_shards.py",
             "scripts/write_v4a_stage_receipt.py",
         ),
-        extra_files=(".github/workflows/v4a-issuer-aggregate.yml",),
+        extra_files=(
+            ".github/workflows/v4a-issuer-aggregate.yml",
+            "reference/v4a_qualified_generation_reuse_contract_v1.json",
+            "scripts/verify_v4a_qualified_generation_bundle.py",
+        ),
     ),
     "fundamental": StageSpec(
         family="fundamental",
@@ -165,6 +169,8 @@ STAGE_SPECS: dict[str, StageSpec] = {
             "reference/v4a_qualification_tolerance_contract_v1.json",
             "reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json",
             "scripts/verify_v4a_frozen_stage_compatibility.py",
+            "reference/v4a_qualified_generation_reuse_contract_v1.json",
+            "scripts/verify_v4a_qualified_generation_bundle.py",
         ),
     ),
 }
