@@ -9,6 +9,7 @@ import pandas as pd
 
 from tech_sentiment.canonical_materialization import canonicalize_metadata
 from tech_sentiment.fundamental_pit_state import materialize_fundamental_state_evidence
+from tech_sentiment.derived_revision_identity import canonicalize_fundamental_state_revision_identity
 from tech_sentiment.major_negative_review import (
     build_major_negative_coverage_ledger,
     review_major_negative_events,
@@ -525,6 +526,27 @@ def main() -> None:
         fundamental_coverage_summary = dict(phase_meta["fundamental_coverage_summary"])
         earnings_complete = bool(phase_meta["earnings_complete"])
         earnings_state = str(phase_meta["earnings_state"])
+        fundamental_evidence, dropped_fundamental_revision_ids, duplicate_fundamental_revision_groups = (
+            canonicalize_fundamental_state_revision_identity(fundamental_evidence)
+        )
+        fundamental_state, fundamental_coverage_summary = _fundamental_readiness(
+            fundamental_evidence,
+            target_start=target_start,
+            target_end=target_end,
+            expected_entities=expected_entities,
+            filing_coverage=filing_coverage,
+        )
+        fundamental_summary["state_records"] = int(len(fundamental_evidence))
+        fundamental_summary["qualified_state_records"] = int(
+            fundamental_evidence["availability_state"].astype(str).eq(
+                "HISTORICAL_RECONSTRUCTABLE"
+            ).sum()
+        ) if len(fundamental_evidence) else 0
+        fundamental_summary["data_insufficient_records"] = int(
+            fundamental_evidence["availability_state"].astype(str).eq(
+                "DATA_INSUFFICIENT"
+            ).sum()
+        ) if len(fundamental_evidence) else 0
     else:
         fact_parts: list[pd.DataFrame] = []
         filing_coverage_parts: list[pd.DataFrame] = []
@@ -581,6 +603,9 @@ def main() -> None:
             target_end_date=target_end,
         )
         fundamental_evidence = _canonicalize_provenance(fundamental.evidence)
+        fundamental_evidence, dropped_fundamental_revision_ids, duplicate_fundamental_revision_groups = (
+            canonicalize_fundamental_state_revision_identity(fundamental_evidence)
+        )
         fundamental_state, fundamental_coverage_summary = _fundamental_readiness(
             fundamental_evidence,
             target_start=target_start,
@@ -621,6 +646,17 @@ def main() -> None:
         earnings_negative = _earnings_down_events(earnings_evidence)
         fundamental_coverage = fundamental.coverage
         fundamental_summary = fundamental.summary
+        fundamental_summary["state_records"] = int(len(fundamental_evidence))
+        fundamental_summary["qualified_state_records"] = int(
+            fundamental_evidence["availability_state"].astype(str).eq(
+                "HISTORICAL_RECONSTRUCTABLE"
+            ).sum()
+        ) if len(fundamental_evidence) else 0
+        fundamental_summary["data_insufficient_records"] = int(
+            fundamental_evidence["availability_state"].astype(str).eq(
+                "DATA_INSUFFICIENT"
+            ).sum()
+        ) if len(fundamental_evidence) else 0
         if checkpoint_root is not None and checkpoint_state is not None:
             phase_root = checkpoint_root / "fundamental"
             _write_frame(phase_root / "versioned_filing_facts.csv", facts)
@@ -873,6 +909,22 @@ def main() -> None:
         "parallel_shards": len(fundamental_dirs),
     }
 
+    revision_identity_canonicalization = {
+        "schema_version": "v4a-derived-revision-identity-canonicalization-v1",
+        "duplicate_revision_groups": int(duplicate_fundamental_revision_groups),
+        "dropped_redundant_rows": int(len(dropped_fundamental_revision_ids)),
+        "retention_rule": "EARLIEST_EVIDENCE_AVAILABLE_DATE_FOR_IDENTICAL_DATA_INSUFFICIENT_REVISION_PAYLOAD",
+        "conflicting_revision_payloads_allowed": False,
+        "qualified_state_rows_removed": 0,
+        "evidence_source_eligibility_changed": False,
+        "pit_no_lookahead_semantics_changed": False,
+        "qualification_threshold_changed": False,
+        "future_outcomes_used": False,
+        "research_run": False,
+        "production_authority_changed": False,
+        "trading_authority_changed": False,
+    }
+
     summary_with_runtime = {
         "schema_version": SCHEMA_VERSION,
         "status": "PUBLIC_PIT_MATERIALIZATION_COMPLETED",
@@ -907,6 +959,7 @@ def main() -> None:
         "parameter_search_run": False,
         "holdout_run": False,
         "production_run": False,
+        "revision_identity_canonicalization": revision_identity_canonicalization,
     }
     summary = canonicalize_metadata(summary_with_runtime)
     if not isinstance(summary, dict):
