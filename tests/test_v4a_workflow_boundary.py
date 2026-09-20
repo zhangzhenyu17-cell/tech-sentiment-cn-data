@@ -98,6 +98,14 @@ def test_all_v4a_workflows_are_manual_only():
             assert forbidden not in text, (path, forbidden)
 
 
+def test_finalizer_uses_six_hour_hard_ceiling_and_remains_manual_only():
+    text = _text(WORKFLOW_DIR / "qualify-capital-inputs.yml")
+    assert "timeout-minutes: 360" in text
+    assert "workflow_dispatch:" in text
+    for forbidden in ("schedule:", "workflow_run:", "pull_request:", "push:"):
+        assert forbidden not in text
+
+
 def test_final_workflow_identity_is_preserved_for_private_intake():
     text = _text(FINAL)
     assert text.startswith("name: qualify-capital-inputs\n")
