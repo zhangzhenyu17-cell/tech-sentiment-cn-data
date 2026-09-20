@@ -1,0 +1,94 @@
+{
+  "contract_id": "EDGE1_EARNINGS_EVIDENCE_QUALIFICATION_V1",
+  "date": "2026-09-21",
+  "status": "EXPLICIT_USER_AUTHORIZED_EVIDENCE_QUALIFICATION",
+  "authorization_text": "运行已冻结的 SSE/SZSE earnings source-routing bridge、生成新的公开 evidence bundle 并运行 private verifier；不得修改 classifier、80% 门槛、universe、模型或 outcome 定义，且在资格门槛通过前不得读取 Low/High outcome。",
+  "qualification_window": {
+    "start_date": "2022-01-04",
+    "end_date": "2026-09-17"
+  },
+  "base_qualified_artifact": {
+    "workflow_name": "qualify-capital-inputs",
+    "workflow_run_id": 35485765220,
+    "source_commit": "e49d7146f64228f5a1fe4a1de3780e1eb2dac6ef",
+    "artifact_name": "capital-pit-input-materialization",
+    "artifact_id": 10596634296,
+    "artifact_digest": "sha256:0faffd88a611beee8412de8b5f4f23f5d0cfd0e3068f7c311206b4829fc7faac",
+    "receipt_artifact_name": "capital-pit-input-materialization-receipt",
+    "receipt_artifact_id": 10596698846,
+    "receipt_artifact_digest": "sha256:bb8a306fe34f5fb9ad15a1e6a3f8bb1c3b6ecbaafa09d1d79ae484e357c72513",
+    "private_status": "HISTORICAL_DATA_QUALIFIED"
+  },
+  "frozen_semantics": {
+    "input_source_identities": [
+      "SSE_ANNOUNCEMENT_ARCHIVE",
+      "SZSE_ANNOUNCEMENT_ARCHIVE"
+    ],
+    "input_evidence_type": "ISSUER_EARNINGS_FORECAST",
+    "input_availability_state": "HISTORICAL_RECONSTRUCTABLE",
+    "output_evidence_type": "ISSUER_EARNINGS_DIRECTION",
+    "classifier_version": "issuer-explicit-guidance-v1",
+    "classification_basis": "EXPLICIT_ISSUER_GUIDANCE_TOKEN_IN_EXACT_OFFICIAL_DOCUMENT",
+    "official_document_body_required": true,
+    "unknown_remains_unknown": true,
+    "numeric_threshold_used": false,
+    "price_or_return_used": false,
+    "event_date_inherited": true,
+    "evidence_available_date_inherited": true,
+    "source_identity_inherited": true,
+    "coverage_threshold_changed": false,
+    "classifier_tokens_changed": false,
+    "universe_changed": false,
+    "model_changed": false,
+    "outcome_definition_changed": false
+  },
+  "base_artifact_observed_facts": {
+    "sse_issuer_earnings_forecast_documents": 93,
+    "sse_issuer_earnings_forecast_entities": 48,
+    "szse_issuer_earnings_forecast_documents": 539,
+    "szse_issuer_earnings_forecast_entities": 86,
+    "formal_issuer_earnings_direction_records": 562,
+    "formal_direction_source_identities": [
+      "CNINFO_ANNOUNCEMENT_ARCHIVE"
+    ]
+  },
+  "scope_boundary": {
+    "reuse_exact_base_artifact_symbol_scope": true,
+    "scope_builder_v2_688065_correction_integrated_in_this_run": false,
+    "reason": "This authorization is earnings evidence qualification only and explicitly forbids universe changes. The previously merged 688065 scope correction remains separate and is not rematerialized in this run."
+  },
+  "allowed_actions": {
+    "download_exact_base_artifact": true,
+    "download_exact_base_receipt": true,
+    "read_existing_public_issuer_evidence": true,
+    "download_exact_official_sse_szse_documents": true,
+    "run_frozen_direction_classifier": true,
+    "materialize_exchange_direction_evidence": true,
+    "recompute_deterministic_earnings_warning_mapping": true,
+    "recompute_major_negative_review": true,
+    "recompute_pit_replay_audit": true,
+    "generate_new_public_evidence_bundle": true,
+    "run_private_verifier": true,
+    "change_evidence_qualification_if_and_only_if_private_verifier_passes": true
+  },
+  "forbidden_actions": {
+    "low_outcome_read_before_gate": true,
+    "high_outcome_read_before_gate": true,
+    "high_factor_materialization": true,
+    "classifier_change": true,
+    "coverage_threshold_change": true,
+    "parameter_search": true,
+    "model_training": true,
+    "new_universe": true,
+    "scope_expansion": true,
+    "holdout_or_oos_open": true,
+    "production_change": true,
+    "trading_authority_change": true
+  },
+  "workflow_policy": {
+    "existing_workflow_only": "qualify-capital-inputs",
+    "workflow_dispatch_only": true,
+    "new_workflow_added": false,
+    "automatic_trigger_added": false
+  }
+}

@@ -273,6 +273,7 @@ def main() -> None:
             "hindsight_backfill": False,
             "future_prices_or_returns_used": False,
             "parameter_search_run": False,
+            "edge1_earnings_qualification": pit_summary.get("edge1_earnings_qualification"),
         },
         "checkpoint_receipts": {
             "schema_version": checkpoint_summary.get("schema_version"),
