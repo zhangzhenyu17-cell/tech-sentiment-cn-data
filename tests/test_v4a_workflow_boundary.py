@@ -335,6 +335,42 @@ def test_derived_timeout_and_phase_resume_are_hardened_without_changing_upstream
         assert identity_field in script
 
 
+def test_derived_revision_gate_recovery_is_exact_and_skips_expensive_reassembly():
+    text = _text(WORKFLOW_DIR / "v4a-derived.yml")
+    for exact in (
+        "35459083286",
+        "10590094910",
+        "v4a-derived-stage-35459083286",
+        "sha256:afb0a05b7970dbe91f0ed3d6f4eeabd9790daf3b948868f7594a03b0207d477f",
+        "58f54742fdeb43912fe1a90c647dab908dd890b8",
+        "c91135821733f656fae1789a3fab3eaa8c8a0f4350d42c60568e90b7d912a29c",
+    ):
+        assert exact in text
+    assert "repair_completed_derived_stage" in text
+    assert "artifact.get(\"digest\")" in text
+    assert "artifact.get(\"expired\") is not False" in text
+    assert "steps.recovery.outputs.reused != 'true'" in text
+    assert text.count("steps.recovery.outputs.reused != 'true'") >= 4
+    assert "Qualification gate" in text
+    assert "Package persistent Derived bundle" in text
+
+
+def test_revision_repair_module_is_derived_only_in_producer_graph():
+    from tech_sentiment.v4a_persistent_stage import producer_files
+
+    root = Path.cwd()
+    derived = {
+        path.relative_to(root).as_posix()
+        for path in producer_files(root, "derived")
+    }
+    fundamental = {
+        path.relative_to(root).as_posix()
+        for path in producer_files(root, "fundamental")
+    }
+    assert "src/tech_sentiment/derived_revision_identity.py" in derived
+    assert "src/tech_sentiment/derived_revision_identity.py" not in fundamental
+
+
 def test_issuer_aggregate_tracks_original_source_commits():
     text = _text(WORKFLOW_DIR / "v4a-issuer-aggregate.yml")
     assert "--cninfo-source-commit" in text
