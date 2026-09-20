@@ -20,7 +20,14 @@ def _sha(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _load_receipt(root: Path, universe: str) -> dict[str, object]:
+def _load_receipt(
+    root: Path,
+    universe: str,
+    *,
+    start_date: str,
+    end_date: str,
+    expected_sample_eligibility: bool,
+) -> dict[str, object]:
     path = root / "receipt.json"
     if not path.is_file():
         raise FileNotFoundError(f"{universe} work-unit receipt missing")
@@ -29,8 +36,10 @@ def _load_receipt(root: Path, universe: str) -> dict[str, object]:
         raise ValueError(f"{universe} work-unit status mismatch")
     if payload.get("universe") != universe:
         raise ValueError(f"{universe} work-unit identity mismatch")
-    if payload.get("start_date") != "2021-06-15" or payload.get("end_date") != "2021-12-31":
+    if payload.get("start_date") != start_date or payload.get("end_date") != end_date:
         raise ValueError(f"{universe} work-unit window mismatch")
+    if bool(payload.get("sample_eligibility", True)) is not expected_sample_eligibility:
+        raise ValueError(f"{universe} work-unit sample eligibility mismatch")
     if payload.get("public_only") is not True:
         raise ValueError(f"{universe} work-unit is not public-only")
     for key in (
@@ -77,6 +86,10 @@ def main() -> int:
     parser.add_argument("--star-root", type=Path, required=True)
     parser.add_argument("--chinext-root", type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--start-date", default="2021-06-15")
+    parser.add_argument("--end-date", default="2021-12-31")
+    parser.add_argument("--phase", default="A")
+    parser.add_argument("--sample-eligibility", choices=("true", "false"), default="true")
     parser.add_argument("--out-dir", type=Path, required=True)
     args = parser.parse_args()
 
@@ -84,8 +97,15 @@ def main() -> int:
         "STAR50": args.star_root.resolve(),
         "ChiNext50": args.chinext_root.resolve(),
     }
+    expected_sample_eligibility = args.sample_eligibility == "true"
     receipts = {
-        universe: _load_receipt(root, universe)
+        universe: _load_receipt(
+            root,
+            universe,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            expected_sample_eligibility=expected_sample_eligibility,
+        )
         for universe, root in roots.items()
     }
     source_commits = {str(receipt["source_commit"]) for receipt in receipts.values()}
@@ -130,11 +150,12 @@ def main() -> int:
 
     receipt = {
         "schema_version": "v4c03-phase-a-public-assembly-receipt-v1",
-        "status": "PUBLIC_PHASE_A_ASSEMBLED",
+        "status": "PUBLIC_PHASE_A_ASSEMBLED" if expected_sample_eligibility else "PUBLIC_PHASE_A_WARMUP_ASSEMBLED",
         "source_commit": args.source_commit,
-        "phase": "A",
-        "start_date": "2021-06-15",
-        "end_date": "2021-12-31",
+        "phase": args.phase,
+        "start_date": args.start_date,
+        "end_date": args.end_date,
+        "sample_eligibility": expected_sample_eligibility,
         "universes": {
             universe: receipts[universe]["universes"][universe]
             for universe in UNIVERSES
