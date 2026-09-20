@@ -148,6 +148,54 @@ class DownloadedOfficialDocument:
     # from sha256 only when an official host returns a gzip-wrapped PDF body.
     transport_sha256: str | None = None
     transport_encoding: str | None = None
+    transport_method: str | None = None
+
+
+_OFFICIAL_PROVIDER_HOST_FAMILIES = {
+    "CNINFO": {"static.cninfo.com.cn", "www.cninfo.com.cn"},
+    "SSE": {"www.sse.com.cn", "static.sse.com.cn"},
+    "SZSE": {"www.szse.cn", "disc.static.szse.cn"},
+}
+
+_EXCHANGE_ATTACHMENT_BROWSER_PROFILES = {
+    "SSE": {
+        "referer": "https://www.sse.com.cn/disclosure/listedinfo/announcement/",
+        "bootstrap": "https://www.sse.com.cn/disclosure/listedinfo/announcement/",
+    },
+    "SZSE": {
+        "referer": "https://www.szse.cn/disclosure/listed/notice/index.html",
+        "bootstrap": "https://www.szse.cn/disclosure/listed/notice/index.html",
+    },
+}
+
+
+def _official_provider_family(host: str) -> str:
+    for family, hosts in _OFFICIAL_PROVIDER_HOST_FAMILIES.items():
+        if host in hosts:
+            return family
+    raise ValueError(f"official filing host has no provider family: {host}")
+
+
+def _validate_same_provider_retrieval(canonical_url: str, retrieval_url: str) -> None:
+    canonical_host = _canonical_host(canonical_url)
+    retrieval_host = _canonical_host(retrieval_url)
+    if _official_provider_family(canonical_host) != _official_provider_family(retrieval_host):
+        raise ValueError(
+            "official filing retrieval redirected outside the canonical provider family"
+        )
+
+
+def _looks_like_pdf(content: bytes) -> bool:
+    return content.lstrip(b"\xef\xbb\xbf\r\n\t ").startswith(b"%PDF-")
+
+
+def _looks_like_html(content: bytes) -> bool:
+    prefix = content.lstrip(b"\xef\xbb\xbf\r\n\t ").lower()[:256]
+    return (
+        prefix.startswith(b"<html")
+        or prefix.startswith(b"<!doctype html")
+        or b"<html" in prefix
+    )
 
 
 def _canonical_host(url: str) -> str:
@@ -345,6 +393,90 @@ def _download_cninfo_with_browser_transport(
     raise RuntimeError("CNINFO browser HTTPS transport produced no attempt")
 
 
+def _download_exchange_attachment_with_browser_transport(
+    canonical_url: str,
+    *,
+    timeout: float,
+) -> tuple[bytes, str]:
+    """Retry one exact SSE/SZSE attachment with same-provider browser transport.
+
+    This fallback is transport-only and is entered only when ordinary HTTPS
+    returns HTML instead of the canonical PDF bytes. It warms a same-provider
+    public disclosure page, then requests the exact original attachment URL.
+    Redirects must remain inside the same exchange provider host family.
+    """
+
+    canonical_host = _canonical_host(canonical_url)
+    family = _official_provider_family(canonical_host)
+    profile = _EXCHANGE_ATTACHMENT_BROWSER_PROFILES.get(family)
+    if profile is None:
+        raise ValueError(
+            f"browser attachment fallback is not defined for provider family: {family}"
+        )
+
+    try:
+        from curl_cffi import requests as curl_requests
+    except ImportError as exc:  # pragma: no cover - installed by the data extra
+        raise RuntimeError(
+            "curl_cffi is required for exchange attachment browser transport fallback"
+        ) from exc
+
+    headers = {
+        "Accept": "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
+        "Accept-Encoding": "identity",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Referer": str(profile["referer"]),
+    }
+    bootstrap_headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": headers["Accept-Language"],
+    }
+
+    session = curl_requests.Session()
+    try:
+        try:
+            bootstrap = session.get(
+                str(profile["bootstrap"]),
+                headers=bootstrap_headers,
+                impersonate="chrome",
+                timeout=min(timeout, 10.0),
+                allow_redirects=True,
+            )
+            bootstrap_url = str(
+                getattr(bootstrap, "url", profile["bootstrap"]) or profile["bootstrap"]
+            )
+            _validate_same_provider_retrieval(canonical_url, bootstrap_url)
+        except Exception:
+            # Cookie/bootstrap warm-up is best-effort only. The exact attachment
+            # request below remains the authoritative fail-closed operation.
+            pass
+
+        response = call_with_bounded_network_retry(
+            lambda: session.get(
+                canonical_url,
+                headers=headers,
+                impersonate="chrome",
+                timeout=timeout,
+                allow_redirects=True,
+            ),
+            attempts=3,
+            backoff_seconds=0.5,
+        )
+        response.raise_for_status()
+        retrieval_url = str(
+            getattr(response, "url", canonical_url) or canonical_url
+        )
+        _validate_same_provider_retrieval(canonical_url, retrieval_url)
+        content = bytes(getattr(response, "content", b""))
+        if not content:
+            raise ValueError("official filing attachment browser transport is empty")
+        return content, retrieval_url
+    finally:
+        close = getattr(session, "close", None)
+        if callable(close):
+            close()
+
+
 def _decode_official_transport_body(content: bytes) -> tuple[bytes, str | None]:
     """Decode transport wrapping without changing the official document identity.
 
@@ -423,8 +555,27 @@ def download_official_document(
 
     if not content:
         raise ValueError("official filing attachment is empty")
+
+    transport_method = "urllib"
     transport_sha256 = sha256(content).hexdigest()
     document_content, transport_encoding = _decode_official_transport_body(content)
+
+    canonical_host = _canonical_host(url)
+    provider_family = _official_provider_family(canonical_host)
+    if _looks_like_html(document_content) and provider_family in {"SSE", "SZSE"}:
+        content, retrieval_url = _download_exchange_attachment_with_browser_transport(
+            url,
+            timeout=timeout,
+        )
+        transport_method = "same_provider_browser"
+        transport_sha256 = sha256(content).hexdigest()
+        document_content, transport_encoding = _decode_official_transport_body(content)
+
+    if _looks_like_html(document_content):
+        raise ValueError(
+            "official filing attachment returned HTML instead of PDF after allowed transport fallbacks"
+        )
+
     return DownloadedOfficialDocument(
         url=url,
         retrieval_url=retrieval_url,
@@ -432,6 +583,7 @@ def download_official_document(
         content=document_content,
         transport_sha256=transport_sha256,
         transport_encoding=transport_encoding,
+        transport_method=transport_method,
     )
 
 
