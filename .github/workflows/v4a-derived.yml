@@ -46,209 +46,85 @@ jobs:
           python scripts/v4a_persistent_stage_bundle.py verify --family shared \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
             --archive "bundle/shared/${BASE}.tar.gz" --manifest bundle-meta/shared.json --extract-to stage/shared
-      - name: Resolve and exact-verify frozen issuer source lineage manifests
+      - name: Download and exact-verify qualified issuer source lineage
         env:
           GH_TOKEN: ${{ github.token }}
-          START_DATE: ${{ inputs.start_date }}
-          END_DATE: ${{ inputs.end_date }}
         run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          from tech_sentiment.v4a_stage_artifact import file_sha256
-
-          contract_path = Path("reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json")
-          contract = json.loads(contract_path.read_text(encoding="utf-8"))
-          if contract.get("schema_version") != "v4a-issuer-source-aggregate-compatibility-bridge-v1":
-              raise SystemExit("issuer downstream compatibility bridge schema mismatch")
-          if contract.get("status") != "FROZEN_ONE_TIME_ENGINEERING_COMPATIBILITY":
-              raise SystemExit("issuer downstream compatibility bridge is not frozen")
-          if contract.get("release_tag") != "v4a-stage-bundles-v1":
-              raise SystemExit("issuer downstream compatibility release tag mismatch")
-          if int(contract.get("triggering_failure_run_id") or 0) != 35453638482:
-              raise SystemExit("issuer downstream compatibility trigger run mismatch")
-          window = contract.get("qualification_window") or {}
-          if os.environ["START_DATE"] != str(window.get("start_date")) or os.environ["END_DATE"] != str(window.get("end_date")):
-              raise SystemExit("issuer downstream compatibility window mismatch")
-          drift = contract.get("allowed_producer_drift") or {}
-          if drift.get("path") != "scripts/assert_v4a_stage_qualifiable.py":
-              raise SystemExit("issuer downstream allowlisted drift path mismatch")
-          current_path = Path(drift["path"])
-          if file_sha256(current_path) != drift.get("current_sha256") or current_path.stat().st_size != int(drift.get("current_bytes") or 0):
-              raise SystemExit("issuer downstream current allowlisted drift no longer exact")
-          if drift.get("classification") != "FUNDAMENTAL_ONLY_QUALIFICATION_TOLERANCE_AND_DATA_INSUFFICIENCY_LOGIC":
-              raise SystemExit("issuer downstream drift classification mismatch")
-          if drift.get("issuer_source_gate_semantics_changed") is not False or drift.get("issuer_materialization_semantics_changed") is not False:
-              raise SystemExit("issuer downstream drift changed issuer semantics")
-          invariants = contract.get("invariants") or {}
-          for key in (
-              "exact_manifest_identity_required",
-              "exact_archive_sha256_required",
-              "exact_archive_bytes_required",
-              "exact_stage_receipt_sha256_required",
-              "exact_shared_input_identity_required",
-              "current_producer_file_set_must_match_source_manifest",
-              "all_non_allowlisted_producer_files_must_match_source_manifest_sha256",
-              "allowlisted_drift_requires_exact_old_and_current_sha256",
-          ):
-              if invariants.get(key) is not True:
-                  raise SystemExit(f"issuer downstream compatibility invariant missing: {key}")
-          for key in (
-              "provider_refetch_allowed",
-              "source_bundle_republication_allowed",
-              "new_qualification_granted",
-              "formal_evidence_handoff",
-              "evidence_source_eligibility_changed",
-              "pit_no_lookahead_semantics_changed",
-              "research_scope_changed",
-              "future_outcomes_used",
-              "model_thresholds_changed",
-              "signal_definitions_changed",
-              "production_authority_changed",
-              "trading_authority_changed",
-          ):
-              if invariants.get(key) is not False:
-                  raise SystemExit(f"issuer downstream compatibility boundary drift: {key}")
-          sources = contract.get("sources") or {}
-          required = {"issuer_cninfo", "issuer_sse", "issuer_szse"}
-          if set(sources) != required:
-              raise SystemExit("issuer downstream compatibility source set mismatch")
-          plan = {family: {"asset_base": sources[family]["asset_base"]} for family in sorted(required)}
-          Path("bundle-meta").mkdir(parents=True, exist_ok=True)
-          Path("bundle-meta/issuer-compat-plan.json").write_text(json.dumps(plan, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-          PY
-
           for source in cninfo sse szse; do
             family="issuer_${source}"
-            mkdir -p "bundle/${family}"
-            base="$(python -c "import json; print(json.load(open('bundle-meta/issuer-compat-plan.json'))['${family}']['asset_base'])")"
-            bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$base" "bundle/${family}"
-            cp "bundle/${family}/${base}.manifest.json" "bundle-meta/${family}.json"
+            mkdir -p "bundle/${family}" "inputs/${family}"
+            BASE="$(python -c "import json; print(json.load(open('reference/v4a_qualified_generation_reuse_contract_v1.json'))['stages']['${family}']['asset_base'])")"
+            bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" "bundle/${family}"
+            cp "bundle/${family}/${BASE}.manifest.json" "bundle-meta/${family}.json"
+            python scripts/verify_v4a_qualified_generation_bundle.py \
+              --family "$family" \
+              --manifest "bundle-meta/${family}.json" \
+              --archive "bundle/${family}/${BASE}.tar.gz" \
+              --input-manifest shared=bundle-meta/shared.json \
+              --extract-to "inputs/${family}" \
+              --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}"
           done
-
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          from tech_sentiment.v4a_persistent_stage import _load_manifest, input_bundle_identities, producer_fingerprint
-          from tech_sentiment.v4a_stage_artifact import file_sha256
-
-          contract = json.loads(Path("reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json").read_text(encoding="utf-8"))
-          drift = contract["allowed_producer_drift"]
-          shared_identity = input_bundle_identities({"shared": "bundle-meta/shared.json"})["shared"]
-          for family in ("issuer_cninfo", "issuer_sse", "issuer_szse"):
-              expected = contract["sources"][family]
-              base = expected["asset_base"]
-              manifest_path = Path("bundle-meta") / f"{family}.json"
-              archive_path = Path("bundle") / family / f"{base}.tar.gz"
-              manifest = _load_manifest(manifest_path)
-              exact = {
-                  "family": family,
-                  "stage_kind": expected["stage_kind"],
-                  "stage_id": expected["stage_id"],
-                  "start_date": os.environ["START_DATE"],
-                  "end_date": os.environ["END_DATE"],
-                  "producer_fingerprint": expected["producer_fingerprint"],
-                  "compatibility_key": expected["compatibility_key"],
-                  "bundle_identity": expected["bundle_identity"],
-                  "archive_sha256": expected["archive_sha256"],
-                  "archive_bytes": expected["archive_bytes"],
-                  "stage_receipt_sha256": expected["stage_receipt_sha256"],
-                  "original_source_commit": expected["source_commit"],
-                  "release_tag": "v4a-stage-bundles-v1",
-              }
-              for key, value in exact.items():
-                  if manifest.get(key) != value:
-                      raise SystemExit(f"issuer downstream immutable manifest mismatch: {family}:{key}")
-              if manifest.get("input_bundles") != {"shared": shared_identity}:
-                  raise SystemExit(f"issuer downstream shared lineage mismatch: {family}")
-              source_rows = {row["path"]: row for row in (manifest.get("producer_files") or [])}
-              current_rows = {row["path"]: row for row in producer_fingerprint(".", family)["producer_files"]}
-              if set(source_rows) != set(current_rows):
-                  raise SystemExit(f"issuer downstream producer file set drift: {family}")
-              for path, old_row in source_rows.items():
-                  current_row = current_rows[path]
-                  if path == drift["path"]:
-                      if old_row.get("sha256") != drift["source_sha256"] or int(old_row.get("bytes") or 0) != int(drift["source_bytes"]) or current_row.get("sha256") != drift["current_sha256"] or int(current_row.get("bytes") or 0) != int(drift["current_bytes"]):
-                          raise SystemExit(f"issuer downstream allowlisted producer drift mismatch: {family}")
-                  elif old_row.get("sha256") != current_row.get("sha256") or int(old_row.get("bytes") or 0) != int(current_row.get("bytes") or 0):
-                      raise SystemExit(f"issuer downstream non-allowlisted producer drift: {family}:{path}")
-              if file_sha256(archive_path) != expected["archive_sha256"]:
-                  raise SystemExit(f"issuer downstream archive SHA256 mismatch: {family}")
-              if archive_path.stat().st_size != int(expected["archive_bytes"]):
-                  raise SystemExit(f"issuer downstream archive byte-size mismatch: {family}")
-              print(json.dumps({"family": family, "asset_base": base, "bundle_identity": expected["bundle_identity"], "provider_refetch": False, "compatibility_bridge": True}, sort_keys=True))
-          PY
-      - name: Download and verify issuer aggregate
+      - name: Download and exact-verify qualified issuer aggregate bundle
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p bundle/issuer_aggregate stage/issuer_aggregate
-          python scripts/v4a_persistent_stage_bundle.py key --family issuer_aggregate \
-            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
-            --input-manifest shared=bundle-meta/shared.json \
-            --input-manifest cninfo=bundle-meta/issuer_cninfo.json \
-            --input-manifest sse=bundle-meta/issuer_sse.json \
-            --input-manifest szse=bundle-meta/issuer_szse.json \
-            --out bundle-meta/issuer_aggregate-key.json
-          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/issuer_aggregate-key.json"))["asset_base"])' )"
+          BASE="$(python -c "import json; print(json.load(open('reference/v4a_qualified_generation_reuse_contract_v1.json'))['stages']['issuer_aggregate']['asset_base'])")"
           bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/issuer_aggregate
           cp "bundle/issuer_aggregate/${BASE}.manifest.json" bundle-meta/issuer_aggregate.json
-          python scripts/v4a_persistent_stage_bundle.py verify --family issuer_aggregate \
-            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+          python scripts/verify_v4a_qualified_generation_bundle.py \
+            --family issuer_aggregate \
+            --manifest bundle-meta/issuer_aggregate.json \
+            --archive "bundle/issuer_aggregate/${BASE}.tar.gz" \
             --input-manifest shared=bundle-meta/shared.json \
             --input-manifest cninfo=bundle-meta/issuer_cninfo.json \
             --input-manifest sse=bundle-meta/issuer_sse.json \
             --input-manifest szse=bundle-meta/issuer_szse.json \
-            --archive "bundle/issuer_aggregate/${BASE}.tar.gz" \
-            --manifest bundle-meta/issuer_aggregate.json --extract-to stage/issuer_aggregate
-      - name: Download and exact-verify frozen Fundamental bundle
+            --extract-to stage/issuer_aggregate \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}"
+      - name: Download and exact-verify qualified Fundamental bundle
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p bundle/fundamental inputs/fundamental
-          BASE="$(python -c 'import json; print(json.load(open("reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json"))["downstream_stages"]["fundamental"]["asset_base"])')"
+          BASE="$(python -c "import json; print(json.load(open('reference/v4a_qualified_generation_reuse_contract_v1.json'))['stages']['fundamental']['asset_base'])")"
           bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/fundamental
           cp "bundle/fundamental/${BASE}.manifest.json" bundle-meta/fundamental.json
-          python scripts/verify_v4a_frozen_stage_compatibility.py \
+          python scripts/verify_v4a_qualified_generation_bundle.py \
             --family fundamental \
-            --contract reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json \
             --manifest bundle-meta/fundamental.json \
             --archive "bundle/fundamental/${BASE}.tar.gz" \
-            --shared-manifest bundle-meta/shared.json \
+            --input-manifest shared=bundle-meta/shared.json \
             --extract-to inputs/fundamental \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}"
-      - name: Download and verify Prices bundle
+      - name: Download and exact-verify qualified Prices bundle
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p bundle/prices inputs/prices
-          python scripts/v4a_persistent_stage_bundle.py key --family prices \
-            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
-            --input-manifest shared=bundle-meta/shared.json --out bundle-meta/prices-key.json
-          BASE="$(python -c 'import json; print(json.load(open("bundle-meta/prices-key.json"))["asset_base"])')"
+          BASE="$(python -c "import json; print(json.load(open('reference/v4a_qualified_generation_reuse_contract_v1.json'))['stages']['prices']['asset_base'])")"
           bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/prices
           cp "bundle/prices/${BASE}.manifest.json" bundle-meta/prices.json
-          python scripts/v4a_persistent_stage_bundle.py verify --family prices \
-            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}" \
+          python scripts/verify_v4a_qualified_generation_bundle.py \
+            --family prices \
+            --manifest bundle-meta/prices.json \
+            --archive "bundle/prices/${BASE}.tar.gz" \
             --input-manifest shared=bundle-meta/shared.json \
-            --archive "bundle/prices/${BASE}.tar.gz" --manifest bundle-meta/prices.json \
-            --extract-to inputs/prices
-      - name: Download and exact-verify frozen Policy bundle
+            --extract-to inputs/prices \
+            --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}"
+      - name: Download and exact-verify qualified Policy bundle
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p bundle/policy inputs/policy
-          BASE="$(python -c 'import json; print(json.load(open("reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json"))["downstream_stages"]["policy"]["asset_base"])')"
+          BASE="$(python -c "import json; print(json.load(open('reference/v4a_qualified_generation_reuse_contract_v1.json'))['stages']['policy']['asset_base'])")"
           bash scripts/download_v4a_release_bundle.sh v4a-stage-bundles-v1 "$BASE" bundle/policy
           cp "bundle/policy/${BASE}.manifest.json" bundle-meta/policy.json
-          python scripts/verify_v4a_frozen_stage_compatibility.py \
+          python scripts/verify_v4a_qualified_generation_bundle.py \
             --family policy \
-            --contract reference/v4a_issuer_source_aggregate_compatibility_bridge_v1.json \
             --manifest bundle-meta/policy.json \
             --archive "bundle/policy/${BASE}.tar.gz" \
-            --shared-manifest bundle-meta/shared.json \
+            --input-manifest shared=bundle-meta/shared.json \
             --extract-to inputs/policy \
             --start-date "${{ inputs.start_date }}" --end-date "${{ inputs.end_date }}"
           mkdir -p stage/fundamental stage/prices stage/policy
