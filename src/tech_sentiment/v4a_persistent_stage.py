@@ -37,6 +37,7 @@ STAGE_SPECS: dict[str, StageSpec] = {
         ),
         extra_files=(
             ".github/workflows/v4a-shared-inputs.yml",
+            "data/reference/kc50_anchor_2026-06-16.csv",
             "data/reference/kc50_anchor_2026-09-14.csv",
             "data/reference/kc50_adjustments_2022_2026.csv",
             "data/reference/chinext50_anchor_2026-06-15.csv",
