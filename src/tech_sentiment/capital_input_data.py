@@ -19,6 +19,10 @@ SSE_ETF_SCALE_SOA_QUERY_URL = "https://query.sse.com.cn/commonSoaQuery.do"
 SSE_ETF_SCALE_SQL_ID = "COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L"
 SSE_TURNOVER_SOURCE_ID = "SSE_DAILY_STOCK_OVERVIEW"
 SSE_TURNOVER_SOURCE_URL = "https://www.sse.com.cn/market/stockdata/overview/day/"
+SSE_TURNOVER_HISTORICAL_SOURCE_URL = "https://www.sse.com.cn/market/stockdata/overview/day/index_his.shtml"
+SSE_TURNOVER_QUERY_URL = "https://query.sse.com.cn/commonQuery.do"
+SSE_TURNOVER_HISTORICAL_SQL_ID = "COMMON_SSE_SJ_GPSJ_CJGK_DAYCJGK_C"
+SSE_TURNOVER_HISTORICAL_CUTOFF = pd.Timestamp("2021-12-24")
 SZSE_TURNOVER_SOURCE_ID = "SZSE_MARKET_OVERVIEW_DAILY"
 SZSE_TURNOVER_SOURCE_URL = "https://www.szse.cn/market/overview/index.html"
 SSE_MARGIN_SOURCE_ID = "SSE_MARGIN_SUMMARY"
@@ -459,6 +463,110 @@ def qualify_trailing_etf_coverage(
     ]
 
 
+def _sse_turnover_payload_from_response(response: object) -> dict[str, object]:
+    response.raise_for_status()
+    _validate_sse_response_url(
+        response,
+        expected_host="query.sse.com.cn",
+        default_url=SSE_TURNOVER_QUERY_URL,
+    )
+    try:
+        payload = response.json()
+    except Exception:
+        text = str(getattr(response, "text", "") or "").strip()
+        match = re.fullmatch(r"[A-Za-z_$][\\w$]*\\((.*)\\)\\s*;?", text, flags=re.S)
+        if match is None:
+            raise
+        payload = json.loads(match.group(1))
+    if not isinstance(payload, dict):
+        raise ValueError("SSE turnover response is not a JSON object")
+    return payload
+
+
+def _sse_historical_turnover_payload_frame(payload: object) -> pd.DataFrame:
+    if not isinstance(payload, dict):
+        raise ValueError("SSE historical turnover response is not a JSON object")
+    rows = payload.get("result")
+    if not isinstance(rows, list):
+        raise ValueError("SSE historical turnover response lacks result rows")
+    frame = pd.DataFrame(rows)
+    required = {"PRODUCT_TYPE", "TX_AMOUNT"}
+    missing = required - set(frame.columns)
+    if missing:
+        raise ValueError(
+            f"SSE historical turnover response missing fields: {sorted(missing)}"
+        )
+    frame["PRODUCT_TYPE"] = frame["PRODUCT_TYPE"].astype(str)
+    frame["TX_AMOUNT"] = pd.to_numeric(frame["TX_AMOUNT"], errors="coerce")
+    main_a = frame.loc[frame["PRODUCT_TYPE"].eq("1"), "TX_AMOUNT"]
+    star = frame.loc[frame["PRODUCT_TYPE"].eq("43"), "TX_AMOUNT"]
+    if len(main_a) != 1 or len(star) != 1:
+        raise ValueError(
+            "SSE historical turnover requires exactly one main-A and one STAR row"
+        )
+    if main_a.isna().any() or star.isna().any():
+        raise ValueError("SSE historical turnover contains invalid trade amount")
+    return pd.DataFrame(
+        [
+            {
+                "单日情况": "成交金额",
+                "主板A": float(main_a.iloc[0]),
+                "科创板": float(star.iloc[0]),
+            }
+        ]
+    )
+
+
+def _fetch_sse_historical_daily_overview(
+    date: str,
+    *,
+    timeout: float = 20.0,
+    plain_get: Callable[..., object] | None = None,
+) -> pd.DataFrame:
+    if len(date) != 8 or not date.isdigit():
+        raise ValueError("SSE historical turnover date must be YYYYMMDD")
+    if plain_get is None:
+        import requests as plain_requests
+        plain_get = plain_requests.get
+    params = {
+        "searchDate": f"{date[:4]}-{date[4:6]}-{date[6:]}",
+        "sqlId": SSE_TURNOVER_HISTORICAL_SQL_ID,
+        "stockType": "90",
+    }
+    headers = {
+        "Referer": SSE_TURNOVER_HISTORICAL_SOURCE_URL,
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 Chrome/124 Safari/537.36"
+        ),
+    }
+    response = plain_get(
+        SSE_TURNOVER_QUERY_URL,
+        params=params,
+        headers=headers,
+        timeout=timeout,
+        allow_redirects=True,
+    )
+    frame = _sse_historical_turnover_payload_frame(
+        _sse_turnover_payload_from_response(response)
+    )
+    frame.attrs["provider_interface"] = SSE_TURNOVER_QUERY_URL
+    frame.attrs["historical_sql_id"] = SSE_TURNOVER_HISTORICAL_SQL_ID
+    return frame
+
+
+def _fetch_sse_daily_overview_official(date: str) -> pd.DataFrame:
+    observation = pd.Timestamp(
+        f"{date[:4]}-{date[4:6]}-{date[6:]}"
+    ).normalize()
+    if observation <= SSE_TURNOVER_HISTORICAL_CUTOFF:
+        return _fetch_sse_historical_daily_overview(date)
+    import akshare as ak  # type: ignore
+    return ak.stock_sse_deal_daily(date=date)
+
+
 def normalize_sse_a_share_turnover(
     frame: pd.DataFrame, *, observation_date: object
 ) -> dict[str, object]:
@@ -643,13 +751,11 @@ def fetch_sse_szse_a_share_turnover_history(
     retry_attempts: int = 3,
     retry_backoff_seconds: float = 0.5,
 ) -> ExchangeTurnoverFetchResult:
-    if sse_fetcher is None or szse_fetcher is None:
+    if sse_fetcher is None:
+        sse_fetcher = _fetch_sse_daily_overview_official
+    if szse_fetcher is None:
         import akshare as ak  # type: ignore
-
-        if sse_fetcher is None:
-            sse_fetcher = lambda date: ak.stock_sse_deal_daily(date=date)
-        if szse_fetcher is None:
-            szse_fetcher = lambda date: ak.stock_szse_summary(date=date)
+        szse_fetcher = lambda date: ak.stock_szse_summary(date=date)
     sse_rows: list[dict[str, object]] = []
     szse_rows: list[dict[str, object]] = []
     errors: list[dict[str, str]] = []
