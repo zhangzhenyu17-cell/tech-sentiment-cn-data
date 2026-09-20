@@ -26,8 +26,11 @@ FAMILIES = (
 CUSTOM_PRODUCER_FILES = (
     ".github/workflows/v4c03-04-phase-a-pit-evidence.yml",
     ".github/workflows/v4c03-04a-phase-a-pit-evidence-recovery.yml",
+    ".github/workflows/v4c03-04b-phase-a-turnover-repair.yml",
     "reference/v4c03_phase_a_pit_evidence_v1.json",
     "reference/v4c03_phase_a_pit_evidence_recovery_v1.json",
+    "reference/v4c03_phase_a_turnover_repair_v1.json",
+    "scripts/repair_v4c03_phase_a_turnover.py",
     "scripts/prepare_v4c03_phase_a_evidence_inputs.py",
     "scripts/materialize_v4c03_phase_a_capital.py",
     "scripts/aggregate_v4a_issuer_shards.py",
