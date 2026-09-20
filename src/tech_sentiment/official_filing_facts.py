@@ -233,7 +233,7 @@ def _cninfo_https_download_fallback(url: str) -> str | None:
 
 
 _SSE_LISTED_ATTACHMENT_RE = re.compile(
-    r"^/disclosure/listedinfo/announcement/c/new/.+\\.pdf$",
+    r"^/disclosure/listedinfo/announcement/c/new/.+\.pdf$",
     re.IGNORECASE,
 )
 
