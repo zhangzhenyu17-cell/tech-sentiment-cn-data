@@ -1124,7 +1124,11 @@ def test_sse_html_canonical_uses_same_provider_static_exact_path_before_browser(
 
     downloaded = download_official_document(original, opener=opener)
 
-    assert requested == [original, static]
+    star = (
+        "https://star.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2026-01-29/688765_20260129_W1FW.pdf"
+    )
+    assert requested == [original, star, static]
     assert downloaded.url == original
     assert downloaded.retrieval_url == static
     assert downloaded.content == pdf
