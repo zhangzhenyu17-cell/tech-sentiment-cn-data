@@ -1,0 +1,51 @@
+{
+  "contract_id": "edge1_exchange_earnings_source_routing_engineering_v1",
+  "date": "2026-09-21",
+  "status": "ENGINEERING_READY_NOT_AUTHORIZED_FOR_FORMAL_MATERIALIZATION",
+  "problem": "Frozen V4-A artifact contains registered SSE/SZSE ISSUER_EARNINGS_FORECAST records, but formal ISSUER_EARNINGS_DIRECTION materialization is CNINFO-only.",
+  "observed_frozen_artifact": {
+    "run_id": 35485765220,
+    "artifact_id": 10596634296,
+    "artifact_digest": "sha256:0faffd88a611beee8412de8b5f4f23f5d0cfd0e3068f7c311206b4829fc7faac",
+    "sse_forecast_documents": 93,
+    "sse_forecast_entities": 48,
+    "szse_forecast_documents": 539,
+    "szse_forecast_entities": 86,
+    "formal_direction_records": 562,
+    "formal_direction_source_identities": [
+      "CNINFO_ANNOUNCEMENT_ARCHIVE"
+    ]
+  },
+  "allowed_engineering_semantics": {
+    "input_sources": [
+      "SSE_ANNOUNCEMENT_ARCHIVE",
+      "SZSE_ANNOUNCEMENT_ARCHIVE"
+    ],
+    "input_evidence_type": "ISSUER_EARNINGS_FORECAST",
+    "input_availability_state": "HISTORICAL_RECONSTRUCTABLE",
+    "classifier_version": "issuer-explicit-guidance-v1",
+    "classification_basis": "EXPLICIT_ISSUER_GUIDANCE_TOKEN_IN_EXACT_OFFICIAL_DOCUMENT",
+    "event_date_inherited": true,
+    "evidence_available_date_inherited": true,
+    "source_identity_inherited": true,
+    "official_document_body_required": true,
+    "numeric_threshold_used": false,
+    "price_or_return_used": false,
+    "outcome_used": false,
+    "new_universe": false,
+    "new_evidence_source": false
+  },
+  "forbidden_without_separate_authorization": {
+    "formal_bundle_integration": true,
+    "public_data_rematerialization_for_qualification": true,
+    "private_evidence_qualification_promotion": true,
+    "coverage_threshold_change": true,
+    "classifier_token_change": true,
+    "unknown_as_not_down": true,
+    "low_or_high_outcome_read": true,
+    "production_or_trading_change": true
+  },
+  "evidence_qualification_changed": false,
+  "production_changed": false,
+  "trading_authority_changed": false
+}
