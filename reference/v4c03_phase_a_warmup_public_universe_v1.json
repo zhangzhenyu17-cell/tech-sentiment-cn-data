@@ -1,0 +1,50 @@
+{
+  "contract_id": "v4c03_phase_a_warmup_public_universe_v1",
+  "contract_version": 1,
+  "status": "FROZEN_PUBLIC_DATA_SCOPE",
+  "date": "2026-09-20",
+  "purpose": "Provide public-only pre-sample price and point-in-time membership warm-up history required to reproduce frozen V1 rolling state at the 2021-06-15 Phase A sample boundary. Warm-up rows are not eligible V4C-03 samples.",
+  "phase": "A_WARMUP_ONLY",
+  "window": {
+    "start_date": "2021-01-04",
+    "end_date": "2021-06-14"
+  },
+  "sample_eligibility": false,
+  "sample_window_begins": "2021-06-15",
+  "universes": {
+    "STAR50": {
+      "index_code": "000688",
+      "expected_constituents": 50,
+      "anchor_path": "data/reference/kc50_anchor_2026-09-14.csv",
+      "anchor_effective_date": "2026-09-14",
+      "adjustments_path": "data/reference/v4c03_kc50_adjustments_2021warmup_2026.csv"
+    },
+    "ChiNext50": {
+      "index_code": "399673",
+      "expected_constituents": 50,
+      "anchor_path": "data/reference/chinext50_anchor_2026-06-15.csv",
+      "anchor_effective_date": "2026-06-15",
+      "adjustments_path": "data/reference/v4c03_chinext50_adjustments_2021h2_2026.csv"
+    }
+  },
+  "membership_semantics": "REVERSE_OFFICIAL_DATED_ADJUSTMENTS_FROM_EXACT_POST_ADJUSTMENT_ANCHOR_THEN_CLIP_TO_WARMUP_WINDOW",
+  "price_semantics": {
+    "constituent_adjustment": "qfq",
+    "provider_order": [
+      "tencent",
+      "eastmoney"
+    ],
+    "official_index_rail_required": true,
+    "point_in_time_membership_required": true
+  },
+  "bundle": {
+    "release_tag": "v4c03-public-data-v1",
+    "immutable": true,
+    "reusable_success_unit": "PHASE_A_WARMUP_PUBLIC_UNIVERSE_AND_PRICES"
+  },
+  "private_model_semantics_allowed": false,
+  "portfolio_or_holdings_data_allowed": false,
+  "forward_result_computation_allowed": false,
+  "automatic_trigger_allowed": false,
+  "production_or_trading_authority_changed": false
+}
