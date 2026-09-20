@@ -111,8 +111,9 @@ def test_v4c03_public_workflow_is_manual_only_and_failure_isolated() -> None:
     assert "fail-fast: false" in text
     assert "Upload reusable universe work unit" in text
     assert "v4c03-public-data-v1" in text
-    assert "ret_" not in text
-    assert "fwd_" not in text
+    assert "research_cli" not in text
+    assert "study_ice_points" not in text
+    assert "study_post_warning_outcomes" not in text
 
 
 def test_v4c03_scope_does_not_mutate_frozen_v4a_symbol_scope() -> None:
