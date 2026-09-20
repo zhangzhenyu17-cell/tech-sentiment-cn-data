@@ -1074,3 +1074,107 @@ def test_gzip_transport_records_urllib_method():
     )
 
     assert downloaded.transport_method == "urllib"
+
+
+def test_sse_listed_attachment_static_fallback_preserves_exact_path():
+    original = (
+        "https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2026-01-29/688765_20260129_W1FW.pdf"
+    )
+    assert filing_module._sse_static_attachment_fallback(original) == (
+        "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2026-01-29/688765_20260129_W1FW.pdf"
+    )
+    assert filing_module._sse_static_attachment_fallback(
+        "https://www.sse.com.cn/example.pdf"
+    ) is None
+    assert filing_module._sse_static_attachment_fallback(
+        "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2026-01-29/688765_20260129_W1FW.pdf"
+    ) is None
+
+
+def test_sse_html_canonical_uses_same_provider_static_exact_path_before_browser(monkeypatch):
+    original = (
+        "https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2026-01-29/688765_20260129_W1FW.pdf"
+    )
+    static = (
+        "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2026-01-29/688765_20260129_W1FW.pdf"
+    )
+    pdf = b"%PDF-1.7 exact SSE static attachment bytes"
+    requested: list[str] = []
+
+    def opener(request, timeout=None):
+        requested.append(request.full_url)
+        if request.full_url == original:
+            return _FakeResponse(b"<html><body>SSE landing page</body></html>")
+        if request.full_url == static:
+            return _FakeResponse(pdf)
+        raise AssertionError(request.full_url)
+
+    monkeypatch.setattr(
+        filing_module,
+        "_download_exchange_attachment_with_browser_transport",
+        lambda url, *, timeout: (_ for _ in ()).throw(
+            AssertionError("browser fallback must not run when SSE static host returns PDF")
+        ),
+    )
+
+    downloaded = download_official_document(original, opener=opener)
+
+    assert requested == [original, static]
+    assert downloaded.url == original
+    assert downloaded.retrieval_url == static
+    assert downloaded.content == pdf
+    assert downloaded.transport_method == "same_provider_static"
+    assert downloaded.sha256 == filing_module.sha256(pdf).hexdigest()
+    assert downloaded.transport_sha256 == downloaded.sha256
+
+
+def test_sse_static_fallback_html_still_reaches_same_provider_browser(monkeypatch):
+    original = (
+        "https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2026-01-29/688765_20260129_W1FW.pdf"
+    )
+    calls: list[tuple[str, float]] = []
+
+    def opener(request, timeout=None):
+        return _FakeResponse(b"<html><body>challenge</body></html>")
+
+    def browser_fallback(url: str, *, timeout: float):
+        calls.append((url, timeout))
+        return b"%PDF-1.7 browser recovered SSE attachment", (
+            "https://static.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+            "2026-01-29/688765_20260129_W1FW.pdf"
+        )
+
+    monkeypatch.setattr(
+        filing_module,
+        "_download_exchange_attachment_with_browser_transport",
+        browser_fallback,
+    )
+
+    downloaded = download_official_document(original, opener=opener)
+    assert calls == [(original, 30.0)]
+    assert downloaded.url == original
+    assert downloaded.retrieval_url.startswith("https://static.sse.com.cn/")
+    assert downloaded.transport_method == "same_provider_browser"
+
+
+def test_non_pdf_binary_after_allowed_fallbacks_fails_before_semantic_parser(monkeypatch):
+    original = "https://www.sse.com.cn/example.pdf"
+    monkeypatch.setattr(
+        filing_module,
+        "_download_exchange_attachment_with_browser_transport",
+        lambda url, *, timeout: (b"not-a-pdf-binary-body", url),
+    )
+
+    with pytest.raises(ValueError, match="returned non-PDF content"):
+        download_official_document(
+            original,
+            opener=lambda request, timeout: _FakeResponse(
+                b"<html><body>challenge</body></html>"
+            ),
+        )

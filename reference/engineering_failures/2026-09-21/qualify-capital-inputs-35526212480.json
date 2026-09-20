@@ -13,8 +13,14 @@
   "failure_class": "PROVIDER_TRANSPORT_OR_PROTOCOL",
   "execution_class": "SSE_OFFICIAL_ATTACHMENT_TRANSPORT",
   "normalized_failure_signature": "official filing attachment returned HTML instead of PDF after allowed transport fallbacks",
-  "root_cause_status": "PENDING_ROOT_CAUSE",
-  "verified_root_cause": null,
+  "root_cause_status": "VERIFIED",
+  "verified_root_cause": {
+    "defect": "SSE query API relative listed-announcement paths were historically bound to www.sse.com.cn, while SSE full-text PDF delivery uses static.sse.com.cn for the exact same /disclosure/listedinfo/announcement/c/new/...pdf path.",
+    "observed_runtime_effect": "All 93 SSE earnings forecast documents returned HTML instead of PDF on the historical www.sse.com.cn transport path; all 539 SZSE documents were accounted for as direction or unclassified.",
+    "identity_preservation": "Canonical evidence URL remains the historical www.sse.com.cn URL; only retrieval_url may use static.sse.com.cn with the exact same path inside the same SSE provider family.",
+    "no_search_or_substitution": true,
+    "replacement_run_validation_status": "PENDING_LIVE_PREFLIGHT"
+  },
   "known_evidence": {
     "eligible_documents": 632,
     "resumed_documents": 413,
@@ -26,7 +32,7 @@
     "inferred_all_93_errors_are_sse_provider_class": true
   },
   "lesson": {
-    "preflight_gap": "Full scale-out was allowed before exact live SSE/SZSE representative-document transport validation.",
+    "preflight_gap": "The preflight did not verify the exact SSE listed-company attachment execution class on the hosted runner before the 632-document scale-out.",
     "waste_pattern": "A provider-class deterministic blocker was discovered only after the full document loop.",
     "persistence_value": "Per-document immutable checkpoints preserved 413 prior documents and 126 newly successful documents.",
     "generalized_prevention": [
@@ -52,5 +58,27 @@
     "production_changed": false,
     "trading_authority_changed": false,
     "public_private_boundary_changed": false
+  },
+  "corrective_action": {
+    "transport_fix": "Derive an allowlisted same-provider static.sse.com.cn retrieval candidate only for exact SSE listed-company /disclosure/listedinfo/announcement/c/new/*.pdf paths.",
+    "browser_fallback": "Prefer the exact static-host same-path candidate before retrying the historical www-host candidate.",
+    "content_class_guard": "Require decoded document bytes to have PDF magic before returning to semantic parsers.",
+    "canonical_identity_changed": false,
+    "evidence_semantics_changed": false
+  },
+  "regression_tests": [
+    "test_sse_listed_attachment_static_fallback_preserves_exact_path",
+    "test_sse_html_canonical_uses_same_provider_static_exact_path_before_browser",
+    "test_sse_static_fallback_html_still_reaches_same_provider_browser"
+  ],
+  "closeout": {
+    "root_cause_verified": true,
+    "regression_green": false,
+    "lesson_persisted": true,
+    "protocol_decision_persisted": true,
+    "repair_merged": false,
+    "replacement_live_preflight_passed": false,
+    "replacement_full_run_result": null,
+    "status": "OPEN"
   }
 }

@@ -232,6 +232,32 @@ def _cninfo_https_download_fallback(url: str) -> str | None:
     return f"https://www.cninfo.com.cn/new/announcement/download?{query}"
 
 
+_SSE_LISTED_ATTACHMENT_RE = re.compile(
+    r"^/disclosure/listedinfo/announcement/c/new/.+\.pdf$",
+    re.IGNORECASE,
+)
+
+
+def _sse_static_attachment_fallback(url: str) -> str | None:
+    """Map one exact SSE listed-company PDF path to SSE's static attachment host.
+
+    The SSE announcement query API can expose a relative path that historical
+    materialization bound to www.sse.com.cn. SSE's own announcement full-text
+    links serve the same path from static.sse.com.cn. This is a transport-only
+    same-provider mapping: the canonical evidence URL remains unchanged and
+    provenance records the actual retrieval URL separately.
+    """
+
+    parsed = urlparse(str(url).strip())
+    if (
+        parsed.scheme != "https"
+        or (parsed.hostname or "").lower() != "www.sse.com.cn"
+        or _SSE_LISTED_ATTACHMENT_RE.fullmatch(parsed.path) is None
+    ):
+        return None
+    return parsed._replace(netloc="static.sse.com.cn").geturl()
+
+
 def _download_once(
     url: str,
     *,
@@ -398,12 +424,13 @@ def _download_exchange_attachment_with_browser_transport(
     *,
     timeout: float,
 ) -> tuple[bytes, str]:
-    """Retry one exact SSE/SZSE attachment with same-provider browser transport.
+    """Retry one SSE/SZSE attachment with same-provider browser transport.
 
-    This fallback is transport-only and is entered only when ordinary HTTPS
-    returns HTML instead of the canonical PDF bytes. It warms a same-provider
-    public disclosure page, then requests the exact original attachment URL.
-    Redirects must remain inside the same exchange provider host family.
+    The canonical evidence identity never changes. For historical SSE records
+    whose query-API relative path was bound to www.sse.com.cn, the exact same
+    path on static.sse.com.cn is an allowed same-provider transport candidate.
+    No search, filename substitution, alternate issuer source, or HTTP
+    downgrade is permitted.
     """
 
     canonical_host = _canonical_host(canonical_url)
@@ -432,7 +459,15 @@ def _download_exchange_attachment_with_browser_transport(
         "Accept-Language": headers["Accept-Language"],
     }
 
+    candidates: list[str] = []
+    static_fallback = _sse_static_attachment_fallback(canonical_url)
+    if static_fallback is not None:
+        candidates.append(static_fallback)
+    candidates.append(canonical_url)
+
     session = curl_requests.Session()
+    last_error: Exception | None = None
+    last_html: tuple[bytes, str] | None = None
     try:
         try:
             bootstrap = session.get(
@@ -447,35 +482,53 @@ def _download_exchange_attachment_with_browser_transport(
             )
             _validate_same_provider_retrieval(canonical_url, bootstrap_url)
         except Exception:
-            # Cookie/bootstrap warm-up is best-effort only. The exact attachment
-            # request below remains the authoritative fail-closed operation.
+            # Cookie/bootstrap warm-up is best-effort only. Exact attachment
+            # requests below remain authoritative and fail closed.
             pass
 
-        response = call_with_bounded_network_retry(
-            lambda: session.get(
-                canonical_url,
-                headers=headers,
-                impersonate="chrome",
-                timeout=timeout,
-                allow_redirects=True,
-            ),
-            attempts=3,
-            backoff_seconds=0.5,
-        )
-        response.raise_for_status()
-        retrieval_url = str(
-            getattr(response, "url", canonical_url) or canonical_url
-        )
-        _validate_same_provider_retrieval(canonical_url, retrieval_url)
-        content = bytes(getattr(response, "content", b""))
-        if not content:
-            raise ValueError("official filing attachment browser transport is empty")
-        return content, retrieval_url
+        for candidate in candidates:
+            try:
+                response = call_with_bounded_network_retry(
+                    lambda candidate=candidate: session.get(
+                        candidate,
+                        headers=headers,
+                        impersonate="chrome",
+                        timeout=timeout,
+                        allow_redirects=True,
+                    ),
+                    attempts=3,
+                    backoff_seconds=0.5,
+                )
+                response.raise_for_status()
+                retrieval_url = str(
+                    getattr(response, "url", candidate) or candidate
+                )
+                _validate_same_provider_retrieval(canonical_url, retrieval_url)
+                content = bytes(getattr(response, "content", b""))
+                if not content:
+                    raise ValueError(
+                        "official filing attachment browser transport is empty"
+                    )
+                decoded, _ = _decode_official_transport_body(content)
+                if _looks_like_html(decoded):
+                    last_html = (content, retrieval_url)
+                    continue
+                return content, retrieval_url
+            except Exception as exc:
+                last_error = exc
+                continue
     finally:
         close = getattr(session, "close", None)
         if callable(close):
             close()
 
+    if last_html is not None:
+        return last_html
+    if last_error is not None:
+        raise RuntimeError(
+            "exchange browser transport exhausted same-provider attachment candidates"
+        ) from last_error
+    raise RuntimeError("exchange browser transport produced no attachment attempt")
 
 def _decode_official_transport_body(content: bytes) -> tuple[bytes, str | None]:
     """Decode transport wrapping without changing the official document identity.
@@ -562,6 +615,37 @@ def download_official_document(
 
     canonical_host = _canonical_host(url)
     provider_family = _official_provider_family(canonical_host)
+
+    if _looks_like_html(document_content) and provider_family == "SSE":
+        static_fallback = _sse_static_attachment_fallback(url)
+        if static_fallback is not None:
+            try:
+                fallback_content = call_with_bounded_network_retry(
+                    lambda: _download_once(
+                        static_fallback,
+                        timeout=timeout,
+                        opener=opener,
+                    ),
+                    attempts=3,
+                    backoff_seconds=0.5,
+                )
+                fallback_document, fallback_encoding = _decode_official_transport_body(
+                    fallback_content
+                )
+                if not _looks_like_html(fallback_document):
+                    _validate_same_provider_retrieval(url, static_fallback)
+                    content = fallback_content
+                    retrieval_url = static_fallback
+                    transport_method = "same_provider_static"
+                    transport_sha256 = sha256(content).hexdigest()
+                    document_content = fallback_document
+                    transport_encoding = fallback_encoding
+            except Exception:
+                # Browser transport below remains the final same-provider
+                # fallback. The static host attempt does not weaken fail-closed
+                # behavior or substitute a different document identity.
+                pass
+
     if _looks_like_html(document_content) and provider_family in {"SSE", "SZSE"}:
         content, retrieval_url = _download_exchange_attachment_with_browser_transport(
             url,
@@ -574,6 +658,10 @@ def download_official_document(
     if _looks_like_html(document_content):
         raise ValueError(
             "official filing attachment returned HTML instead of PDF after allowed transport fallbacks"
+        )
+    if not _looks_like_pdf(document_content):
+        raise ValueError(
+            "official filing attachment returned non-PDF content after allowed transport fallbacks"
         )
 
     return DownloadedOfficialDocument(
