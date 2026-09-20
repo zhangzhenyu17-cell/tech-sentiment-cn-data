@@ -197,7 +197,12 @@ def test_prepare_evidence_inputs_combines_calendar_but_emits_sample_market_only(
         "2021-12-31",
     ]
     symbols = pd.read_csv(out / "symbols.csv", dtype={"symbol": str})
+    assert list(symbols.columns) == ["symbol", "market"]
     assert set(symbols["symbol"].astype(str).str.zfill(6)) == {"300001", "688001"}
+    assert dict(zip(symbols["symbol"], symbols["market"])) == {
+        "300001": "SZ",
+        "688001": "SH",
+    }
     sample_star = pd.read_csv(out / "market/STAR50/index_prices.csv")
     assert sample_star["date"].tolist() == ["2021-06-15", "2021-12-31"]
     receipt = json.loads((out / "receipt.json").read_text())
@@ -371,3 +376,42 @@ def test_finalizer_preserves_data_insufficient_without_promoting_it(
     assert receipt["pre_sample_evidence_sample_eligible"] is False
     assert receipt["evidence_qualification_semantics_changed"] is False
     assert receipt["new_context_outcome_read"] is False
+
+
+def test_market_routing_is_strict_for_frozen_v4c03_scope() -> None:
+    module = _module(PREPARE, "v4c03_prepare_market_test")
+    assert module._market_from_symbol("688001") == "SH"
+    assert module._market_from_symbol("689009") == "SH"
+    assert module._market_from_symbol("300001") == "SZ"
+    assert module._market_from_symbol("301001") == "SZ"
+    assert module._market_from_symbol("302001") == "SZ"
+    import pytest
+    with pytest.raises(ValueError, match="unsupported frozen V4C-03 symbol"):
+        module._market_from_symbol("600000")
+
+
+def test_recovery_workflow_reuses_exact_artifacts_without_provider_rerun() -> None:
+    workflow = ROOT / ".github/workflows/v4c03-04a-phase-a-pit-evidence-recovery.yml"
+    recovery = ROOT / "reference/v4c03_phase_a_pit_evidence_recovery_v1.json"
+    text = workflow.read_text(encoding="utf-8")
+    contract = json.loads(recovery.read_text(encoding="utf-8"))
+    assert contract["status"] == "FROZEN_EXACT_REUSE_RECOVERY"
+    assert contract["failed_run"]["run_id"] == 35497119739
+    assert len(contract["exact_reused_artifacts"]) == 16
+    assert "workflow_dispatch:" in text
+    for forbidden_trigger in ("schedule:", "workflow_run:", "pull_request:", "push:"):
+        assert forbidden_trigger not in text
+    for forbidden_producer in (
+        "materialize_pit_evidence.py",
+        "materialize_v4a_fundamental_earnings_shard.py",
+        "materialize_v4a_price_shard.py",
+        "materialize_v4a_policy_stage.py",
+        "materialize_v4c03_phase_a_capital.py",
+    ):
+        assert forbidden_producer not in text
+    assert "aggregate_v4a_issuer_shards.py" in text
+    assert "assemble_v4a_derived_pit.py" in text
+    assert "--issuer-source-commit" in text
+    assert "--fundamental-source-commit" in text
+    assert "--price-source-commit" in text
+    assert "--policy-source-commit" in text
