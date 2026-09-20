@@ -117,8 +117,8 @@ def test_v4c03_public_workflow_is_manual_only_and_failure_isolated() -> None:
 
 
 def test_v4c03_scope_does_not_mutate_frozen_v4a_symbol_scope() -> None:
-    from scripts.build_capital_pit_symbol_scope import DEFAULT_INPUTS
-
-    paths = {relative for _, relative, _ in DEFAULT_INPUTS}
-    assert "data/reference/v4c03_kc50_adjustments_2021h2_2026.csv" not in paths
-    assert "data/reference/v4c03_chinext50_adjustments_2021h2_2026.csv" not in paths
+    frozen_builder = (
+        ROOT / "scripts" / "build_capital_pit_symbol_scope.py"
+    ).read_text(encoding="utf-8")
+    assert "v4c03_kc50_adjustments_2021h2_2026.csv" not in frozen_builder
+    assert "v4c03_chinext50_adjustments_2021h2_2026.csv" not in frozen_builder
