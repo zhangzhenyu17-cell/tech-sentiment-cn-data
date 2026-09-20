@@ -88,6 +88,14 @@ def canonicalize_fundamental_state_revision_identity(
 
     if not dropped:
         return validated.reset_index(drop=True), (), 0
+    dropped_rows = validated[
+        validated["evidence_id"].astype(str).isin(set(dropped))
+    ]
+    if not dropped_rows["availability_state"].astype(str).eq("DATA_INSUFFICIENT").all():
+        raise ValueError(
+            "automatic Derived revision canonicalization may only remove "
+            "redundant DATA_INSUFFICIENT snapshots"
+        )
     out = validated[~validated["evidence_id"].astype(str).isin(set(dropped))].copy()
     out = out.sort_values(
         ["evidence_available_date", "source_identity", "entity_id", "evidence_id"],
@@ -249,7 +257,7 @@ def repair_completed_derived_stage(
         "duplicate_revision_groups": int(duplicate_groups),
         "dropped_redundant_rows": int(len(dropped)),
         "new_source_commit": str(new_source_commit),
-        "retention_rule": "EARLIEST_EVIDENCE_AVAILABLE_DATE_FOR_IDENTICAL_REVISION_PAYLOAD",
+        "retention_rule": "EARLIEST_EVIDENCE_AVAILABLE_DATE_FOR_IDENTICAL_DATA_INSUFFICIENT_REVISION_PAYLOAD",
         "conflicting_revision_payloads_allowed": False,
         "qualified_state_rows_removed": 0,
         "evidence_source_eligibility_changed": False,
