@@ -155,10 +155,7 @@ def _materialize_universe(
     files = [
         _write_frame(membership, root / "universe_point_in_time.csv"),
         _write_frame(
-            segments_full[
-                (pd.to_datetime(segments_full["effective_start"]).le(end))
-                & (pd.to_datetime(segments_full["effective_end"]).ge(start))
-            ].copy(),
+            _clip_membership(segments_full, start=start, end=end),
             root / "universe_segments_audit.csv",
         ),
         _write_frame(result.prices, root / "prices.csv"),
