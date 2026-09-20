@@ -98,6 +98,57 @@ def test_all_v4a_workflows_are_manual_only():
             assert forbidden not in text, (path, forbidden)
 
 
+def test_all_v4a_jobs_use_maximum_six_hour_hard_ceiling():
+    for path in ALL_V4A_WORKFLOWS:
+        text = _text(path)
+        timeouts = re.findall(r"timeout-minutes:\s*(\d+)", text)
+        assert timeouts, path
+        assert set(timeouts) == {"360"}, (path, timeouts)
+
+
+def test_checkpointed_long_materializers_reserve_save_window_before_hard_timeout():
+    required = {
+        "v4a-capital.yml": "qualify_capital_inputs.py",
+        "v4a-financing.yml": "materialize_financing_history.py",
+        "v4a-issuer-source.yml": "materialize_pit_evidence.py",
+        "v4a-issuer-szse-migration.yml": "materialize_v4a_szse_issuer.py",
+        "v4a-fundamental-earnings.yml": "materialize_v4a_fundamental_earnings_shard.py",
+        "v4a-prices.yml": "materialize_v4a_price_shard.py",
+        "v4a-policy.yml": "materialize_v4a_policy_stage.py",
+        "v4a-derived.yml": "assemble_v4a_derived_pit.py",
+    }
+    for name, materializer in required.items():
+        text = _text(WORKFLOW_DIR / name)
+        assert (
+            f"timeout --signal=TERM --kill-after=2m 330m python scripts/{materializer}"
+            in text
+        ), name
+        assert "actions/cache/restore@v4" in text, name
+        assert "actions/cache/save@v4" in text, name
+
+
+def test_non_fundamental_checkpoint_keys_use_semantic_progress_identity_not_workflow_sha():
+    for name in (
+        "v4a-capital.yml",
+        "v4a-financing.yml",
+        "v4a-issuer-source.yml",
+        "v4a-issuer-szse-migration.yml",
+        "v4a-prices.yml",
+        "v4a-policy.yml",
+        "v4a-derived.yml",
+    ):
+        text = _text(WORKFLOW_DIR / name)
+        assert "v4a_persistent_stage_bundle.py progress-key" in text, name
+        assert "PROGRESS_KEY" in text, name
+        cache_lines = "\n".join(
+            line
+            for line in text.splitlines()
+            if "progress-v1-" in line
+            and ("key:" in line or line.strip().startswith("v4a-"))
+        )
+        assert "github.sha" not in cache_lines, (name, cache_lines)
+
+
 def test_finalizer_uses_six_hour_hard_ceiling_and_remains_manual_only():
     text = _text(WORKFLOW_DIR / "qualify-capital-inputs.yml")
     assert "timeout-minutes: 360" in text
@@ -171,7 +222,7 @@ def test_issuer_sources_are_independently_manual_and_cninfo_keeps_bounded_shards
     assert "--source SZSE_ANNOUNCEMENT_ARCHIVE" in text
 
 
-def test_stage_cache_namespaces_remain_exact_commit_and_stage_compatible():
+def test_stage_cache_namespaces_use_semantic_progress_identity_while_bundle_identity_stays_strict():
     cache_workflows = (
         "v4a-capital.yml",
         "v4a-financing.yml",
@@ -183,14 +234,19 @@ def test_stage_cache_namespaces_remain_exact_commit_and_stage_compatible():
     for name in cache_workflows:
         text = _text(WORKFLOW_DIR / name)
         assert "STAGE_COMPAT" in text
+        assert "v4a_persistent_stage_bundle.py key" in text
+        assert "v4a_persistent_stage_bundle.py progress-key" in text
+        assert "PROGRESS_KEY" in text
         assert "actions/cache/restore@v4" in text
         assert "actions/cache/save@v4" in text
         cache_lines = "\n".join(
-            line for line in text.splitlines()
+            line
+            for line in text.splitlines()
             if "key:" in line or "restore-keys:" in line
         )
-        assert "STAGE_COMPAT" in cache_lines
-        assert "github.sha" in cache_lines
+        assert "PROGRESS_KEY" in cache_lines
+        assert "STAGE_COMPAT" not in cache_lines
+        assert "github.sha" not in cache_lines
 
 
 def test_fundamental_uses_bounded_durable_progress_units_without_evidence_handoff():
@@ -317,16 +373,21 @@ def test_derived_workflow_consumes_only_verified_persistent_upstreams():
     assert "--policy-source-commit" in text
 
 
-def test_derived_timeout_and_phase_resume_are_hardened_without_changing_upstream_workflows():
+def test_derived_timeout_and_phase_resume_are_hardened_without_one_time_recovery_bridge():
     text = _text(WORKFLOW_DIR / "v4a-derived.yml")
     assert "timeout-minutes: 360" in text
-    assert "Resolve Derived resume identity" in text
+    assert "Resolve Derived semantic progress identity" in text
+    assert "v4a_persistent_stage_bundle.py progress-key --family derived" in text
+    assert "PROGRESS_KEY" in text
     assert "Restore Derived phase checkpoints" in text
     assert "Save Derived phase checkpoints" in text
     assert "timeout --signal=TERM --kill-after=2m 330m python scripts/assemble_v4a_derived_pit.py" in text
     assert "--checkpoint-dir .cache/capital_pit_v4a/derived/assembly" in text
-    assert "v4a-derived-assembly-v1-" in text
+    assert "v4a-derived-progress-v1-" in text
     assert "cancel-in-progress: false" in text
+    assert "Restore exact completed Derived stage from failed qualification-gate run" not in text
+    assert "35459083286" not in text
+    assert "steps.recovery" not in text
 
     script = Path("scripts/assemble_v4a_derived_pit.py").read_text(encoding="utf-8")
     assert "v4a-derived-phase-checkpoint-v1" in script
@@ -341,26 +402,10 @@ def test_derived_timeout_and_phase_resume_are_hardened_without_changing_upstream
         "price_receipt_sha256",
     ):
         assert identity_field in script
-
-
-def test_derived_revision_gate_recovery_is_exact_and_skips_expensive_reassembly():
-    text = _text(WORKFLOW_DIR / "v4a-derived.yml")
-    for exact in (
-        "35459083286",
-        "10590094910",
-        "v4a-derived-stage-35459083286",
-        "sha256:afb0a05b7970dbe91f0ed3d6f4eeabd9790daf3b948868f7594a03b0207d477f",
-        "58f54742fdeb43912fe1a90c647dab908dd890b8",
-        "c91135821733f656fae1789a3fab3eaa8c8a0f4350d42c60568e90b7d912a29c",
-    ):
-        assert exact in text
-    assert "repair_completed_derived_stage" in text
-    assert "artifact.get(\"digest\")" in text
-    assert "artifact.get(\"expired\") is not False" in text
-    assert "steps.recovery.outputs.reused != 'true'" in text
-    assert text.count("steps.recovery.outputs.reused != 'true'") >= 4
-    assert "Qualification gate" in text
-    assert "Package persistent Derived bundle" in text
+    checkpoint_identity_block = script.split("def _checkpoint_identity(", 1)[1].split(
+        "def _prepare_checkpoint(", 1
+    )[0]
+    assert '"source_commit": args.source_commit' not in checkpoint_identity_block
 
 
 def test_revision_repair_module_is_derived_only_in_producer_graph():
