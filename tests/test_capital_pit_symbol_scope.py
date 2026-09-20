@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
-
-from scripts.build_capital_pit_symbol_scope import build_scope
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts/build_capital_pit_symbol_scope.py"
+SPEC = importlib.util.spec_from_file_location("build_capital_pit_symbol_scope", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+build_scope = MODULE.build_scope
 
 
 def test_v4a_scope_includes_pre2022_star50_carryin_688065() -> None:
