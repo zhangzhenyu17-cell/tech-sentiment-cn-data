@@ -34,6 +34,15 @@ def _read_receipt(root: Path) -> dict[str, object]:
     return payload
 
 
+def _market_from_symbol(symbol: str) -> str:
+    code = str(symbol).zfill(6)
+    if code.startswith(("688", "689")):
+        return "SH"
+    if code.startswith(("300", "301", "302")):
+        return "SZ"
+    raise ValueError(f"unsupported frozen V4C-03 symbol for market routing: {code}")
+
+
 def _calendar(root: Path, universe: str) -> pd.DatetimeIndex:
     frame = _read_csv(root / universe / "index_prices.csv")
     if "date" not in frame.columns:
@@ -93,6 +102,7 @@ def main() -> int:
     if not symbols:
         raise ValueError("Phase A symbol scope is empty")
     symbol_frame = pd.DataFrame({"symbol": symbols})
+    symbol_frame["market"] = symbol_frame["symbol"].map(_market_from_symbol)
 
     out = args.out_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
