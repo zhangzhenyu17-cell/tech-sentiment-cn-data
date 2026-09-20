@@ -76,7 +76,7 @@ def _write_frame(frame: pd.DataFrame, path: Path) -> dict[str, object]:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(path, index=False, date_format="%Y-%m-%d")
     return {
-        "path": path.as_posix(),
+        "path": f"{path.parent.name}/{path.name}",
         "rows": int(len(frame)),
         "sha256": _sha256(path),
         "bytes": int(path.stat().st_size),
