@@ -169,6 +169,32 @@ STAGE_SPECS: dict[str, StageSpec] = {
     ),
 }
 
+PROGRESS_IDENTITY_SCHEMA = "v4a-engineering-progress-v1"
+
+# Engineering progress identity is deliberately narrower than the formal
+# persistent-bundle producer identity. It contains materialization/PIT code and
+# semantic reference inputs, but excludes workflow YAML, timeout/cache plumbing,
+# qualification gates, receipts, packaging, and publication orchestration.
+# This allows checkpoint reuse across operational-only commits while the formal
+# immutable bundle remains bound to the complete producer fingerprint.
+_PROGRESS_ENTRYPOINTS: dict[str, tuple[str, ...]] = {
+    "capital": ("scripts/qualify_capital_inputs.py",),
+    "financing": ("scripts/materialize_financing_history.py",),
+    "issuer_cninfo": ("scripts/materialize_pit_evidence.py",),
+    "issuer_sse": ("scripts/materialize_pit_evidence.py",),
+    "issuer_szse": (
+        "scripts/materialize_v4a_szse_issuer.py",
+        "scripts/materialize_pit_evidence.py",
+    ),
+    "prices": ("scripts/materialize_v4a_price_shard.py",),
+    "policy": ("scripts/materialize_v4a_policy_stage.py",),
+    "derived": ("scripts/assemble_v4a_derived_pit.py",),
+}
+_PROGRESS_EXTRA_FILES: dict[str, tuple[str, ...]] = {
+    "issuer_szse": ("reference/v4a_szse_security_code_migration_contract_v1.json",),
+    "derived": ("reference/v4a_fundamental_pit_state_contract_v1.json",),
+}
+
 
 def _canonical_json(value: object) -> str:
     return json.dumps(
@@ -281,6 +307,85 @@ def producer_fingerprint(repo_root: str | Path, family: str) -> dict[str, object
     }
     fingerprint = sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
     return {"producer_fingerprint": fingerprint, "producer_files": rows}
+
+
+def progress_semantic_files(repo_root: str | Path, family: str) -> list[Path]:
+    root = Path(repo_root).resolve()
+    if family not in _PROGRESS_ENTRYPOINTS:
+        raise ValueError(f"stage family has no engineering progress identity: {family}")
+    pending: list[Path] = []
+    selected: set[Path] = set()
+    for relative in (
+        "pyproject.toml",
+        *_PROGRESS_ENTRYPOINTS[family],
+        *_PROGRESS_EXTRA_FILES.get(family, ()),
+    ):
+        path = (root / relative).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"progress semantic file missing: {relative}")
+        pending.append(path)
+
+    while pending:
+        path = pending.pop()
+        if path in selected:
+            continue
+        selected.add(path)
+        if path.suffix != ".py":
+            continue
+        for module in _imported_local_modules(path):
+            module_file = _module_path(root, module)
+            if module_file is not None and module_file.resolve() not in selected:
+                pending.append(module_file.resolve())
+
+    return sorted(selected, key=lambda item: item.relative_to(root).as_posix())
+
+
+def progress_semantic_fingerprint(repo_root: str | Path, family: str) -> dict[str, object]:
+    root = Path(repo_root).resolve()
+    rows = [
+        {
+            "path": path.relative_to(root).as_posix(),
+            "sha256": file_sha256(path),
+            "bytes": int(path.stat().st_size),
+        }
+        for path in progress_semantic_files(root, family)
+    ]
+    payload = {
+        "schema_version": PROGRESS_IDENTITY_SCHEMA,
+        "family": family,
+        "files": rows,
+    }
+    fingerprint = sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+    return {
+        "progress_semantic_fingerprint": fingerprint,
+        "progress_semantic_files": rows,
+    }
+
+
+def progress_descriptor(
+    *,
+    repo_root: str | Path,
+    family: str,
+    start_date: str,
+    end_date: str,
+    input_manifests: Mapping[str, str | Path] | None = None,
+) -> dict[str, object]:
+    semantic = progress_semantic_fingerprint(repo_root, family)
+    inputs = input_bundle_identities(input_manifests)
+    payload = {
+        "schema_version": PROGRESS_IDENTITY_SCHEMA,
+        "family": family,
+        "start_date": str(start_date),
+        "end_date": str(end_date),
+        "progress_semantic_fingerprint": semantic["progress_semantic_fingerprint"],
+        "input_bundles": inputs,
+    }
+    progress_key = sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+    return {
+        **payload,
+        **semantic,
+        "progress_key": progress_key,
+    }
 
 
 def _manifest_identity(payload: Mapping[str, object]) -> str:
