@@ -1,0 +1,186 @@
+name: v4c03-04a-phase-a-assembly-recovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: v4c03-04a-phase-a-assembly-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover-assembly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SOURCE_RUN_ID: "35497119739"
+      ARTIFACT_SOURCE_SHA: "1b177f5cc49ac7dab18e02bd51b89a62c989c89a"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: python -m pip install -e ".[data,dev]"
+
+      - name: Verify exact successful work-unit artifact identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          contract = json.loads(
+              Path("reference/v4c03_phase_a_assembly_recovery_v1.json").read_text()
+          )
+          assert contract["status"] == "FROZEN_EXACT_SUCCESSFUL_WORK_UNITS"
+          assert contract["source_run"]["run_id"] == 35497119739
+          assert contract["source_run"]["head_sha"] == os.environ["ARTIFACT_SOURCE_SHA"]
+          assert contract["provider_refetch"] is False
+          assert contract["successful_work_units_rerun"] is False
+
+          for expected in contract["successful_artifacts"]:
+              actual = json.loads(
+                  subprocess.check_output(
+                      [
+                          "gh",
+                          "api",
+                          f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/artifacts/{expected['id']}",
+                      ],
+                      text=True,
+                  )
+              )
+              assert actual["expired"] is False
+              assert actual["name"] == expected["name"]
+              assert actual["digest"] == expected["digest"]
+              run = actual["workflow_run"]
+              assert int(run["id"]) == 35497119739
+              assert run["head_sha"] == os.environ["ARTIFACT_SOURCE_SHA"]
+          print(f"verified {len(contract['successful_artifacts'])} exact artifacts")
+          PY
+
+      - name: Download exact successful artifacts only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p inputs downloads/issuer downloads/fundamental downloads/prices downloads/policy downloads/capital
+
+          gh run download "$SOURCE_RUN_ID"             -n "v4c03-phase-a-evidence-inputs-$SOURCE_RUN_ID"             -D inputs
+
+          for shard in 0 1 2 3; do
+            gh run download "$SOURCE_RUN_ID"               -n "v4c03-phase-a-issuer-cninfo-$shard-$SOURCE_RUN_ID"               -D "downloads/issuer/cninfo-$shard"
+          done
+          gh run download "$SOURCE_RUN_ID"             -n "v4c03-phase-a-issuer-sse-0-$SOURCE_RUN_ID"             -D downloads/issuer/sse-0
+          gh run download "$SOURCE_RUN_ID"             -n "v4c03-phase-a-issuer-szse-0-$SOURCE_RUN_ID"             -D downloads/issuer/szse-0
+
+          for shard in 0 1 2 3; do
+            gh run download "$SOURCE_RUN_ID"               -n "v4c03-phase-a-fundamental-$shard-$SOURCE_RUN_ID"               -D "downloads/fundamental/fundamental-$shard"
+            gh run download "$SOURCE_RUN_ID"               -n "v4c03-phase-a-prices-$shard-$SOURCE_RUN_ID"               -D "downloads/prices/prices-$shard"
+          done
+
+          gh run download "$SOURCE_RUN_ID"             -n "v4c03-phase-a-policy-$SOURCE_RUN_ID"             -D downloads/policy
+          gh run download "$SOURCE_RUN_ID"             -n "v4c03-phase-a-capital-$SOURCE_RUN_ID"             -D downloads/capital
+
+      - name: Mechanically repair frozen scope market column
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+          from scripts.prepare_v4c03_phase_a_evidence_inputs import _market_for_symbol
+
+          path = Path("inputs/symbols.csv")
+          frame = pd.read_csv(path, dtype={"symbol": str})
+          assert "symbol" in frame.columns
+          frame["symbol"] = frame["symbol"].astype(str).str.zfill(6)
+          frame["market"] = frame["symbol"].map(_market_for_symbol)
+          assert set(frame["market"]) <= {"SH", "SZ"}
+          assert not frame[["symbol", "market"]].isna().any().any()
+          frame.to_csv(path, index=False)
+          print(frame.groupby("market")["symbol"].nunique().to_dict())
+          PY
+
+      - name: Compile and run recovery boundary tests
+        run: |
+          python -m compileall -q src scripts
+          pytest -q             tests/test_v4c03_phase_a_pit_evidence.py             tests/test_v4c03_phase_a_assembly_recovery.py
+
+      - name: Rebuild issuer aggregate from exact artifacts
+        run: |
+          mkdir -p stage/issuer
+          python scripts/aggregate_v4a_issuer_shards.py             --shard-root downloads/issuer             --symbols-csv inputs/symbols.csv             --source-commit "$ARTIFACT_SOURCE_SHA"             --start-date 2021-01-04 --end-date 2021-12-31             --out-dir stage/issuer
+          python scripts/write_v4a_stage_receipt.py             --root stage/issuer --stage-kind issuer_aggregate             --stage-id v4c03-issuer-aggregate-recovery             --source-commit "$ARTIFACT_SOURCE_SHA"             --start-date 2021-01-04 --end-date 2021-12-31             --out stage/issuer/receipt.json
+
+      - name: Assemble verified public PIT evidence without provider refetch
+        run: |
+          mkdir -p stage/derived .cache/v4c03/recovery-derived
+          python scripts/assemble_v4a_derived_pit.py             --symbols-csv inputs/symbols.csv             --calendar-csv inputs/trading_calendar.csv             --issuer-dir stage/issuer             --fundamental-root downloads/fundamental             --price-root downloads/prices             --policy-dir downloads/policy             --start-date 2021-01-04 --end-date 2021-12-31             --source-commit "$GITHUB_SHA"             --issuer-source-commit "$ARTIFACT_SOURCE_SHA"             --fundamental-source-commit "$ARTIFACT_SOURCE_SHA"             --price-source-commit "$ARTIFACT_SOURCE_SHA"             --policy-source-commit "$ARTIFACT_SOURCE_SHA"             --checkpoint-dir .cache/v4c03/recovery-derived             --out-dir stage/derived
+
+      - name: Finalize public-only Phase A evidence
+        run: |
+          python scripts/finalize_v4c03_phase_a_evidence.py             --inputs-dir inputs             --derived-dir stage/derived             --capital-dir downloads/capital             --source-commit "$GITHUB_SHA"             --out-dir stage/final
+
+      - name: Assert recovery remained outcome blind and provider-free
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          recovery = json.loads(
+              Path("reference/v4c03_phase_a_assembly_recovery_v1.json").read_text()
+          )
+          receipt = json.loads(Path("stage/final/receipt.json").read_text())
+          assert recovery["provider_refetch"] is False
+          assert recovery["successful_work_units_rerun"] is False
+          assert receipt["status"] == "V4C03_PHASE_A_PUBLIC_EVIDENCE_MATERIALIZED_OUTCOME_BLIND"
+          assert receipt["public_only"] is True
+          for key in (
+              "private_model_semantics_present",
+              "portfolio_or_holdings_data_present",
+              "new_context_outcome_read",
+              "new_context_forward_outcomes_read",
+              "outcome_columns_materialized",
+              "real_outcome_study_executed",
+              "provider_refetch_for_existing_phase_a_or_warmup",
+              "parameter_search_run",
+              "feature_search_run",
+              "threshold_search_run",
+              "ml_run",
+              "context_or_cause_semantics_changed",
+              "universe_changed",
+              "evidence_qualification_semantics_changed",
+              "score_mapping_changed",
+              "production_authority_changed",
+              "trading_authority_changed",
+          ):
+              assert receipt[key] is False, key
+          PY
+
+      - name: Package immutable recovered public evidence bundle
+        run: |
+          mkdir -p dist
+          python scripts/package_v4c03_phase_a_evidence_bundle.py             --stage-root stage/final             --contract reference/v4c03_phase_a_pit_evidence_v1.json             --source-commit "$GITHUB_SHA"             --out-dir dist             --out dist/package.json
+
+      - name: Publish immutable recovered public evidence bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BASE="$(python -c 'import json; print(json.load(open("dist/package.json"))["asset_base"])')"
+          bash scripts/publish_v4c03_public_bundle.sh v4c03-public-evidence-v1 dist "$BASE"
+
+      - name: Upload convenient 90-day recovered public evidence bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: v4c03-phase-a-pit-evidence-recovered-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
