@@ -29,16 +29,41 @@ def _client(client: Any | None = None) -> Any:
 
 
 def _is_retryable_request_error(exc: BaseException) -> bool:
-    """Return True only for transient HTTP/client transport failures.
-
-    Keep the requests dependency lazy because the base package intentionally
-    installs without the optional data extra.
-    """
+    """Return True only for transient HTTP/client transport failures."""
     try:
         from requests.exceptions import RequestException
     except ImportError:  # pragma: no cover - requests is part of the data extra
         return False
     return isinstance(exc, RequestException)
+
+
+def _is_official_snapshot_content_error(exc: BaseException) -> bool:
+    """Recognize the narrow malformed-official-file failure seen from CSI OSS."""
+    return (
+        isinstance(exc, ValueError)
+        and "Excel file format cannot be determined" in str(exc)
+    )
+
+
+def _fetch_csindex_table_with_retry(
+    fetcher: Any,
+    *,
+    index_code: str,
+    retries: int,
+    retry_backoff_seconds: float,
+) -> pd.DataFrame:
+    last_exc: BaseException | None = None
+    for attempt in range(retries + 1):
+        try:
+            return fetcher(symbol=index_code)
+        except Exception as exc:
+            last_exc = exc
+            if not _is_retryable_request_error(exc) or attempt >= retries:
+                raise
+            if retry_backoff_seconds > 0:
+                time.sleep(retry_backoff_seconds * (attempt + 1))
+    assert last_exc is not None
+    raise last_exc
 
 
 def fetch_current_csindex_universe(
@@ -48,12 +73,12 @@ def fetch_current_csindex_universe(
     retry_backoff_seconds: float = 1.0,
     client: Any | None = None,
 ) -> pd.DataFrame:
-    """Fetch the latest constituents for one or more CSI index codes.
+    """Fetch latest CSI constituents with an alternate official-file fallback.
 
-    Important: AKShare's ``index_stock_cons_csindex`` endpoint exposes the latest
-    constituent snapshot. The returned table is therefore labelled
-    ``current_snapshot`` and must not be treated as point-in-time historical
-    membership for a formal backtest.
+    Primary source is the official CSI constituent XLS exposed by AKShare.
+    If that file fails only at the transport/content layer, use the official
+    CSI close-weight XLS exposed by AKShare. Callers still enforce exact
+    constituent-count and PIT-anchor validation.
     """
     if retries < 0:
         raise ValueError("retries must be >= 0")
@@ -65,16 +90,42 @@ def fetch_current_csindex_universe(
 
     for raw_code in index_codes:
         index_code = str(raw_code).strip().zfill(6)
-        raw = None
-        for attempt in range(retries + 1):
+        raw: pd.DataFrame | None = None
+        primary_exc: BaseException | None = None
+        try:
+            raw = _fetch_csindex_table_with_retry(
+                ak.index_stock_cons_csindex,
+                index_code=index_code,
+                retries=retries,
+                retry_backoff_seconds=retry_backoff_seconds,
+            )
+        except Exception as exc:
+            primary_exc = exc
+            if not (
+                _is_retryable_request_error(exc)
+                or _is_official_snapshot_content_error(exc)
+            ):
+                raise
+
+        if raw is None:
+            fallback = getattr(ak, "index_stock_cons_weight_csindex", None)
+            if fallback is None:
+                assert primary_exc is not None
+                raise primary_exc
             try:
-                raw = ak.index_stock_cons_csindex(symbol=index_code)
-                break
-            except Exception as exc:
-                if not _is_retryable_request_error(exc) or attempt >= retries:
-                    raise
-                if retry_backoff_seconds > 0:
-                    time.sleep(retry_backoff_seconds * (attempt + 1))
+                raw = _fetch_csindex_table_with_retry(
+                    fallback,
+                    index_code=index_code,
+                    retries=retries,
+                    retry_backoff_seconds=retry_backoff_seconds,
+                )
+            except Exception as fallback_exc:
+                raise RuntimeError(
+                    f"both official CSI constituent files failed for {index_code}; "
+                    f"primary={type(primary_exc).__name__}: {primary_exc}; "
+                    f"fallback={type(fallback_exc).__name__}: {fallback_exc}"
+                ) from fallback_exc
+
         if raw is None or len(raw) == 0:
             continue
 
