@@ -31,6 +31,7 @@ _UNIVERSE_SEMANTIC_FILES = {
         "src/tech_sentiment/index_price.py",
         "src/tech_sentiment/production_universe.py",
         "src/tech_sentiment/universe.py",
+        "src/tech_sentiment/bounded_retry.py",
     ),
     "ChiNext50": (
         "reference/prospective_context_raw_v1.json",
@@ -49,6 +50,7 @@ _CAPITAL_SEMANTIC_FILES = (
     "src/tech_sentiment/capital_input_data.py",
     "src/tech_sentiment/resumable_capital.py",
     "src/tech_sentiment/immutable_checkpoint.py",
+    "src/tech_sentiment/bounded_retry.py",
 )
 
 _SZSE_ETF_SEMANTIC_FILES = (
@@ -56,6 +58,7 @@ _SZSE_ETF_SEMANTIC_FILES = (
     "src/tech_sentiment/v4c03_szse_etf_shares.py",
     "src/tech_sentiment/resumable_capital.py",
     "src/tech_sentiment/immutable_checkpoint.py",
+    "src/tech_sentiment/bounded_retry.py",
 )
 
 
