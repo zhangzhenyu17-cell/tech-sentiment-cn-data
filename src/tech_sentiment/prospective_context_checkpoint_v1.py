@@ -13,6 +13,7 @@ from .immutable_checkpoint import CheckpointIdentity, ImmutableCheckpointStore
 
 
 CHECKPOINT_BUNDLE_SCHEMA = "prospective-context-checkpoint-progress-v1"
+SEMANTIC_FINGERPRINT_SCHEMA = "prospective-context-materialization-semantic-v1"
 CHECKPOINT_RELEASE_TAG_PREFIX = "prospective-context-checkpoints"
 UNIVERSE_CHECKPOINT_VERSION = "prospective-universe-checkpoint-v1"
 
@@ -126,7 +127,7 @@ def semantic_fingerprint(
             }
         )
     payload = {
-        "schema_version": CHECKPOINT_BUNDLE_SCHEMA,
+        "schema_version": SEMANTIC_FINGERPRINT_SCHEMA,
         "family": family,
         "semantic_contract": _semantic_contract_payload(root),
         "files": rows,
@@ -581,6 +582,7 @@ def restore_checkpoint_bundle(
 
 __all__ = [
     "CHECKPOINT_BUNDLE_SCHEMA",
+    "SEMANTIC_FINGERPRINT_SCHEMA",
     "CHECKPOINT_RELEASE_TAG_PREFIX",
     "UNIVERSE_CHECKPOINT_VERSION",
     "checkpoint_release_tag",
