@@ -333,6 +333,7 @@ def test_public_contract_is_forward_only_and_contains_no_private_model_semantics
     assert contract["workflow"]["workflow_dispatch_only"] is True
     assert contract["workflow"]["automatic_trigger_allowed"] is False
     persistence = contract["intermediate_checkpoint_persistence"]
+    assert persistence["schema"] == "prospective-context-checkpoint-progress-v1"
     assert persistence["completed_work_units_published_immutably"] is True
     assert persistence["publish_completed_units_even_when_later_capture_step_fails"] is True
     assert persistence["semantic_revision_separate_from_operational_git_commit"] is True
