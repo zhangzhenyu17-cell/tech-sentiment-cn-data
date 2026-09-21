@@ -249,6 +249,20 @@ def materialize_public_raw_capture(
         ]
     )
 
+    # Resolve and validate both live constituent snapshots before the heavy
+    # constituent-history downloads. This keeps transient official endpoint
+    # failures cheap and prevents one universe from consuming several minutes
+    # before the second live snapshot is known to be available.
+    live_all = fetch_current_csindex_universe(
+        [cfg["index_code"] for cfg in contract["universes"].values()],
+        retries=3,
+        retry_backoff_seconds=1.5,
+        client=client,
+    )
+    if live_all.empty:
+        raise ValueError("combined STAR50+ChiNext50 live constituent snapshot is empty")
+
+    prepared_universes: dict[str, dict[str, Any]] = {}
     for universe, cfg in contract["universes"].items():
         anchor_path = repo_root / cfg["anchor_path"]
         adjustments_path = repo_root / cfg["adjustments_path"]
@@ -263,7 +277,12 @@ def materialize_public_raw_capture(
             expected_constituents=int(cfg["expected_constituents"]),
             index_code=cfg["index_code"],
         )
-        live = fetch_current_csindex_universe([cfg["index_code"]], client=client)
+        index_code = str(cfg["index_code"]).zfill(6)
+        live = live_all[
+            live_all["source_index"].astype(str).str.split(",").map(
+                lambda values: index_code in values
+            )
+        ].copy()
         if live.empty:
             raise ValueError(f"{universe} live constituent snapshot is empty")
         active, _ = _validate_live_snapshot_exact(
@@ -273,6 +292,22 @@ def materialize_public_raw_capture(
             expected_constituents=int(cfg["expected_constituents"]),
             universe=universe,
         )
+        prepared_universes[universe] = {
+            "cfg": cfg,
+            "membership": membership,
+            "segments": segments,
+            "diagnostics": diagnostics,
+            "live": live,
+            "active": active,
+        }
+
+    for universe, prepared in prepared_universes.items():
+        cfg = prepared["cfg"]
+        membership = prepared["membership"]
+        segments = prepared["segments"]
+        diagnostics = prepared["diagnostics"]
+        live = prepared["live"]
+        active = prepared["active"]
 
         downloaded = download_universe_history(
             membership,

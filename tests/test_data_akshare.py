@@ -1,4 +1,6 @@
 import pandas as pd
+import pytest
+import requests
 
 from tech_sentiment.data_akshare import (
     download_universe_history,
@@ -93,6 +95,62 @@ def test_fetch_current_csindex_universe_deduplicates_symbols():
     assert row["board"] == "chinext"
     assert set(universe["universe_mode"]) == {"current_snapshot"}
 
+
+
+class FlakyConstituentAKShare(FakeAKShare):
+    def __init__(self, *, failures: int, exc: Exception):
+        super().__init__()
+        self.failures = failures
+        self.exc = exc
+        self.constituent_calls = 0
+
+    def index_stock_cons_csindex(self, symbol: str):
+        self.constituent_calls += 1
+        if self.constituent_calls <= self.failures:
+            raise self.exc
+        return super().index_stock_cons_csindex(symbol)
+
+
+def test_fetch_current_csindex_universe_retries_transient_request_failures():
+    client = FlakyConstituentAKShare(
+        failures=2,
+        exc=requests.exceptions.ChunkedEncodingError("incomplete read"),
+    )
+    universe = fetch_current_csindex_universe(
+        ["000688"],
+        retries=2,
+        retry_backoff_seconds=0,
+        client=client,
+    )
+
+    assert client.constituent_calls == 3
+    assert set(universe["symbol"]) == {"688001", "300750"}
+
+
+def test_fetch_current_csindex_universe_does_not_retry_non_transport_errors():
+    client = FlakyConstituentAKShare(
+        failures=1,
+        exc=RuntimeError("schema/provider failure"),
+    )
+    with pytest.raises(RuntimeError, match="schema/provider failure"):
+        fetch_current_csindex_universe(
+            ["000688"],
+            retries=3,
+            retry_backoff_seconds=0,
+            client=client,
+        )
+    assert client.constituent_calls == 1
+
+
+def test_fetch_current_csindex_universe_retry_arguments_fail_closed():
+    with pytest.raises(ValueError, match="retries"):
+        fetch_current_csindex_universe(
+            ["000688"], retries=-1, client=FakeAKShare()
+        )
+    with pytest.raises(ValueError, match="retry_backoff_seconds"):
+        fetch_current_csindex_universe(
+            ["000688"], retry_backoff_seconds=-0.1, client=FakeAKShare()
+        )
 
 def test_fetch_stock_history_normalizes_eastmoney_columns_and_timeout():
     client = FakeAKShare()
