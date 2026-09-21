@@ -157,3 +157,7 @@ def test_probe_workflow_is_manual_only_and_exact_base_bundle() -> None:
     assert "actions/upload-artifact@v4" in text
     assert "gh release upload" not in text
     assert "contents: write" not in text
+    assert "\\${" not in text
+    assert "GH_TOKEN: ${{ github.token }}" in text
+    assert '--pattern "${BASE_ASSET}"' in text
+    assert '--as-of "${{ inputs.as_of }}"' in text
