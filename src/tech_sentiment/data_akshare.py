@@ -73,12 +73,19 @@ def fetch_current_csindex_universe(
     retry_backoff_seconds: float = 1.0,
     client: Any | None = None,
 ) -> pd.DataFrame:
-    """Fetch latest CSI constituents with an alternate official-file fallback.
+    """Fetch a live constituent witness with fail-closed source layering.
 
-    Primary source is the official CSI constituent XLS exposed by AKShare.
-    If that file fails only at the transport/content layer, use the official
-    CSI close-weight XLS exposed by AKShare. Callers still enforce exact
-    constituent-count and PIT-anchor validation.
+    Membership authority remains the caller's PIT anchor + official adjustment
+    reconstruction. This function only supplies a current live witness:
+
+    1. CSI official constituent XLS;
+    2. CSI official close-weight XLS, only for transport/known malformed-XLS
+       failures;
+    3. Sina latest-component snapshot, only if both CSI files fail at the
+       transport/content layer.
+
+    The tertiary Sina source is not allowed to define membership. The caller
+    must still require exact constituent-count and exact PIT-anchor equality.
     """
     if retries < 0:
         raise ValueError("retries must be >= 0")
@@ -92,7 +99,9 @@ def fetch_current_csindex_universe(
         index_code = str(raw_code).strip().zfill(6)
         raw: pd.DataFrame | None = None
         primary_exc: BaseException | None = None
+        secondary_exc: BaseException | None = None
         snapshot_source = "csindex_cons_xls"
+
         try:
             raw = _fetch_csindex_table_with_retry(
                 ak.index_stock_cons_csindex,
@@ -110,34 +119,65 @@ def fetch_current_csindex_universe(
 
         if raw is None:
             fallback = getattr(ak, "index_stock_cons_weight_csindex", None)
-            if fallback is None:
-                assert primary_exc is not None
-                raise primary_exc
-            snapshot_source = "csindex_closeweight_xls"
+            if fallback is not None:
+                snapshot_source = "csindex_closeweight_xls"
+                try:
+                    raw = _fetch_csindex_table_with_retry(
+                        fallback,
+                        index_code=index_code,
+                        retries=retries,
+                        retry_backoff_seconds=retry_backoff_seconds,
+                    )
+                except Exception as exc:
+                    secondary_exc = exc
+                    if not (
+                        _is_retryable_request_error(exc)
+                        or _is_official_snapshot_content_error(exc)
+                    ):
+                        raise
+
+        if raw is None:
+            tertiary = getattr(ak, "index_stock_cons", None)
+            if tertiary is None:
+                raise RuntimeError(
+                    f"all live constituent witness sources unavailable for {index_code}; "
+                    f"primary={type(primary_exc).__name__}: {primary_exc}; "
+                    f"secondary={type(secondary_exc).__name__}: {secondary_exc}"
+                )
+            snapshot_source = "sina_latest_component"
             try:
                 raw = _fetch_csindex_table_with_retry(
-                    fallback,
+                    tertiary,
                     index_code=index_code,
                     retries=retries,
                     retry_backoff_seconds=retry_backoff_seconds,
                 )
-            except Exception as fallback_exc:
+            except Exception as tertiary_exc:
                 raise RuntimeError(
-                    f"both official CSI constituent files failed for {index_code}; "
+                    f"all live constituent witness sources failed for {index_code}; "
                     f"primary={type(primary_exc).__name__}: {primary_exc}; "
-                    f"fallback={type(fallback_exc).__name__}: {fallback_exc}"
-                ) from fallback_exc
+                    f"secondary={type(secondary_exc).__name__}: {secondary_exc}; "
+                    f"tertiary={type(tertiary_exc).__name__}: {tertiary_exc}"
+                ) from tertiary_exc
 
         if raw is None or len(raw) == 0:
             continue
 
-        code_col = "成分券代码" if "成分券代码" in raw.columns else "品种代码"
-        name_col = "成分券名称" if "成分券名称" in raw.columns else None
-        if code_col not in raw.columns:
+        if "成分券代码" in raw.columns:
+            code_col = "成分券代码"
+        elif "品种代码" in raw.columns:
+            code_col = "品种代码"
+        else:
             raise ValueError(
-                f"AKShare constituent response for {index_code} has no recognized code column: "
+                f"constituent witness for {index_code} has no recognized code column: "
                 f"{list(raw.columns)}"
             )
+        if "成分券名称" in raw.columns:
+            name_col = "成分券名称"
+        elif "品种名称" in raw.columns:
+            name_col = "品种名称"
+        else:
+            name_col = None
 
         frame = pd.DataFrame({"symbol": raw[code_col].map(normalize_symbol)})
         if name_col is not None:
@@ -146,11 +186,24 @@ def fetch_current_csindex_universe(
         frame["board"] = frame["symbol"].map(infer_board)
         frame["universe_mode"] = "current_snapshot"
         frame["snapshot_source"] = snapshot_source
+        frame["snapshot_role"] = (
+            "independent_live_witness_only"
+            if snapshot_source == "sina_latest_component"
+            else "official_live_witness"
+        )
         frames.append(frame)
 
     if not frames:
         return pd.DataFrame(
-            columns=["symbol", "name", "source_index", "board", "universe_mode", "snapshot_source"]
+            columns=[
+                "symbol",
+                "name",
+                "source_index",
+                "board",
+                "universe_mode",
+                "snapshot_source",
+                "snapshot_role",
+            ]
         )
 
     combined = pd.concat(frames, ignore_index=True)
@@ -159,6 +212,7 @@ def fetch_current_csindex_universe(
         "board": "first",
         "universe_mode": "first",
         "snapshot_source": lambda s: ",".join(sorted(set(map(str, s)))),
+        "snapshot_role": lambda s: ",".join(sorted(set(map(str, s)))),
     }
     if "name" in combined.columns:
         aggregation["name"] = "first"
