@@ -142,26 +142,21 @@ def _validate_live_snapshot_exact(
     return active, live
 
 
-def _validate_latest_price_coverage(
+def _validate_window_symbol_coverage(
     *,
     prices: pd.DataFrame,
-    active_symbols: set[str],
-    operation_date: str,
+    membership: pd.DataFrame,
     minimum_coverage: float,
     universe: str,
 ) -> float:
     if prices.empty:
         raise ValueError(f"{universe} constituent price history is empty")
-    work = prices.copy()
-    work["date"] = pd.to_datetime(work["date"], errors="raise").dt.normalize()
-    work["symbol"] = work["symbol"].astype(str).str.zfill(6)
-    latest = pd.Timestamp(operation_date).normalize()
-    rows = work[work["date"].eq(latest)]
-    seen = set(rows["symbol"])
-    coverage = len(seen & active_symbols) / len(active_symbols)
+    expected = set(membership["symbol"].astype(str).str.zfill(6))
+    seen = set(prices["symbol"].astype(str).str.zfill(6))
+    coverage = len(seen & expected) / len(expected) if expected else 0.0
     if coverage < minimum_coverage:
         raise ValueError(
-            f"{universe} active constituent operation-day coverage {coverage:.3f} "
+            f"{universe} constituent-price symbol coverage {coverage:.3f} "
             f"< {minimum_coverage:.3f}"
         )
     return float(coverage)
@@ -249,7 +244,9 @@ def materialize_public_raw_capture(
     universe_receipts: dict[str, Any] = {}
     universe_frames: dict[str, dict[str, pd.DataFrame]] = {}
     minimum_coverage = float(
-        contract["quality"]["minimum_active_constituent_latest_day_coverage"]
+        contract["quality"][
+            "minimum_constituent_symbol_coverage_over_capture_window"
+        ]
     )
 
     for universe, cfg in contract["universes"].items():
@@ -300,10 +297,9 @@ def materialize_public_raw_capture(
             operation_date=operation_date,
             label=f"{universe} official index rail",
         )
-        coverage = _validate_latest_price_coverage(
+        coverage = _validate_window_symbol_coverage(
             prices=downloaded.prices,
-            active_symbols=active,
-            operation_date=operation_date,
+            membership=membership,
             minimum_coverage=minimum_coverage,
             universe=universe,
         )
@@ -355,7 +351,7 @@ def materialize_public_raw_capture(
             "anchor_effective_date": cfg["anchor_effective_date"],
             "active_constituents": len(active),
             "live_snapshot_exact_match": True,
-            "operation_day_active_price_coverage": coverage,
+            "capture_window_constituent_symbol_coverage": coverage,
             "download_error_rows": int(len(downloaded.errors)),
             "reconstruction": {
                 "history_start": str(diagnostics.history_start.date()),
