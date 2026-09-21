@@ -67,5 +67,23 @@
   "workflow": {
     "automatic_trigger_allowed": false,
     "workflow_dispatch_only": true
+  },
+  "intermediate_checkpoint_persistence": {
+    "schema": "prospective-context-checkpoint-progress-v1",
+    "completed_work_units_published_immutably": true,
+    "publish_completed_units_even_when_later_capture_step_fails": true,
+    "restore_precedence": "IMMUTABLE_COMPLETED_WORK_UNIT_BEFORE_PROVIDER_RECOMPUTATION",
+    "exact_checkpoint_identity_required": true,
+    "semantic_revision_separate_from_operational_git_commit": true,
+    "operation_date_is_part_of_reuse_identity": true,
+    "cross_operation_date_reuse_allowed": false,
+    "transport_incomplete_units_published_as_permanent": false,
+    "final_qualification_rerun_after_restore_required": true,
+    "formal_evidence_handoff": false,
+    "qualification_granted_by_checkpoint": false,
+    "release_tag_template": "prospective-context-checkpoints-YYYY-MM-DD",
+    "normal_failure_publish_attempt_required": true,
+    "hard_runner_termination_publish_guaranteed": false,
+    "maximum_expected_loss_on_hard_termination": "CURRENT_UNPUBLISHED_WORK_UNITS_ONLY"
   }
 }

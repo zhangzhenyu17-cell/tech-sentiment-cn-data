@@ -451,15 +451,24 @@ def qualify_trailing_etf_coverage(
     aligned = x.set_index("date")[["fund_shares"]].reindex(cal)
     aligned.index.name = "date"
     aligned["observed"] = aligned["fund_shares"].notna()
-    aligned["coverage"] = (
-        aligned["observed"].astype(float).rolling(window, min_periods=window).mean()
+    aligned["observed_count"] = (
+        aligned["observed"].astype(int).rolling(window, min_periods=window).sum()
     )
+    aligned["coverage"] = aligned["observed_count"] / float(window)
     aligned["eligible"] = aligned["coverage"].ge(min_coverage) & aligned[
         "fund_shares"
     ].notna()
     aligned["fund_code"] = code
     return aligned.reset_index()[
-        ["date", "fund_code", "fund_shares", "observed", "coverage", "eligible"]
+        [
+            "date",
+            "fund_code",
+            "fund_shares",
+            "observed",
+            "observed_count",
+            "coverage",
+            "eligible",
+        ]
     ]
 
 

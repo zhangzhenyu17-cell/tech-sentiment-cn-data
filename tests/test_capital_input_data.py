@@ -41,6 +41,7 @@ def test_etf_normalization_and_coverage_does_not_fill_missing_days():
         history, trading_dates=cal, fund_code="588000"
     )
     assert coverage.iloc[-1]["coverage"] == 0.8
+    assert int(coverage.iloc[-1]["observed_count"]) == 48
     assert bool(coverage.iloc[-1]["eligible"])
     assert int(coverage["observed"].sum()) == 48
 
