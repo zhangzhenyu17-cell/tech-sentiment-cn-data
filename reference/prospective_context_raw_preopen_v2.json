@@ -1,0 +1,41 @@
+{
+  "contract_id": "prospective_context_raw_preopen_v2",
+  "contract_version": 2,
+  "status": "FROZEN_PUBLIC_TIMING_SCOPE",
+  "date": "2026-09-22",
+  "purpose": "Permit public-only previous-session capture/retry through the next trading day's 05:30 Asia/Shanghai data-freeze deadline while preserving all V1 data, privacy, PIT, coverage, and no-outcome semantics.",
+  "data_contract": "reference/prospective_context_raw_v1.json",
+  "timing": {
+    "market_session_date": "T",
+    "decision_date": "IMMEDIATE_NEXT_A_SHARE_TRADING_DAY_AFTER_T",
+    "session_close_asia_shanghai": "15:00",
+    "data_freeze_deadline_asia_shanghai": "05:30",
+    "first_eligible_execution_asia_shanghai": "09:30",
+    "minimum_preopen_buffer_hours": 4,
+    "capture_may_start_after_session_close": true,
+    "capture_may_continue_on_decision_date_before_freeze_deadline": true,
+    "arbitrary_historical_backfill_allowed": false,
+    "capture_after_freeze_deadline_evidence_eligible": false
+  },
+  "semantics": {
+    "raw_rows_remain_market_session_T": true,
+    "wall_clock_capture_date_preserved": true,
+    "checkpoint_reuse_identity_uses_market_session_date": true,
+    "final_private_qualification_not_granted": true,
+    "historical_replay_allowed": false,
+    "retroactive_evidence_qualification_allowed": false
+  },
+  "privacy_and_research_firewall": {
+    "private_model_semantics_allowed": false,
+    "private_thresholds_or_signals_allowed": false,
+    "portfolio_or_holdings_data_allowed": false,
+    "forward_outcomes_allowed": false,
+    "research_result_allowed": false,
+    "evidence_tier_allowed": false
+  },
+  "workflow": {
+    "path": ".github/workflows/prospective-context-raw-preopen-v2.yml",
+    "workflow_dispatch_only": true,
+    "automatic_trigger_allowed": false
+  }
+}
