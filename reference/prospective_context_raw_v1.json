@@ -81,6 +81,9 @@
     "final_qualification_rerun_after_restore_required": true,
     "formal_evidence_handoff": false,
     "qualification_granted_by_checkpoint": false,
-    "release_tag_template": "prospective-context-checkpoints-YYYY-MM-DD"
+    "release_tag_template": "prospective-context-checkpoints-YYYY-MM-DD",
+    "normal_failure_publish_attempt_required": true,
+    "hard_runner_termination_publish_guaranteed": false,
+    "maximum_expected_loss_on_hard_termination": "CURRENT_UNPUBLISHED_WORK_UNITS_ONLY"
   }
 }
