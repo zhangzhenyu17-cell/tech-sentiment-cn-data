@@ -21,7 +21,9 @@ def _fixture_dir(tmp_path: Path) -> Path:
             )
         elif name == "prices.csv":
             path.write_text(
-                "date,symbol,close\n2026-09-16,000001,10\n2026-09-16,000002,20\n",
+                "date,symbol,close,provider\n"
+                "2026-09-16,000001,10,tencent\n"
+                "2026-09-16,000002,20,eastmoney\n",
                 encoding="utf-8",
             )
         elif name == "universe_point_in_time.csv":
@@ -31,7 +33,10 @@ def _fixture_dir(tmp_path: Path) -> Path:
                 encoding="utf-8",
             )
         elif name == "index_prices.csv":
-            path.write_text("date,index_code,close\n2026-09-16,000688,1000\n", encoding="utf-8")
+            path.write_text(
+                "date,index_code,close,provider\n2026-09-16,000688,1000,csindex\n",
+                encoding="utf-8",
+            )
         else:
             path.write_text("value\n1\n", encoding="utf-8")
     return source
@@ -42,14 +47,42 @@ def test_bundle_contains_only_allowlisted_public_data(tmp_path: Path) -> None:
     (source / "private_signal.json").write_text('{"temperature": 20}', encoding="utf-8")
     output = tmp_path / "dist"
 
-    manifest = build_market_bundle(source, output)
+    manifest = build_market_bundle(source, output, public_repo_git_sha="a" * 40)
 
     assert manifest["bundle_kind"] == "public_market_data"
     assert manifest["contains_model_output"] is False
     assert manifest["market_date"] == "2026-09-16"
+    assert manifest["public_repo_git_sha"] == "a" * 40
+    assert manifest["source_providers"] == ["csindex", "eastmoney", "tencent"]
     assert manifest["quality"]["active_latest_day_coverage"] == 1.0
     assert {item["path"] for item in manifest["files"]} == set(REQUIRED_FILES)
     with tarfile.open(output / "market_bundle_latest.tar.gz", "r:gz") as archive:
+        names = set(archive.getnames())
+    assert "market_bundle/private_signal.json" not in names
+    assert "market_bundle/manifest.json" in names
+
+
+def test_dated_bundle_is_deterministic_and_contains_durable_identity(tmp_path: Path) -> None:
+    source = _fixture_dir(tmp_path)
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+
+    build_market_bundle(source, first, public_repo_git_sha="b" * 40)
+    build_market_bundle(source, second, public_repo_git_sha="b" * 40)
+
+    name = "market-bundle-2026-09-16"
+    assert (first / f"{name}.tar.gz").read_bytes() == (second / f"{name}.tar.gz").read_bytes()
+    assert (first / f"{name}.sha256").read_bytes() == (second / f"{name}.sha256").read_bytes()
+    payload = json.loads((first / f"{name}.manifest.json").read_text(encoding="utf-8"))
+    assert payload["bundle_kind"] == "public_market_data_dated_immutable"
+    assert payload["market_date"] == "2026-09-16"
+    assert payload["target_date"] == "2026-09-16"
+    assert payload["public_repo_git_sha"] == "b" * 40
+    assert payload["contains_model_output"] is False
+    assert payload["contains_private_evidence"] is False
+    assert "generated_at_utc" not in payload
+
+    with tarfile.open(first / f"{name}.tar.gz", "r:gz") as archive:
         names = set(archive.getnames())
     assert "market_bundle/private_signal.json" not in names
     assert "market_bundle/manifest.json" in names
