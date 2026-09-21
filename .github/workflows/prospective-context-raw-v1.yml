@@ -47,19 +47,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="prospective-context-checkpoints-v1"
-          mkdir -p checkpoint-restore checkpoint-meta .cache/prospective_context_raw
+          TAG="prospective-context-checkpoints-${{ inputs.operation_date }}"
+          mkdir -p checkpoint-manifests checkpoint-restore checkpoint-meta .cache/prospective_context_raw
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release view "$TAG" --json assets --jq '.assets[].name' \
-              > checkpoint-meta/remote-assets.txt
-          else
-            : > checkpoint-meta/remote-assets.txt
+            gh release download "$TAG" \
+              --pattern "pcraw-progress-v1-*.manifest.json" \
+              --dir checkpoint-manifests
           fi
 
           python scripts/prospective_context_checkpoint_bundle.py plan \
             --expected checkpoint-meta/expected.json \
-            --remote-assets checkpoint-meta/remote-assets.txt \
+            --manifest-dir checkpoint-manifests \
             --out checkpoint-meta/restore-plan.json
 
           python - <<'PY' > checkpoint-meta/selected-bases.txt
@@ -104,6 +103,7 @@ jobs:
           python scripts/prospective_context_checkpoint_bundle.py package \
             --cache-root .cache/prospective_context_raw \
             --out-dir dist/prospective_context_checkpoints \
+            --operation-date "${{ inputs.operation_date }}" \
             --out checkpoint-meta/package-index.json
 
       - name: Publish immutable completed work units
@@ -125,7 +125,7 @@ jobs:
           while IFS= read -r base; do
             test -n "$base" || continue
             bash scripts/publish_prospective_context_checkpoint_bundle.sh \
-              prospective-context-checkpoints-v1 \
+              "prospective-context-checkpoints-${{ inputs.operation_date }}" \
               dist/prospective_context_checkpoints \
               "$base"
           done < checkpoint-meta/package-bases.txt
