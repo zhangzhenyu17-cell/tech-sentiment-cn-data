@@ -9,7 +9,7 @@ import pytest
 
 from tech_sentiment.prospective_context_raw_v1 import (
     RECEIPT_NAME,
-    _validate_latest_price_coverage,
+    _validate_window_symbol_coverage,
     _validate_live_snapshot_exact,
     capture_trading_dates,
     package_capture,
@@ -89,30 +89,25 @@ def test_live_snapshot_must_exactly_match_reconstructed_active_membership() -> N
         )
 
 
-def test_latest_constituent_coverage_uses_operation_date_not_latest_available_row() -> None:
-    active = {f"{i:06d}" for i in range(1, 51)}
+def test_constituent_coverage_reuses_frozen_window_symbol_semantics() -> None:
+    membership = _membership()
+    symbols = membership["symbol"].astype(str).tolist()
     rows = [
-        {"date": "2026-09-21", "symbol": symbol}
-        for symbol in sorted(active)[:48]
+        {"date": "2026-09-18", "symbol": symbol}
+        for symbol in symbols[:48]
     ]
-    rows += [
-        {"date": "2026-09-22", "symbol": symbol}
-        for symbol in sorted(active)
-    ]
-    coverage = _validate_latest_price_coverage(
+    coverage = _validate_window_symbol_coverage(
         prices=pd.DataFrame(rows),
-        active_symbols=active,
-        operation_date="2026-09-21",
+        membership=membership,
         minimum_coverage=0.95,
         universe="TEST50",
     )
     assert coverage == pytest.approx(48 / 50)
 
     with pytest.raises(ValueError, match="coverage"):
-        _validate_latest_price_coverage(
+        _validate_window_symbol_coverage(
             prices=pd.DataFrame(rows[:47]),
-            active_symbols=active,
-            operation_date="2026-09-21",
+            membership=membership,
             minimum_coverage=0.95,
             universe="TEST50",
         )
