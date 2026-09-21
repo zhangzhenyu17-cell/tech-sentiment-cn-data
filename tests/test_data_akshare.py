@@ -32,6 +32,15 @@ class FakeAKShare:
             )
         return pd.DataFrame()
 
+
+    def index_stock_cons_weight_csindex(self, symbol: str):
+        base = FakeAKShare.index_stock_cons_csindex(self, symbol)
+        if base.empty:
+            return base
+        out = base.copy()
+        out["权重"] = 1.0
+        return out
+
     def stock_zh_a_hist(
         self,
         *,
@@ -94,6 +103,7 @@ def test_fetch_current_csindex_universe_deduplicates_symbols():
     assert row["source_index"] == "000688,931000"
     assert row["board"] == "chinext"
     assert set(universe["universe_mode"]) == {"current_snapshot"}
+    assert set(universe["snapshot_source"]) == {"csindex_cons_xls"}
 
 
 
@@ -151,6 +161,63 @@ def test_fetch_current_csindex_universe_retry_arguments_fail_closed():
         fetch_current_csindex_universe(
             ["000688"], retry_backoff_seconds=-0.1, client=FakeAKShare()
         )
+
+
+class MalformedPrimaryAKShare(FakeAKShare):
+    def __init__(self):
+        super().__init__()
+        self.primary_calls = 0
+        self.fallback_calls = 0
+
+    def index_stock_cons_csindex(self, symbol: str):
+        self.primary_calls += 1
+        raise ValueError(
+            "Excel file format cannot be determined, you must specify an engine manually."
+        )
+
+    def index_stock_cons_weight_csindex(self, symbol: str):
+        self.fallback_calls += 1
+        return FakeAKShare.index_stock_cons_weight_csindex(self, symbol)
+
+
+class UnrelatedValueErrorPrimaryAKShare(FakeAKShare):
+    def __init__(self):
+        super().__init__()
+        self.fallback_calls = 0
+
+    def index_stock_cons_csindex(self, symbol: str):
+        raise ValueError("unexpected constituent schema")
+
+    def index_stock_cons_weight_csindex(self, symbol: str):
+        self.fallback_calls += 1
+        return FakeAKShare.index_stock_cons_weight_csindex(self, symbol)
+
+
+def test_fetch_current_csindex_universe_uses_official_closeweight_fallback_for_malformed_xls():
+    client = MalformedPrimaryAKShare()
+    universe = fetch_current_csindex_universe(
+        ["000688"],
+        retries=2,
+        retry_backoff_seconds=0,
+        client=client,
+    )
+
+    assert client.primary_calls == 1
+    assert client.fallback_calls == 1
+    assert set(universe["symbol"]) == {"688001", "300750"}
+    assert set(universe["snapshot_source"]) == {"csindex_closeweight_xls"}
+
+
+def test_fetch_current_csindex_universe_does_not_fallback_on_unrelated_value_error():
+    client = UnrelatedValueErrorPrimaryAKShare()
+    with pytest.raises(ValueError, match="unexpected constituent schema"):
+        fetch_current_csindex_universe(
+            ["000688"],
+            retries=2,
+            retry_backoff_seconds=0,
+            client=client,
+        )
+    assert client.fallback_calls == 0
 
 def test_fetch_stock_history_normalizes_eastmoney_columns_and_timeout():
     client = FakeAKShare()
