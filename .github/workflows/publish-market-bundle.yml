@@ -64,8 +64,34 @@ jobs:
             --end-date "$END_DATE" \
             --out data/daily/index_prices.csv
 
-      - name: Build allowlisted public bundle
-        run: tech-sentiment-bundle --input-dir data/daily --output-dir dist
+      - name: Build allowlisted public bundle and deterministic dated identity
+        run: |
+          tech-sentiment-bundle \
+            --input-dir data/daily \
+            --output-dir dist \
+            --public-repo-git-sha "$GITHUB_SHA"
+
+      - name: Resolve immutable dated bundle identity
+        id: dated
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path("dist/market_bundle_manifest.json").read_text(encoding="utf-8"))
+          target_date = str(payload["target_date"])
+          market_date = str(payload["market_date"])
+          publish = target_date == market_date
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"target_date={target_date}\n")
+              handle.write(f"market_date={market_date}\n")
+              handle.write(f"publish={'true' if publish else 'false'}\n")
+          print(
+              f"target_date={target_date} market_date={market_date} "
+              f"immutable_publish={publish}"
+          )
+          PY
 
       - name: Publish latest release assets
         env:
@@ -82,3 +108,44 @@ jobs:
             dist/market_bundle_latest.sha256 \
             dist/market_bundle_manifest.json \
             --clobber
+
+      - name: Publish or exact-verify immutable dated public bundle
+        if: steps.dated.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DATE="${{ steps.dated.outputs.market_date }}"
+          BASE="market-bundle-${DATE}"
+          TAG="${BASE}"
+          ARCHIVE="dist/${BASE}.tar.gz"
+          CHECKSUM="dist/${BASE}.sha256"
+          MANIFEST="dist/${BASE}.manifest.json"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            mkdir -p existing
+            gh release download "${TAG}" \
+              --pattern "${BASE}.sha256" \
+              --pattern "${BASE}.manifest.json" \
+              --dir existing
+            cmp --silent "${CHECKSUM}" "existing/${BASE}.sha256" || {
+              echo "IMMUTABLE_DATED_BUNDLE_CONFLICT: checksum drift for ${TAG}" >&2
+              exit 1
+            }
+            cmp --silent "${MANIFEST}" "existing/${BASE}.manifest.json" || {
+              echo "IMMUTABLE_DATED_BUNDLE_CONFLICT: manifest drift for ${TAG}" >&2
+              exit 1
+            }
+            echo "Immutable dated release already exists with exact identity: ${TAG}"
+          else
+            gh release create "${TAG}" \
+              --target "$GITHUB_SHA" \
+              --title "Immutable public market bundle ${DATE}" \
+              --notes "Immutable dated public market-data inputs for PIT/provenance replay. No private model, signal, portfolio, or evidence qualification is included."
+            gh release upload "${TAG}" "${ARCHIVE}" "${CHECKSUM}" "${MANIFEST}"
+          fi
+
+      - name: Non-trading target-date receipt
+        if: steps.dated.outputs.publish != 'true'
+        run: |
+          echo "No immutable dated release published because target_date=${{ steps.dated.outputs.target_date }} differs from market_date=${{ steps.dated.outputs.market_date }}."
