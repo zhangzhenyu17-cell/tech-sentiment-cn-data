@@ -164,6 +164,126 @@ def universe_checkpoint_identity(
     )
 
 
+
+def expected_checkpoint_assets(
+    repo_root: str | Path,
+    *,
+    contract: dict[str, Any],
+    operation_date: str,
+    trading_dates: Iterable[object],
+) -> list[dict[str, Any]]:
+    """Resolve exact durable checkpoint assets eligible for one capture."""
+    from .resumable_capital import (
+        expected_capital_checkpoint_identities,
+        expected_szse_etf_checkpoint_identities,
+    )
+
+    dates = pd.DatetimeIndex(
+        pd.to_datetime(list(trading_dates), errors="raise")
+    ).normalize()
+    start_date = str(pd.Timestamp(dates.min()).date())
+    rows: list[dict[str, Any]] = []
+
+    for universe, cfg in contract["universes"].items():
+        identity = universe_checkpoint_identity(
+            repo_root,
+            universe=universe,
+            index_code=cfg["index_code"],
+            operation_date=operation_date,
+            start_date=start_date,
+            trading_dates=dates,
+        )
+        rows.append(
+            {
+                "store_name": "universe",
+                "producer": identity.producer,
+                "fingerprint": identity.fingerprint,
+                "asset_base": checkpoint_asset_base(
+                    "universe", identity.fingerprint
+                ),
+            }
+        )
+
+    capital_revision = str(
+        semantic_fingerprint(repo_root, family="capital:sse")[
+            "checkpoint_revision"
+        ]
+    )
+    for store_name, identity in expected_capital_checkpoint_identities(
+        trading_dates=dates,
+        fund_codes=["588000"],
+        checkpoint_revision=capital_revision,
+        capture_date=operation_date,
+    ):
+        rows.append(
+            {
+                "store_name": store_name,
+                "producer": identity.producer,
+                "fingerprint": identity.fingerprint,
+                "asset_base": checkpoint_asset_base(
+                    store_name, identity.fingerprint
+                ),
+            }
+        )
+
+    szse_revision = str(
+        semantic_fingerprint(repo_root, family="capital:szse")[
+            "checkpoint_revision"
+        ]
+    )
+    for store_name, identity in expected_szse_etf_checkpoint_identities(
+        trading_dates=dates,
+        fund_codes=["159915"],
+        checkpoint_revision=szse_revision,
+        capture_date=operation_date,
+    ):
+        rows.append(
+            {
+                "store_name": store_name,
+                "producer": identity.producer,
+                "fingerprint": identity.fingerprint,
+                "asset_base": checkpoint_asset_base(
+                    store_name, identity.fingerprint
+                ),
+            }
+        )
+    return rows
+
+
+def plan_available_checkpoint_assets(
+    expected: Iterable[dict[str, Any]],
+    remote_asset_names: Iterable[str],
+) -> dict[str, Any]:
+    remote = {str(name).strip() for name in remote_asset_names if str(name).strip()}
+    selected: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+    for item in expected:
+        base = str(item["asset_base"])
+        required = {
+            f"{base}.tar.gz",
+            f"{base}.manifest.json",
+            f"{base}.sha256",
+        }
+        present = required & remote
+        if present and present != required:
+            raise ValueError(
+                f"partial immutable checkpoint asset set for {base}: "
+                f"present={sorted(present)}"
+            )
+        if present == required:
+            selected.append(dict(item))
+        else:
+            missing.append(dict(item))
+    return {
+        "schema_version": CHECKPOINT_BUNDLE_SCHEMA,
+        "release_tag": CHECKPOINT_RELEASE_TAG,
+        "selected": selected,
+        "missing": missing,
+        "selected_count": len(selected),
+        "missing_count": len(missing),
+    }
+
+
 def checkpoint_asset_base(store_name: str, fingerprint: str) -> str:
     safe_store = (
         str(store_name)
@@ -347,6 +467,8 @@ __all__ = [
     "CHECKPOINT_RELEASE_TAG",
     "UNIVERSE_CHECKPOINT_VERSION",
     "semantic_fingerprint",
+    "expected_checkpoint_assets",
+    "plan_available_checkpoint_assets",
     "universe_checkpoint_identity",
     "checkpoint_asset_base",
     "package_complete_checkpoints",
