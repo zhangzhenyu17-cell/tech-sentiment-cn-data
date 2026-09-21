@@ -26,6 +26,8 @@ from .prospective_context_checkpoint_v1 import (
     universe_checkpoint_identity,
 )
 from .resumable_capital import (
+    expected_capital_checkpoint_identities,
+    expected_szse_etf_checkpoint_identities,
     materialize_capital_monthly,
     materialize_szse_etf_monthly,
 )
@@ -282,6 +284,79 @@ def _same_day_capital_preflight(
     )
 
 
+def _same_day_capital_checkpoint_preflight_ready(
+    *,
+    repo_root: Path,
+    checkpoint_dir: Path,
+    trading_dates: pd.DatetimeIndex,
+    operation_date: str,
+) -> bool:
+    """Return True only when exact same-capture durable chunks prove freshness.
+
+    This never bridges operation dates. capture_date is part of every capital
+    checkpoint identity, so a prior day cannot suppress today's live-source
+    freshness gate.
+    """
+    capital_revision = str(
+        semantic_fingerprint(repo_root, family="capital:sse")[
+            "checkpoint_revision"
+        ]
+    )
+    szse_revision = str(
+        semantic_fingerprint(repo_root, family="capital:szse")[
+            "checkpoint_revision"
+        ]
+    )
+    sse_expected = expected_capital_checkpoint_identities(
+        trading_dates=trading_dates,
+        fund_codes=["588000"],
+        checkpoint_revision=capital_revision,
+        capture_date=operation_date,
+    )
+    szse_expected = expected_szse_etf_checkpoint_identities(
+        trading_dates=trading_dates,
+        fund_codes=["159915"],
+        checkpoint_revision=szse_revision,
+        capture_date=operation_date,
+    )
+
+    target = pd.Timestamp(operation_date).normalize()
+    sse_store = ImmutableCheckpointStore(checkpoint_dir / "sse")
+    szse_store = ImmutableCheckpointStore(checkpoint_dir / "szse")
+    etf_data = pd.DataFrame()
+    turnover_data = pd.DataFrame()
+    szse_data = pd.DataFrame()
+
+    for _store_name, identity in sse_expected:
+        if pd.Timestamp(identity.scope["end_date"]).normalize() != target:
+            continue
+        loaded = sse_store.load(identity)
+        if loaded is None:
+            return False
+        if identity.producer == "sse-etf-share-history":
+            etf_data = loaded.frames["data"]
+        elif identity.producer == "sse-szse-a-share-turnover-history":
+            turnover_data = loaded.frames["combined"]
+
+    for _store_name, identity in szse_expected:
+        if pd.Timestamp(identity.scope["end_date"]).normalize() != target:
+            continue
+        loaded = szse_store.load(identity)
+        if loaded is None:
+            return False
+        szse_data = loaded.frames["data"]
+
+    if etf_data.empty or turnover_data.empty or szse_data.empty:
+        return False
+    _validate_same_day_capital_preflight(
+        operation_date=operation_date,
+        sse_etf_data=etf_data,
+        szse_etf_data=szse_data,
+        turnover_data=turnover_data,
+        diagnostics={"source": "EXACT_SAME_CAPTURE_IMMUTABLE_CHECKPOINT"},
+    )
+    return True
+
 def _file_record(root: Path, path: Path) -> dict[str, Any]:
     rel = path.relative_to(root).as_posix()
     return {
@@ -342,12 +417,20 @@ def materialize_public_raw_capture(
         capture_date=capture_date,
     )
 
-    # Fail before constituent-history downloads when same-day capital sources
-    # have not yet published the operation-date observation.
-    _same_day_capital_preflight(
+    # Prefer an exact same-capture durable checkpoint over touching the
+    # provider again. Otherwise fail fast before heavy history downloads when
+    # same-day capital sources have not yet published.
+    freshness_from_checkpoint = _same_day_capital_checkpoint_preflight_ready(
+        repo_root=repo_root,
+        checkpoint_dir=checkpoint_dir,
+        trading_dates=trading_dates,
         operation_date=operation_date,
-        client=client,
     )
+    if not freshness_from_checkpoint:
+        _same_day_capital_preflight(
+            operation_date=operation_date,
+            client=client,
+        )
 
     universe_receipts: dict[str, Any] = {}
     minimum_coverage = float(
@@ -636,6 +719,9 @@ def materialize_public_raw_capture(
             {
                 "schema_version": "prospective-context-checkpoint-runtime-v1",
                 "operation_date": operation_date,
+                "same_day_freshness_from_checkpoint": bool(
+                    freshness_from_checkpoint
+                ),
                 "universe": runtime_universe,
                 "sse_capital": {
                     "resumed_chunks": int(capital.resumed_chunks),
