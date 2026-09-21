@@ -70,3 +70,19 @@ def test_preopen_window_rejects_capture_before_session_close() -> None:
             captured_at=_dt("2026-09-21T14:59:59"),
             client=_CalendarClient(["2026-09-21", "2026-09-22"]),
         )
+
+
+def test_preopen_workflow_is_manual_only() -> None:
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    text = (
+        root / ".github/workflows/prospective-context-raw-preopen-v2.yml"
+    ).read_text(encoding="utf-8")
+    assert "workflow_dispatch:" in text
+    assert "\n  schedule:" not in text
+    assert "\n  workflow_run:" not in text
+    assert "\n  pull_request:" not in text
+    assert "\n  push:" not in text
+    assert "market_session_date" in text
+    assert "decision_date" in text
+    assert "prospective-context-checkpoints-${{ inputs.market_session_date }}" in text
