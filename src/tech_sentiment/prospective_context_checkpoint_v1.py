@@ -19,7 +19,6 @@ UNIVERSE_CHECKPOINT_VERSION = "prospective-universe-checkpoint-v1"
 
 _UNIVERSE_SEMANTIC_FILES = {
     "STAR50": (
-        "reference/prospective_context_raw_v1.json",
         "data/reference/kc50_anchor_2026-09-14.csv",
         "data/reference/v4c03_kc50_adjustments_2021h2_2026.csv",
         "src/tech_sentiment/data_akshare.py",
@@ -27,10 +26,8 @@ _UNIVERSE_SEMANTIC_FILES = {
         "src/tech_sentiment/index_price.py",
         "src/tech_sentiment/production_universe.py",
         "src/tech_sentiment/universe.py",
-        "src/tech_sentiment/bounded_retry.py",
     ),
     "ChiNext50": (
-        "reference/prospective_context_raw_v1.json",
         "data/reference/chinext50_anchor_2026-06-15.csv",
         "data/reference/v4c03_chinext50_adjustments_2021h2_2026.csv",
         "src/tech_sentiment/data_akshare.py",
@@ -38,24 +35,19 @@ _UNIVERSE_SEMANTIC_FILES = {
         "src/tech_sentiment/index_price.py",
         "src/tech_sentiment/production_universe.py",
         "src/tech_sentiment/universe.py",
-        "src/tech_sentiment/bounded_retry.py",
     ),
 }
 
 _CAPITAL_SEMANTIC_FILES = (
-    "reference/prospective_context_raw_v1.json",
     "src/tech_sentiment/capital_input_data.py",
     "src/tech_sentiment/resumable_capital.py",
     "src/tech_sentiment/immutable_checkpoint.py",
-    "src/tech_sentiment/bounded_retry.py",
 )
 
 _SZSE_ETF_SEMANTIC_FILES = (
-    "reference/prospective_context_raw_v1.json",
     "src/tech_sentiment/v4c03_szse_etf_shares.py",
     "src/tech_sentiment/resumable_capital.py",
     "src/tech_sentiment/immutable_checkpoint.py",
-    "src/tech_sentiment/bounded_retry.py",
 )
 
 
@@ -84,6 +76,27 @@ def file_sha256(path: str | Path) -> str:
 def checkpoint_release_tag(operation_date: str) -> str:
     date = pd.Timestamp(operation_date).date().isoformat()
     return f"{CHECKPOINT_RELEASE_TAG_PREFIX}-{date}"
+
+
+def _semantic_contract_payload(repo_root: Path) -> dict[str, Any]:
+    """Hash only public materialization semantics, not orchestration plumbing."""
+    contract = json.loads(
+        (repo_root / "reference/prospective_context_raw_v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    return {
+        "contract_id": contract.get("contract_id"),
+        "contract_version": contract.get("contract_version"),
+        "operation_date_semantics": contract.get("operation_date_semantics"),
+        "warmup": contract.get("warmup"),
+        "universes": contract.get("universes"),
+        "public_raw_rails": contract.get("public_raw_rails"),
+        "quality": contract.get("quality"),
+        "privacy_and_research_firewall": contract.get(
+            "privacy_and_research_firewall"
+        ),
+    }
 
 
 def semantic_fingerprint(
@@ -119,6 +132,7 @@ def semantic_fingerprint(
     payload = {
         "schema_version": CHECKPOINT_BUNDLE_SCHEMA,
         "family": family,
+        "semantic_contract": _semantic_contract_payload(root),
         "files": rows,
     }
     fingerprint = _sha256_bytes(_canonical_json(payload).encode("utf-8"))
