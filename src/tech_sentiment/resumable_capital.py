@@ -47,7 +47,7 @@ def month_groups(trading_dates: Iterable[object]) -> list[pd.DatetimeIndex]:
     return [pd.DatetimeIndex(part.values) for _, part in series.groupby(dates.to_period("M"))]
 
 
-def checkpointcheckpoint_identity(
+def checkpoint_identity(
     *,
     producer: str,
     source_revision: str,
