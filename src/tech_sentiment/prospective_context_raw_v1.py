@@ -383,6 +383,12 @@ def materialize_public_raw_capture(
             "live_snapshot_source_variants": sorted(
                 set(live["snapshot_source"].astype(str))
             ),
+            "live_snapshot_roles": sorted(
+                set(live["snapshot_role"].astype(str))
+            ),
+            "live_snapshot_membership_authority": (
+                "RECONSTRUCTED_PIT_ANCHOR_PLUS_OFFICIAL_ADJUSTMENTS"
+            ),
             "capture_window_constituent_symbol_coverage": coverage,
             "download_error_rows": int(len(downloaded.errors)),
             "reconstruction": {
