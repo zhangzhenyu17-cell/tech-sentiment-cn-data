@@ -11,7 +11,11 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from .capital_input_data import qualify_trailing_etf_coverage
+from .capital_input_data import (
+    fetch_sse_etf_share_history,
+    fetch_sse_szse_a_share_turnover_history,
+    qualify_trailing_etf_coverage,
+)
 from .data_akshare import download_universe_history, fetch_current_csindex_universe
 from .index_history import read_adjustments_csv, read_anchor_csv, reconstruct_index_history
 from .index_price import fetch_index_history
@@ -181,6 +185,95 @@ def _require_operation_date_row(
         raise ValueError(f"{label} lacks exact operation-date observation")
 
 
+def _validate_same_day_capital_preflight(
+    *,
+    operation_date: str,
+    sse_etf_data: pd.DataFrame,
+    szse_etf_data: pd.DataFrame,
+    turnover_data: pd.DataFrame,
+    diagnostics: dict[str, Any] | None = None,
+) -> None:
+    """Fail fast when same-day public capital inputs are not yet published.
+
+    This is only a freshness gate. It does not evaluate trailing coverage or
+    evidence qualification; the full canonical materialization still reruns
+    and applies the frozen 60-day / 80% rules later.
+    """
+    target = pd.Timestamp(operation_date).normalize()
+    missing: list[str] = []
+
+    def _has_fund(frame: pd.DataFrame, code: str) -> bool:
+        if frame.empty or not {"date", "fund_code"} <= set(frame.columns):
+            return False
+        dates = pd.to_datetime(frame["date"], errors="coerce").dt.normalize()
+        codes = frame["fund_code"].astype(str).str.extract(r"(\d+)", expand=False).str.zfill(6)
+        return bool(((dates == target) & (codes == code)).any())
+
+    if not _has_fund(sse_etf_data, "588000"):
+        missing.append("588000")
+    if not _has_fund(szse_etf_data, "159915"):
+        missing.append("159915")
+
+    turnover_ok = False
+    if not turnover_data.empty and "date" in turnover_data.columns:
+        turnover_dates = pd.to_datetime(
+            turnover_data["date"], errors="coerce"
+        ).dt.normalize()
+        turnover_ok = bool((turnover_dates == target).any())
+    if not turnover_ok:
+        missing.append("SSE_SZSE_TURNOVER")
+
+    if missing:
+        detail = json.dumps(
+            diagnostics or {},
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+        raise ValueError(
+            "SAME_DAY_PUBLIC_SOURCE_NOT_READY: "
+            f"operation_date={operation_date} missing={missing}; diagnostics={detail}"
+        )
+
+
+def _same_day_capital_preflight(
+    *,
+    operation_date: str,
+    client: Any | None = None,
+) -> None:
+    target_dates = pd.DatetimeIndex([pd.Timestamp(operation_date).normalize()])
+
+    sse = fetch_sse_etf_share_history(
+        trading_dates=target_dates,
+        fund_codes=["588000"],
+        sleep_seconds=0,
+    )
+    szse = fetch_szse_etf_share_history(
+        start_date=operation_date,
+        end_date=operation_date,
+        trading_dates=target_dates,
+        fund_codes=["159915"],
+        sleep_seconds=0,
+        client=client,
+    )
+    turnover = fetch_sse_szse_a_share_turnover_history(
+        trading_dates=target_dates,
+        sleep_seconds=0,
+    )
+
+    _validate_same_day_capital_preflight(
+        operation_date=operation_date,
+        sse_etf_data=sse.data,
+        szse_etf_data=szse.data,
+        turnover_data=turnover.combined,
+        diagnostics={
+            "sse_588000_errors": sse.errors.to_dict("records"),
+            "szse_159915_errors": szse.errors.to_dict("records"),
+            "turnover_errors": turnover.errors.to_dict("records"),
+        },
+    )
+
+
 def _file_record(root: Path, path: Path) -> dict[str, Any]:
     rel = path.relative_to(root).as_posix()
     return {
@@ -239,6 +332,13 @@ def materialize_public_raw_capture(
         calendar,
         output_root / "trading_calendar.csv",
         capture_date=capture_date,
+    )
+
+    # Fail before constituent-history downloads when same-day capital sources
+    # have not yet published the operation-date observation.
+    _same_day_capital_preflight(
+        operation_date=operation_date,
+        client=client,
     )
 
     universe_receipts: dict[str, Any] = {}
@@ -625,6 +725,7 @@ __all__ = [
     "CONTRACT_ID",
     "RECEIPT_NAME",
     "CaptureResult",
+    "_validate_same_day_capital_preflight",
     "capture_trading_dates",
     "materialize_public_raw_capture",
     "package_capture",
