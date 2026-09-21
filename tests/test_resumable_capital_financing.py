@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from tech_sentiment.capital_input_data import EtfShareFetchResult, ExchangeTurnoverFetchResult
@@ -250,7 +252,7 @@ def test_sse_etf_missing_operation_row_is_never_permanent_reuse_eligible(tmp_pat
     )
 
     receipts = [
-        pd.read_json(path, typ="series")
+        json.loads(path.read_text(encoding="utf-8"))
         for path in tmp_path.glob("*/receipt.json")
     ]
     etf_receipts = [
@@ -284,7 +286,7 @@ def test_turnover_missing_required_date_is_never_permanent_reuse_eligible(tmp_pa
     )
 
     receipts = [
-        pd.read_json(path, typ="series")
+        json.loads(path.read_text(encoding="utf-8"))
         for path in tmp_path.glob("*/receipt.json")
     ]
     turnover_receipts = [
