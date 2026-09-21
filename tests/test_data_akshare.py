@@ -41,6 +41,18 @@ class FakeAKShare:
         out["权重"] = 1.0
         return out
 
+
+    def index_stock_cons(self, symbol: str):
+        base = FakeAKShare.index_stock_cons_csindex(self, symbol)
+        if base.empty:
+            return base
+        return base.rename(
+            columns={
+                "成分券代码": "品种代码",
+                "成分券名称": "品种名称",
+            }
+        )
+
     def stock_zh_a_hist(
         self,
         *,
@@ -104,6 +116,7 @@ def test_fetch_current_csindex_universe_deduplicates_symbols():
     assert row["board"] == "chinext"
     assert set(universe["universe_mode"]) == {"current_snapshot"}
     assert set(universe["snapshot_source"]) == {"csindex_cons_xls"}
+    assert set(universe["snapshot_role"]) == {"official_live_witness"}
 
 
 
@@ -206,6 +219,7 @@ def test_fetch_current_csindex_universe_uses_official_closeweight_fallback_for_m
     assert client.fallback_calls == 1
     assert set(universe["symbol"]) == {"688001", "300750"}
     assert set(universe["snapshot_source"]) == {"csindex_closeweight_xls"}
+    assert set(universe["snapshot_role"]) == {"official_live_witness"}
 
 
 def test_fetch_current_csindex_universe_does_not_fallback_on_unrelated_value_error():
@@ -218,6 +232,47 @@ def test_fetch_current_csindex_universe_does_not_fallback_on_unrelated_value_err
             client=client,
         )
     assert client.fallback_calls == 0
+
+
+class BothOfficialMalformedAKShare(FakeAKShare):
+    def __init__(self):
+        super().__init__()
+        self.primary_calls = 0
+        self.secondary_calls = 0
+        self.sina_calls = 0
+
+    def index_stock_cons_csindex(self, symbol: str):
+        self.primary_calls += 1
+        raise ValueError(
+            "Excel file format cannot be determined, you must specify an engine manually."
+        )
+
+    def index_stock_cons_weight_csindex(self, symbol: str):
+        self.secondary_calls += 1
+        raise ValueError(
+            "Excel file format cannot be determined, you must specify an engine manually."
+        )
+
+    def index_stock_cons(self, symbol: str):
+        self.sina_calls += 1
+        return FakeAKShare.index_stock_cons(self, symbol)
+
+
+def test_fetch_current_csindex_universe_uses_sina_only_as_independent_live_witness():
+    client = BothOfficialMalformedAKShare()
+    universe = fetch_current_csindex_universe(
+        ["000688"],
+        retries=2,
+        retry_backoff_seconds=0,
+        client=client,
+    )
+
+    assert client.primary_calls == 1
+    assert client.secondary_calls == 1
+    assert client.sina_calls == 1
+    assert set(universe["symbol"]) == {"688001", "300750"}
+    assert set(universe["snapshot_source"]) == {"sina_latest_component"}
+    assert set(universe["snapshot_role"]) == {"independent_live_witness_only"}
 
 def test_fetch_stock_history_normalizes_eastmoney_columns_and_timeout():
     client = FakeAKShare()
