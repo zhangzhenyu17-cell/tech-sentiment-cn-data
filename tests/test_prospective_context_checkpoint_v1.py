@@ -254,6 +254,53 @@ def test_progress_manifest_rejects_cross_date_restore_plan(tmp_path: Path) -> No
     assert checkpoint_release_tag("2026-09-22") != packaged["release_tag"]
 
 
+
+def test_packager_rejects_permanent_unit_without_exact_operation_date(tmp_path: Path) -> None:
+    cache = tmp_path / "cache"
+    identity = _identity("wrong-date")
+    store = ImmutableCheckpointStore(cache / "sse")
+    store.save(
+        identity,
+        frames={
+            "data": pd.DataFrame({"date": ["2026-09-21"], "value": [1.0]}),
+            "errors": pd.DataFrame(columns=["date", "error"]),
+        },
+        metadata={
+            "capture_date": "2026-09-20",
+            "actual_source_commit": "deadbeef",
+            "permanent_reuse_eligible": True,
+        },
+    )
+    packaged = package_complete_checkpoints(
+        cache,
+        out_dir=tmp_path / "out",
+        operation_date="2026-09-21",
+    )
+    assert packaged["bundles"] == []
+
+
+def test_packager_rejects_permanent_unit_without_declared_operation_date(tmp_path: Path) -> None:
+    cache = tmp_path / "cache"
+    identity = _identity("missing-date")
+    store = ImmutableCheckpointStore(cache / "sse")
+    store.save(
+        identity,
+        frames={
+            "data": pd.DataFrame({"date": ["2026-09-21"], "value": [1.0]}),
+            "errors": pd.DataFrame(columns=["date", "error"]),
+        },
+        metadata={
+            "actual_source_commit": "deadbeef",
+            "permanent_reuse_eligible": True,
+        },
+    )
+    packaged = package_complete_checkpoints(
+        cache,
+        out_dir=tmp_path / "out",
+        operation_date="2026-09-21",
+    )
+    assert packaged["bundles"] == []
+
 def test_checkpoint_cli_package_and_restore_entrypoints(tmp_path: Path) -> None:
     cache = tmp_path / "cache"
     identity = _identity("cli")
