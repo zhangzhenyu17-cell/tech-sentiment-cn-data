@@ -69,7 +69,7 @@
     "workflow_dispatch_only": true
   },
   "intermediate_checkpoint_persistence": {
-    "schema": "prospective-context-checkpoint-bundle-v1",
+    "schema": "prospective-context-checkpoint-progress-v1",
     "completed_work_units_published_immutably": true,
     "publish_completed_units_even_when_later_capture_step_fails": true,
     "restore_precedence": "IMMUTABLE_COMPLETED_WORK_UNIT_BEFORE_PROVIDER_RECOMPUTATION",
