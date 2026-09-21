@@ -96,6 +96,58 @@ def _normalize_etf_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _etf_chunk_permanent_eligible(
+    *,
+    data: pd.DataFrame,
+    errors: pd.DataFrame,
+    dates: pd.DatetimeIndex,
+    fund_codes: tuple[str, ...],
+) -> bool:
+    if not errors.empty or data.empty:
+        return False
+    required = {
+        (pd.Timestamp(date).normalize(), code)
+        for date in dates
+        for code in fund_codes
+    }
+    if not {"date", "fund_code"} <= set(data.columns):
+        return False
+    actual_dates = pd.to_datetime(data["date"], errors="coerce").dt.normalize()
+    actual_codes = (
+        data["fund_code"]
+        .astype(str)
+        .str.replace(r"\.0$", "", regex=True)
+        .str.zfill(6)
+    )
+    actual = set(zip(actual_dates, actual_codes))
+    return required <= actual
+
+
+def _turnover_chunk_permanent_eligible(
+    *,
+    combined: pd.DataFrame,
+    errors: pd.DataFrame,
+    dates: pd.DatetimeIndex,
+) -> bool:
+    if not errors.empty or combined.empty or "date" not in combined.columns:
+        return False
+    actual_dates = set(
+        pd.to_datetime(combined["date"], errors="coerce").dt.normalize()
+    )
+    required_dates = {pd.Timestamp(date).normalize() for date in dates}
+    if not required_dates <= actual_dates:
+        return False
+    if "amount" in combined.columns:
+        target = combined[
+            pd.to_datetime(combined["date"], errors="coerce")
+            .dt.normalize()
+            .isin(required_dates)
+        ]
+        if target["amount"].isna().any():
+            return False
+    return True
+
+
 def materialize_capital_monthly(
     *,
     trading_dates: Iterable[object],
@@ -147,13 +199,11 @@ def materialize_capital_monthly(
                     "actual_source_commit": source_commit,
                     "checkpoint_revision": checkpoint_revision or source_commit,
                     "capture_date": capture_date,
-                    "permanent_reuse_eligible": bool(
-                        etf_result.errors.empty
-                        or (
-                            "error" in etf_result.errors.columns
-                            and etf_result.errors["error"].astype(str)
-                            .eq("NO_MATCHING_ETF_ROW").all()
-                        )
+                    "permanent_reuse_eligible": _etf_chunk_permanent_eligible(
+                        data=etf_result.data,
+                        errors=etf_result.errors,
+                        dates=dates,
+                        fund_codes=codes,
                     ),
                 },
             )
@@ -196,7 +246,11 @@ def materialize_capital_monthly(
                     "actual_source_commit": source_commit,
                     "checkpoint_revision": checkpoint_revision or source_commit,
                     "capture_date": capture_date,
-                    "permanent_reuse_eligible": bool(turnover_result.errors.empty),
+                    "permanent_reuse_eligible": _turnover_chunk_permanent_eligible(
+                        combined=turnover_result.combined,
+                        errors=turnover_result.errors,
+                        dates=dates,
+                    ),
                 },
             )
             executed += 1
@@ -288,7 +342,12 @@ def materialize_szse_etf_monthly(
                     "actual_source_commit": source_commit,
                     "checkpoint_revision": checkpoint_revision or source_commit,
                     "capture_date": capture_date,
-                    "permanent_reuse_eligible": bool(result.errors.empty),
+                    "permanent_reuse_eligible": _etf_chunk_permanent_eligible(
+                        data=result.data,
+                        errors=result.errors,
+                        dates=dates,
+                        fund_codes=codes,
+                    ),
                 },
             )
             executed += 1
