@@ -14,6 +14,7 @@ from tech_sentiment.immutable_checkpoint import (
 )
 from tech_sentiment.prospective_context_checkpoint_v1 import (
     CHECKPOINT_BUNDLE_SCHEMA,
+    SEMANTIC_FINGERPRINT_SCHEMA,
     checkpoint_release_tag,
     package_complete_checkpoints,
     plan_available_checkpoint_bundles,
@@ -65,6 +66,11 @@ def _save(
             "permanent_reuse_eligible": permanent,
         },
     )
+
+
+def test_materialization_semantic_schema_is_independent_from_progress_bundle_schema() -> None:
+    assert SEMANTIC_FINGERPRINT_SCHEMA == "prospective-context-materialization-semantic-v1"
+    assert SEMANTIC_FINGERPRINT_SCHEMA != CHECKPOINT_BUNDLE_SCHEMA
 
 
 def test_semantic_fingerprint_excludes_operational_plumbing_for_both_universes() -> None:
