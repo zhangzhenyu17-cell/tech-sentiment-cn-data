@@ -32,11 +32,117 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[data,dev]"
 
-      - name: Capture public-only forward raw Context inputs
+      - name: Resolve exact durable checkpoint identities
+        id: checkpoint_expected
         run: |
-          python scripts/build_prospective_context_raw_v1.py             --operation-date "${{ inputs.operation_date }}"             --source-commit "$GITHUB_SHA"
+          set -euo pipefail
+          mkdir -p checkpoint-meta
+          python scripts/prospective_context_checkpoint_bundle.py expected \
+            --operation-date "${{ inputs.operation_date }}" \
+            --out checkpoint-meta/expected.json
+
+      - name: Restore exact immutable completed work units
+        id: checkpoint_restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="prospective-context-checkpoints-v1"
+          mkdir -p checkpoint-restore checkpoint-meta .cache/prospective_context_raw
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release view "$TAG" --json assets --jq '.assets[].name' \
+              > checkpoint-meta/remote-assets.txt
+          else
+            : > checkpoint-meta/remote-assets.txt
+          fi
+
+          python scripts/prospective_context_checkpoint_bundle.py plan \
+            --expected checkpoint-meta/expected.json \
+            --remote-assets checkpoint-meta/remote-assets.txt \
+            --out checkpoint-meta/restore-plan.json
+
+          python - <<'PY' > checkpoint-meta/selected-bases.txt
+          import json
+          from pathlib import Path
+          payload = json.loads(
+              Path("checkpoint-meta/restore-plan.json").read_text(encoding="utf-8")
+          )
+          for item in payload.get("selected", []):
+              print(item["asset_base"])
+          PY
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            while IFS= read -r base; do
+              test -n "$base" || continue
+              gh release download "$TAG" \
+                --pattern "$base.tar.gz" \
+                --pattern "$base.manifest.json" \
+                --pattern "$base.sha256" \
+                --dir checkpoint-restore
+            done < checkpoint-meta/selected-bases.txt
+          fi
+
+          python scripts/prospective_context_checkpoint_bundle.py restore \
+            --asset-dir checkpoint-restore \
+            --cache-root .cache/prospective_context_raw \
+            --out checkpoint-meta/restored.json
+
+      - name: Capture public-only forward raw Context inputs
+        id: capture
+        run: |
+          python scripts/build_prospective_context_raw_v1.py \
+            --operation-date "${{ inputs.operation_date }}" \
+            --source-commit "$GITHUB_SHA"
+
+      - name: Package every completed reusable checkpoint
+        id: checkpoint_package
+        if: ${{ always() && steps.capture.outcome != 'skipped' }}
+        run: |
+          set -euo pipefail
+          rm -rf dist/prospective_context_checkpoints
+          python scripts/prospective_context_checkpoint_bundle.py package \
+            --cache-root .cache/prospective_context_raw \
+            --out-dir dist/prospective_context_checkpoints \
+            --out checkpoint-meta/package-index.json
+
+      - name: Publish immutable completed work units
+        if: ${{ always() && steps.checkpoint_package.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' > checkpoint-meta/package-bases.txt
+          import json
+          from pathlib import Path
+          payload = json.loads(
+              Path("checkpoint-meta/package-index.json").read_text(encoding="utf-8")
+          )
+          for item in payload.get("bundles", []):
+              print(item["asset_base"])
+          PY
+
+          while IFS= read -r base; do
+            test -n "$base" || continue
+            bash scripts/publish_prospective_context_checkpoint_bundle.sh \
+              prospective-context-checkpoints-v1 \
+              dist/prospective_context_checkpoints \
+              "$base"
+          done < checkpoint-meta/package-bases.txt
+
+      - name: Preserve checkpoint recovery diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospective-context-checkpoint-diagnostics-${{ github.run_id }}
+          path: |
+            checkpoint-meta/
+            .cache/prospective_context_raw/runtime_summary.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Resolve immutable capture identity
+        if: ${{ steps.capture.outcome == 'success' }}
         id: identity
         run: |
           python - <<'PY'
@@ -62,6 +168,7 @@ jobs:
           PY
 
       - name: Publish or exact-verify immutable public raw capture
+        if: ${{ steps.capture.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.identity.outputs.tag }}
@@ -75,7 +182,10 @@ jobs:
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             mkdir -p existing
-            gh release download "$TAG"               --pattern "$BASE.sha256"               --pattern "$BASE.manifest.json"               --dir existing
+            gh release download "$TAG" \
+              --pattern "$BASE.sha256" \
+              --pattern "$BASE.manifest.json" \
+              --dir existing
             cmp --silent "$CHECKSUM" "existing/$BASE.sha256" || {
               echo "IMMUTABLE_PUBLIC_RAW_CAPTURE_CONFLICT: checksum drift" >&2
               exit 1
@@ -86,11 +196,15 @@ jobs:
             }
             echo "Exact immutable public raw capture already exists: $TAG"
           else
-            gh release create "$TAG"               --target "$GITHUB_SHA"               --title "Prospective public raw Context capture ${{ inputs.operation_date }}"               --notes "Public-only forward raw inputs. Historical rows are warm-up known at capture time only; historical replay and retroactive evidence qualification are forbidden."
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "Prospective public raw Context capture ${{ inputs.operation_date }}" \
+              --notes "Public-only forward raw inputs. Historical rows are warm-up known at capture time only; historical replay and retroactive evidence qualification are forbidden."
             gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" "$MANIFEST"
           fi
 
       - name: Upload contemporaneous raw capture artifact
+        if: ${{ steps.capture.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: prospective-context-raw-v1-${{ inputs.operation_date }}
