@@ -192,6 +192,41 @@ def test_restore_plan_selects_only_snapshots_that_add_expected_work(
     assert plan["missing_checkpoint_count"] == 1
 
 
+def test_restore_plan_fails_closed_on_same_fingerprint_receipt_drift(
+    tmp_path: Path,
+) -> None:
+    cache = tmp_path / "cache"
+    identity = _identity("drift")
+    _save(cache, store_name="sse", identity=identity, permanent=True)
+    packaged = package_complete_checkpoints(
+        cache,
+        out_dir=tmp_path / "out",
+        operation_date="2026-09-21",
+    )
+    first = packaged["bundles"][0]
+    second = json.loads(json.dumps(first))
+    second["checkpoint_units"][0]["checkpoint_receipt_sha256"] = "f" * 64
+
+    # Re-sign the synthetic manifest so the test reaches the per-checkpoint
+    # immutable conflict gate rather than failing at manifest integrity.
+    import tech_sentiment.prospective_context_checkpoint_v1 as checkpoint
+
+    second["bundle_identity"] = checkpoint._sha256_bytes(
+        checkpoint._canonical_json(
+            checkpoint._progress_identity_payload(second)
+        ).encode("utf-8")
+    )
+
+    with pytest.raises(ValueError, match="conflicting immutable checkpoint receipts"):
+        plan_available_checkpoint_bundles(
+            expected={
+                "operation_date": "2026-09-21",
+                "assets": [{"fingerprint": identity.fingerprint}],
+            },
+            manifests=[first, second],
+        )
+
+
 def test_progress_manifest_rejects_cross_date_restore_plan(tmp_path: Path) -> None:
     cache = tmp_path / "cache"
     identity = _identity("one")
