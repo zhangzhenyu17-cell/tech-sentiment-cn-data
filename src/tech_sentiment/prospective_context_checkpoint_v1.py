@@ -40,14 +40,10 @@ _UNIVERSE_SEMANTIC_FILES = {
 
 _CAPITAL_SEMANTIC_FILES = (
     "src/tech_sentiment/capital_input_data.py",
-    "src/tech_sentiment/resumable_capital.py",
-    "src/tech_sentiment/immutable_checkpoint.py",
 )
 
 _SZSE_ETF_SEMANTIC_FILES = (
     "src/tech_sentiment/v4c03_szse_etf_shares.py",
-    "src/tech_sentiment/resumable_capital.py",
-    "src/tech_sentiment/immutable_checkpoint.py",
 )
 
 
@@ -449,14 +445,26 @@ def plan_available_checkpoint_bundles(
         str(item["fingerprint"]) for item in expected_rows
     }
     candidates: list[dict[str, Any]] = []
+    receipt_by_fingerprint: dict[str, str] = {}
 
     for manifest in manifests:
         _validate_progress_manifest(manifest)
         if str(manifest["operation_date"]) != operation_date:
             continue
+        units = list(manifest.get("checkpoint_units") or [])
+        for unit in units:
+            fingerprint = str(unit["checkpoint_fingerprint"])
+            receipt_sha = str(unit.get("checkpoint_receipt_sha256") or "")
+            previous = receipt_by_fingerprint.get(fingerprint)
+            if previous is not None and previous != receipt_sha:
+                raise ValueError(
+                    "conflicting immutable checkpoint receipts for "
+                    f"{fingerprint}: {previous} != {receipt_sha}"
+                )
+            receipt_by_fingerprint[fingerprint] = receipt_sha
         unit_fingerprints = {
             str(item["checkpoint_fingerprint"])
-            for item in manifest.get("checkpoint_units") or []
+            for item in units
         }
         useful = unit_fingerprints & expected_fingerprints
         if useful:
