@@ -1,0 +1,199 @@
+name: prospective-context-raw-preopen-v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      market_session_date:
+        description: Market session date T (YYYY-MM-DD)
+        required: true
+        type: string
+      decision_date:
+        description: Immediate next A-share trading day T+1 (YYYY-MM-DD)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prospective-context-raw-preopen-v2
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install public data environment
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[data,dev]"
+
+      - name: Resolve exact durable checkpoint identities
+        run: |
+          set -euo pipefail
+          mkdir -p checkpoint-meta
+          python scripts/prospective_context_checkpoint_bundle.py expected \
+            --operation-date "${{ inputs.market_session_date }}" \
+            --out checkpoint-meta/expected.json
+
+      - name: Restore exact immutable completed work units
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="prospective-context-checkpoints-${{ inputs.market_session_date }}"
+          mkdir -p checkpoint-manifests checkpoint-restore checkpoint-meta .cache/prospective_context_raw
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release download "$TAG" \
+              --pattern "pcraw-progress-v1-*.manifest.json" \
+              --dir checkpoint-manifests
+          fi
+          python scripts/prospective_context_checkpoint_bundle.py plan \
+            --expected checkpoint-meta/expected.json \
+            --manifest-dir checkpoint-manifests \
+            --out checkpoint-meta/restore-plan.json
+          python - <<'PY' > checkpoint-meta/selected-bases.txt
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("checkpoint-meta/restore-plan.json").read_text(encoding="utf-8"))
+          for item in payload.get("selected", []):
+              print(item["asset_base"])
+          PY
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            while IFS= read -r base; do
+              test -n "$base" || continue
+              gh release download "$TAG" \
+                --pattern "$base.tar.gz" \
+                --pattern "$base.manifest.json" \
+                --pattern "$base.sha256" \
+                --dir checkpoint-restore
+            done < checkpoint-meta/selected-bases.txt
+          fi
+          python scripts/prospective_context_checkpoint_bundle.py restore \
+            --asset-dir checkpoint-restore \
+            --cache-root .cache/prospective_context_raw \
+            --out checkpoint-meta/restored.json
+
+      - name: Capture previous-session public raw inputs before 05:30 freeze
+        id: capture
+        run: |
+          python scripts/build_prospective_context_raw_preopen_v2.py \
+            --market-session-date "${{ inputs.market_session_date }}" \
+            --decision-date "${{ inputs.decision_date }}" \
+            --source-commit "$GITHUB_SHA"
+
+      - name: Package every completed reusable checkpoint
+        id: checkpoint_package
+        if: ${{ always() && steps.capture.outcome != 'skipped' }}
+        run: |
+          set -euo pipefail
+          rm -rf dist/prospective_context_checkpoints
+          python scripts/prospective_context_checkpoint_bundle.py package \
+            --cache-root .cache/prospective_context_raw \
+            --out-dir dist/prospective_context_checkpoints \
+            --operation-date "${{ inputs.market_session_date }}" \
+            --out checkpoint-meta/package-index.json
+
+      - name: Publish immutable completed work units
+        if: ${{ always() && steps.checkpoint_package.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' > checkpoint-meta/package-bases.txt
+          import json
+          from pathlib import Path
+          payload = json.loads(Path("checkpoint-meta/package-index.json").read_text(encoding="utf-8"))
+          for item in payload.get("bundles", []):
+              print(item["asset_base"])
+          PY
+          while IFS= read -r base; do
+            test -n "$base" || continue
+            bash scripts/publish_prospective_context_checkpoint_bundle.sh \
+              "prospective-context-checkpoints-${{ inputs.market_session_date }}" \
+              dist/prospective_context_checkpoints \
+              "$base"
+          done < checkpoint-meta/package-bases.txt
+
+      - name: Preserve checkpoint recovery diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospective-context-preopen-checkpoint-diagnostics-${{ github.run_id }}
+          path: |
+            checkpoint-meta/
+            .cache/prospective_context_raw/runtime_summary.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Resolve immutable pre-open capture identity
+        if: ${{ steps.capture.outcome == 'success' }}
+        id: identity
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          manifests = list(
+              Path("dist/prospective_context_preopen_packages").glob(
+                  "prospective-context-raw-preopen-v2-*.manifest.json"
+              )
+          )
+          if len(manifests) != 1:
+              raise SystemExit(f"expected one pre-open package manifest, got {len(manifests)}")
+          payload = json.loads(manifests[0].read_text(encoding="utf-8"))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"tag={payload['release_tag']}\n")
+          PY
+
+      - name: Publish or exact-verify immutable pre-open public raw capture
+        if: ${{ steps.capture.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.identity.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ROOT="dist/prospective_context_preopen_packages"
+          ARCHIVE="$ROOT/$TAG.tar.gz"
+          CHECKSUM="$ROOT/$TAG.sha256"
+          MANIFEST="$ROOT/$TAG.manifest.json"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            mkdir -p existing
+            gh release download "$TAG" \
+              --pattern "$TAG.sha256" \
+              --pattern "$TAG.manifest.json" \
+              --dir existing
+            cmp --silent "$CHECKSUM" "existing/$TAG.sha256" || {
+              echo "IMMUTABLE_PREOPEN_PUBLIC_RAW_CAPTURE_CONFLICT: checksum drift" >&2
+              exit 1
+            }
+            cmp --silent "$MANIFEST" "existing/$TAG.manifest.json" || {
+              echo "IMMUTABLE_PREOPEN_PUBLIC_RAW_CAPTURE_CONFLICT: manifest drift" >&2
+              exit 1
+            }
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "Prospective pre-open public raw Context ${{ inputs.market_session_date }} -> ${{ inputs.decision_date }}" \
+              --notes "Public-only previous-session raw inputs, frozen no later than 05:30 Asia/Shanghai for next-trading-day pre-open decision. No historical backfill or evidence qualification is granted here."
+            gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" "$MANIFEST"
+          fi
+
+      - name: Upload contemporaneous pre-open raw capture artifact
+        if: ${{ steps.capture.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospective-context-raw-preopen-v2-${{ inputs.market_session_date }}-for-${{ inputs.decision_date }}
+          path: |
+            dist/prospective_context_raw_preopen_v2/
+            dist/prospective_context_preopen_packages/
+          if-no-files-found: error
+          retention-days: 90
