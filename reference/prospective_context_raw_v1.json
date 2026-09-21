@@ -1,0 +1,71 @@
+{
+  "contract_id": "prospective_context_raw_v1",
+  "contract_version": 1,
+  "status": "FROZEN_PUBLIC_DATA_SCOPE",
+  "date": "2026-09-21",
+  "purpose": "Capture public-only raw same-day and warm-up inputs needed by a private frozen Context materializer without exposing model semantics, outcomes, portfolio data, or private evidence.",
+  "operation_date_semantics": {
+    "operation_date_must_equal_asia_shanghai_capture_date": true,
+    "operation_date_must_be_confirmed_a_share_trading_day": true,
+    "historical_replay_allowed": false,
+    "retroactive_evidence_qualification_allowed": false,
+    "warmup_rows_semantics": "HISTORICAL_ROWS_KNOWN_AT_FORWARD_CAPTURE_ONLY"
+  },
+  "warmup": {
+    "trading_days": 340,
+    "rationale": "Public data warm-up only; provides buffer beyond existing frozen rolling normalization windows without changing private model formulas."
+  },
+  "universes": {
+    "STAR50": {
+      "index_code": "000688",
+      "expected_constituents": 50,
+      "anchor_path": "data/reference/kc50_anchor_2026-09-14.csv",
+      "anchor_effective_date": "2026-09-14",
+      "adjustments_path": "data/reference/v4c03_kc50_adjustments_2021h2_2026.csv",
+      "etf_fund_code": "588000",
+      "etf_source_identity": "SSE_ETF_SCALE_DAILY"
+    },
+    "ChiNext50": {
+      "index_code": "399673",
+      "expected_constituents": 50,
+      "anchor_path": "data/reference/chinext50_anchor_2026-06-15.csv",
+      "anchor_effective_date": "2026-06-15",
+      "adjustments_path": "data/reference/v4c03_chinext50_adjustments_2021h2_2026.csv",
+      "etf_fund_code": "159915",
+      "etf_source_identity": "SZSE_ETF_SCALE_DAILY"
+    }
+  },
+  "public_raw_rails": [
+    "A_SHARE_TRADING_CALENDAR",
+    "SSE_SZSE_A_SHARE_TURNOVER",
+    "SSE_ETF_588000_SHARES",
+    "SZSE_ETF_159915_SHARES",
+    "STAR50_000688_INDEX_DAILY",
+    "CHINEXT50_399673_INDEX_DAILY",
+    "STAR50_PIT_MEMBERSHIP_AND_CONSTITUENT_DAILY",
+    "CHINEXT50_PIT_MEMBERSHIP_AND_CONSTITUENT_DAILY"
+  ],
+  "quality": {
+    "exact_live_snapshot_match_required": true,
+    "exact_operation_date_index_row_required": true,
+    "exact_operation_date_turnover_row_required": true,
+    "exact_operation_date_etf_share_row_required_for_each_fund": true,
+    "interpolation_allowed": false,
+    "forward_fill_allowed": false,
+    "natural_day_approximation_allowed": false,
+    "minimum_constituent_symbol_coverage_over_capture_window": 0.95,
+    "minimum_constituent_symbol_coverage_source": "existing V4C-03 public-data contract semantics"
+  },
+  "privacy_and_research_firewall": {
+    "private_model_semantics_allowed": false,
+    "private_thresholds_or_signals_allowed": false,
+    "portfolio_or_holdings_data_allowed": false,
+    "forward_outcomes_allowed": false,
+    "research_result_allowed": false,
+    "evidence_tier_allowed": false
+  },
+  "workflow": {
+    "automatic_trigger_allowed": false,
+    "workflow_dispatch_only": true
+  }
+}
