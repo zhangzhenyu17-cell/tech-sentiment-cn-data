@@ -31,18 +31,18 @@ jobs:
 
       - name: Download exact IPO public V1 base bundle
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
           BASE_ASSET: ipo-aftermarket-public-v1-20260921-dd10c3a4f8e3.tar.gz
           EXPECTED_SHA: 961e2f36ad25170323d3d8836fa5e1bf268f9a0057becedffa9a023da833308a
         run: |
           set -euo pipefail
           mkdir -p input/base input/bundle
           gh release download ipo-aftermarket-public-v1 \
-            --pattern "\${BASE_ASSET}" \
+            --pattern "${BASE_ASSET}" \
             --dir input/base
-          ACTUAL_SHA="$(sha256sum "input/base/\${BASE_ASSET}" | awk '{print $1}')"
-          test "\${ACTUAL_SHA}" = "\${EXPECTED_SHA}"
-          tar -xzf "input/base/\${BASE_ASSET}" -C input/bundle
+          ACTUAL_SHA="$(sha256sum "input/base/${BASE_ASSET}" | awk '{print $1}')"
+          test "${ACTUAL_SHA}" = "${EXPECTED_SHA}"
+          tar -xzf "input/base/${BASE_ASSET}" -C input/bundle
           python - <<'PY'
           import json
           from pathlib import Path
@@ -61,8 +61,8 @@ jobs:
           set -euo pipefail
           python scripts/probe_ipo_aftermarket_2_public_sources_v1.py \
             --bundle-dir input/bundle \
-            --as-of "\${{ inputs.as_of }}" \
-            --source-commit "\${GITHUB_SHA}" \
+            --as-of "${{ inputs.as_of }}" \
+            --source-commit "${GITHUB_SHA}" \
             --out-dir dist/probe
 
       - name: Assert probe output boundary
@@ -83,7 +83,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ipo-aftermarket-2-public-source-probe-\${{ github.run_id }}
+          name: ipo-aftermarket-2-public-source-probe-${{ github.run_id }}
           path: |
             dist/probe/industry_change_probe.csv
             dist/probe/industry_pe_probe.csv
