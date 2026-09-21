@@ -46,14 +46,15 @@
     "CHINEXT50_PIT_MEMBERSHIP_AND_CONSTITUENT_DAILY"
   ],
   "quality": {
-    "minimum_active_constituent_latest_day_coverage": 0.95,
     "exact_live_snapshot_match_required": true,
     "exact_operation_date_index_row_required": true,
     "exact_operation_date_turnover_row_required": true,
     "exact_operation_date_etf_share_row_required_for_each_fund": true,
     "interpolation_allowed": false,
     "forward_fill_allowed": false,
-    "natural_day_approximation_allowed": false
+    "natural_day_approximation_allowed": false,
+    "minimum_constituent_symbol_coverage_over_capture_window": 0.95,
+    "minimum_constituent_symbol_coverage_source": "existing V4C-03 public-data contract semantics"
   },
   "privacy_and_research_firewall": {
     "private_model_semantics_allowed": false,
