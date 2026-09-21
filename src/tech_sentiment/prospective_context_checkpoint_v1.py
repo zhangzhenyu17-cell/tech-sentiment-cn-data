@@ -342,9 +342,10 @@ def package_complete_checkpoints(
             metadata = dict(receipt.get("metadata") or {})
             if metadata.get("permanent_reuse_eligible") is not True:
                 continue
-            if metadata.get("capture_date") not in (None, operation_date) and metadata.get(
-                "operation_date"
-            ) not in (None, operation_date):
+            unit_operation_date = metadata.get("capture_date")
+            if unit_operation_date is None:
+                unit_operation_date = metadata.get("operation_date")
+            if str(unit_operation_date or "") != operation_date:
                 continue
             fingerprint = str(receipt.get("fingerprint") or "")
             if not fingerprint or checkpoint_dir.name != fingerprint:
