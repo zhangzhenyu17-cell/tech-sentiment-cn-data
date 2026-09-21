@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 
@@ -9,6 +8,7 @@ import pytest
 
 from tech_sentiment.prospective_context_raw_v1 import (
     RECEIPT_NAME,
+    _stamp_capture,
     _validate_window_symbol_coverage,
     _validate_live_snapshot_exact,
     capture_trading_dates,
@@ -150,7 +150,6 @@ def test_package_capture_is_byte_deterministic_for_same_capture(tmp_path: Path) 
         "schema_version": "prospective-context-public-raw-receipt-v1",
         "status": "PUBLIC_RAW_FORWARD_CAPTURE_COMPLETE",
         "operation_date": "2026-09-21",
-        "captured_at_utc": datetime(2026, 9, 21, 8, 0, tzinfo=timezone.utc).isoformat(),
         "historical_replay_allowed": False,
         "retroactive_evidence_qualification_allowed": False,
         "private_model_semantics_materialized": False,
@@ -164,10 +163,19 @@ def test_package_capture_is_byte_deterministic_for_same_capture(tmp_path: Path) 
     m1 = package_capture(root, output_dir=first, operation_date="2026-09-21")
     m2 = package_capture(root, output_dir=second, operation_date="2026-09-21")
     assert m1["bundle_identity"] == m2["bundle_identity"]
+    assert m1["release_tag"] == "prospective-context-raw-2026-09-21"
     a1 = first / m1["archive"]
     a2 = second / m2["archive"]
     assert a1.read_bytes() == a2.read_bytes()
 
+
+
+def test_canonical_capture_stamp_excludes_volatile_wall_clock() -> None:
+    frame = pd.DataFrame({"date": ["2026-09-21"], "value": [1]})
+    stamped = _stamp_capture(frame, capture_date="2026-09-21")
+    assert stamped["forward_capture_date"].tolist() == ["2026-09-21"]
+    assert stamped["historical_replay_allowed"].tolist() == [False]
+    assert "forward_captured_at_utc" not in stamped.columns
 
 def test_public_capture_workflow_is_manual_only() -> None:
     text = (

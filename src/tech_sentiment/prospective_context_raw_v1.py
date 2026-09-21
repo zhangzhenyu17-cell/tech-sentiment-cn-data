@@ -104,11 +104,16 @@ def _stamp_capture(
     frame: pd.DataFrame,
     *,
     capture_date: str,
-    captured_at_utc: str,
 ) -> pd.DataFrame:
+    """Stamp canonical forward-capture semantics without volatile run time.
+
+    Exact wall-clock provenance lives in immutable GitHub Actions run metadata.
+    Keeping it out of canonical CSV bytes makes same-day exact retries
+    byte-deterministic while still requiring operation_date == actual Shanghai
+    capture date before any data is written.
+    """
     out = frame.copy()
     out["forward_capture_date"] = capture_date
-    out["forward_captured_at_utc"] = captured_at_utc
     out["historical_replay_allowed"] = False
     return out
 
@@ -190,13 +195,11 @@ def _write_csv(
     path: Path,
     *,
     capture_date: str,
-    captured_at_utc: str,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     _stamp_capture(
         frame,
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     ).to_csv(path, index=False, date_format="%Y-%m-%d")
 
 
@@ -221,8 +224,6 @@ def materialize_public_raw_capture(
             "forward raw capture rejects historical/future operation dates; "
             f"operation_date={operation_date} capture_date={capture_date}"
         )
-    captured_at_utc = now.astimezone(ZoneInfo("UTC")).isoformat()
-
     warmup_days = int(contract["warmup"]["trading_days"])
     trading_dates = capture_trading_dates(
         operation_date,
@@ -238,7 +239,6 @@ def materialize_public_raw_capture(
         calendar,
         output_root / "trading_calendar.csv",
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     )
 
     universe_receipts: dict[str, Any] = {}
@@ -309,37 +309,31 @@ def materialize_public_raw_capture(
             membership,
             root / "universe_point_in_time.csv",
             capture_date=capture_date,
-            captured_at_utc=captured_at_utc,
         )
         _write_csv(
             segments,
             root / "universe_segments.csv",
             capture_date=capture_date,
-            captured_at_utc=captured_at_utc,
         )
         _write_csv(
             live,
             root / "universe_live_snapshot.csv",
             capture_date=capture_date,
-            captured_at_utc=captured_at_utc,
         )
         _write_csv(
             downloaded.prices,
             root / "prices.csv",
             capture_date=capture_date,
-            captured_at_utc=captured_at_utc,
         )
         _write_csv(
             downloaded.errors,
             root / "download_errors.csv",
             capture_date=capture_date,
-            captured_at_utc=captured_at_utc,
         )
         _write_csv(
             index_prices,
             root / "index_prices.csv",
             capture_date=capture_date,
-            captured_at_utc=captured_at_utc,
         )
         universe_frames[universe] = {
             "membership": membership,
@@ -421,49 +415,41 @@ def materialize_public_raw_capture(
         shares,
         capital_root / "etf_shares.csv",
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     )
     _write_csv(
         coverage_frame,
         capital_root / "etf_share_coverage.csv",
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     )
     _write_csv(
         capital.etf.errors,
         capital_root / "sse_etf_share_errors.csv",
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     )
     _write_csv(
         szse.errors,
         capital_root / "szse_etf_share_errors.csv",
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     )
     _write_csv(
         capital.turnover.sse,
         capital_root / "sse_a_share_turnover.csv",
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     )
     _write_csv(
         capital.turnover.szse,
         capital_root / "szse_a_share_turnover.csv",
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     )
     _write_csv(
         turnover,
         capital_root / "sse_szse_a_share_turnover.csv",
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     )
     _write_csv(
         capital.turnover.errors,
         capital_root / "sse_szse_turnover_errors.csv",
         capture_date=capture_date,
-        captured_at_utc=captured_at_utc,
     )
 
     etf_state: dict[str, Any] = {}
@@ -495,7 +481,7 @@ def materialize_public_raw_capture(
         "contract_id": CONTRACT_ID,
         "operation_date": operation_date,
         "capture_date_asia_shanghai": capture_date,
-        "captured_at_utc": captured_at_utc,
+        "capture_clock_provenance": "GITHUB_ACTIONS_RUN_METADATA_EXTERNAL_TO_CANONICAL_PAYLOAD",
         "source_commit": source_commit,
         "start_date": start_date,
         "end_date": end_date,
@@ -545,7 +531,7 @@ def package_capture(
         separators=(",", ":"),
     ).encode("utf-8")
     identity = hashlib.sha256(digest_material).hexdigest()
-    base = f"prospective-context-raw-{operation_date}-{identity[:12]}"
+    base = f"prospective-context-raw-{operation_date}"
     archive = output_dir / f"{base}.tar.gz"
 
     with archive.open("wb") as raw:
