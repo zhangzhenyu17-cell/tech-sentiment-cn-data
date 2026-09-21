@@ -350,28 +350,44 @@ def materialize_public_raw_capture(
     )
 
     universe_receipts: dict[str, Any] = {}
-    universe_frames: dict[str, dict[str, pd.DataFrame]] = {}
     minimum_coverage = float(
         contract["quality"][
             "minimum_constituent_symbol_coverage_over_capture_window"
         ]
     )
 
-    # Resolve and validate both live constituent snapshots before the heavy
-    # constituent-history downloads. This keeps transient official endpoint
-    # failures cheap and prevents one universe from consuming several minutes
-    # before the second live snapshot is known to be available.
-    live_all = fetch_current_csindex_universe(
-        [cfg["index_code"] for cfg in contract["universes"].values()],
-        retries=3,
-        retry_backoff_seconds=1.5,
-        client=client,
-    )
-    if live_all.empty:
-        raise ValueError("combined STAR50+ChiNext50 live constituent snapshot is empty")
+    # Restore exact same-capture immutable universe work units before touching
+    # the network. Missing units alone proceed to live witness + history fetch.
+    universe_store = ImmutableCheckpointStore(checkpoint_dir / "universe")
+    completed_universes: dict[str, dict[str, Any]] = {}
+    pending_universes: dict[str, dict[str, Any]] = {}
 
-    prepared_universes: dict[str, dict[str, Any]] = {}
     for universe, cfg in contract["universes"].items():
+        identity = universe_checkpoint_identity(
+            repo_root,
+            universe=universe,
+            index_code=cfg["index_code"],
+            operation_date=operation_date,
+            start_date=start_date,
+            trading_dates=trading_dates,
+        )
+        loaded = universe_store.load(identity)
+        if loaded is not None:
+            metadata = dict(loaded.receipt.get("metadata") or {})
+            completed_universes[universe] = {
+                "cfg": cfg,
+                "identity": identity,
+                "membership": loaded.frames["membership"],
+                "segments": loaded.frames["segments"],
+                "live": loaded.frames["live"],
+                "prices": loaded.frames["prices"],
+                "download_errors": loaded.frames["download_errors"],
+                "index_prices": loaded.frames["index_prices"],
+                "reconstruction": dict(metadata.get("reconstruction") or {}),
+                "resumed": True,
+            }
+            continue
+
         anchor_path = repo_root / cfg["anchor_path"]
         adjustments_path = repo_root / cfg["adjustments_path"]
         anchor = read_anchor_csv(anchor_path)
@@ -385,6 +401,35 @@ def materialize_public_raw_capture(
             expected_constituents=int(cfg["expected_constituents"]),
             index_code=cfg["index_code"],
         )
+        pending_universes[universe] = {
+            "cfg": cfg,
+            "identity": identity,
+            "membership": membership,
+            "segments": segments,
+            "diagnostics": diagnostics,
+        }
+
+    live_all = pd.DataFrame()
+    if pending_universes:
+        live_all = fetch_current_csindex_universe(
+            [
+                prepared["cfg"]["index_code"]
+                for prepared in pending_universes.values()
+            ],
+            retries=3,
+            retry_backoff_seconds=1.5,
+            client=client,
+        )
+        if live_all.empty:
+            raise ValueError(
+                "pending universe live constituent snapshot is empty"
+            )
+
+    for universe, prepared in pending_universes.items():
+        cfg = prepared["cfg"]
+        membership = prepared["membership"]
+        segments = prepared["segments"]
+        diagnostics = prepared["diagnostics"]
         index_code = str(cfg["index_code"]).zfill(6)
         live = live_all[
             live_all["source_index"].astype(str).str.split(",").map(
@@ -393,29 +438,13 @@ def materialize_public_raw_capture(
         ].copy()
         if live.empty:
             raise ValueError(f"{universe} live constituent snapshot is empty")
-        active, _ = _validate_live_snapshot_exact(
+        _validate_live_snapshot_exact(
             membership=membership,
             live_snapshot=live,
             operation_date=operation_date,
             expected_constituents=int(cfg["expected_constituents"]),
             universe=universe,
         )
-        prepared_universes[universe] = {
-            "cfg": cfg,
-            "membership": membership,
-            "segments": segments,
-            "diagnostics": diagnostics,
-            "live": live,
-            "active": active,
-        }
-
-    for universe, prepared in prepared_universes.items():
-        cfg = prepared["cfg"]
-        membership = prepared["membership"]
-        segments = prepared["segments"]
-        diagnostics = prepared["diagnostics"]
-        live = prepared["live"]
-        active = prepared["active"]
 
         downloaded = download_universe_history(
             membership,
@@ -440,8 +469,80 @@ def materialize_public_raw_capture(
             operation_date=operation_date,
             label=f"{universe} official index rail",
         )
-        coverage = _validate_window_symbol_coverage(
+        _validate_window_symbol_coverage(
             prices=downloaded.prices,
+            membership=membership,
+            minimum_coverage=minimum_coverage,
+            universe=universe,
+        )
+        reconstruction = {
+            "history_start": str(diagnostics.history_start.date()),
+            "history_end": str(diagnostics.history_end.date()),
+            "adjustment_dates": int(diagnostics.adjustment_dates),
+            "adjustment_rows": int(diagnostics.adjustment_rows),
+            "segments": int(diagnostics.segments),
+            "unique_symbols": int(diagnostics.unique_symbols),
+        }
+        universe_store.save(
+            prepared["identity"],
+            frames={
+                "membership": membership,
+                "segments": segments,
+                "live": live,
+                "prices": downloaded.prices,
+                "download_errors": downloaded.errors,
+                "index_prices": index_prices,
+            },
+            metadata={
+                "universe": universe,
+                "actual_source_commit": source_commit,
+                "operation_date": operation_date,
+                "reconstruction": reconstruction,
+                # Only transport-complete universe stages become permanent
+                # release assets. A 95% canonical coverage pass with transient
+                # download errors may still finish this capture, but is not
+                # promoted to a durable reusable work unit.
+                "permanent_reuse_eligible": bool(downloaded.errors.empty),
+            },
+        )
+        completed_universes[universe] = {
+            "cfg": cfg,
+            "identity": prepared["identity"],
+            "membership": membership,
+            "segments": segments,
+            "live": live,
+            "prices": downloaded.prices,
+            "download_errors": downloaded.errors,
+            "index_prices": index_prices,
+            "reconstruction": reconstruction,
+            "resumed": False,
+        }
+
+    runtime_universe: dict[str, Any] = {}
+    for universe, prepared in completed_universes.items():
+        cfg = prepared["cfg"]
+        membership = prepared["membership"]
+        segments = prepared["segments"]
+        live = prepared["live"]
+        prices = prepared["prices"]
+        download_errors = prepared["download_errors"]
+        index_prices = prepared["index_prices"]
+        reconstruction = prepared["reconstruction"]
+
+        active, _ = _validate_live_snapshot_exact(
+            membership=membership,
+            live_snapshot=live,
+            operation_date=operation_date,
+            expected_constituents=int(cfg["expected_constituents"]),
+            universe=universe,
+        )
+        _require_operation_date_row(
+            index_prices,
+            operation_date=operation_date,
+            label=f"{universe} official index rail",
+        )
+        coverage = _validate_window_symbol_coverage(
+            prices=prices,
             membership=membership,
             minimum_coverage=minimum_coverage,
             universe=universe,
@@ -464,12 +565,12 @@ def materialize_public_raw_capture(
             capture_date=capture_date,
         )
         _write_csv(
-            downloaded.prices,
+            prices,
             root / "prices.csv",
             capture_date=capture_date,
         )
         _write_csv(
-            downloaded.errors,
+            download_errors,
             root / "download_errors.csv",
             capture_date=capture_date,
         )
@@ -478,11 +579,6 @@ def materialize_public_raw_capture(
             root / "index_prices.csv",
             capture_date=capture_date,
         )
-        universe_frames[universe] = {
-            "membership": membership,
-            "prices": downloaded.prices,
-            "index_prices": index_prices,
-        }
         universe_receipts[universe] = {
             "index_code": cfg["index_code"],
             "anchor_effective_date": cfg["anchor_effective_date"],
@@ -498,31 +594,65 @@ def materialize_public_raw_capture(
                 "RECONSTRUCTED_PIT_ANCHOR_PLUS_OFFICIAL_ADJUSTMENTS"
             ),
             "capture_window_constituent_symbol_coverage": coverage,
-            "download_error_rows": int(len(downloaded.errors)),
-            "reconstruction": {
-                "history_start": str(diagnostics.history_start.date()),
-                "history_end": str(diagnostics.history_end.date()),
-                "adjustment_dates": int(diagnostics.adjustment_dates),
-                "adjustment_rows": int(diagnostics.adjustment_rows),
-                "segments": int(diagnostics.segments),
-                "unique_symbols": int(diagnostics.unique_symbols),
-            },
+            "download_error_rows": int(len(download_errors)),
+            "reconstruction": reconstruction,
+        }
+        runtime_universe[universe] = {
+            "resumed": bool(prepared["resumed"]),
+            "checkpoint_fingerprint": prepared["identity"].fingerprint,
         }
 
+    capital_descriptor = semantic_fingerprint(
+        repo_root,
+        family="capital:sse",
+    )
+    szse_descriptor = semantic_fingerprint(
+        repo_root,
+        family="capital:szse",
+    )
     capital = materialize_capital_monthly(
         trading_dates=trading_dates,
         fund_codes=["588000"],
         source_commit=source_commit,
         checkpoint_dir=checkpoint_dir / "sse",
+        checkpoint_revision=str(capital_descriptor["checkpoint_revision"]),
+        capture_date=capture_date,
         sleep_seconds=0.05,
     )
-    szse = fetch_szse_etf_share_history(
-        start_date=start_date,
-        end_date=end_date,
+    szse_chunked = materialize_szse_etf_monthly(
         trading_dates=trading_dates,
         fund_codes=["159915"],
+        source_commit=source_commit,
+        checkpoint_dir=checkpoint_dir / "szse",
+        checkpoint_revision=str(szse_descriptor["checkpoint_revision"]),
+        capture_date=capture_date,
         sleep_seconds=0.05,
-        client=client,
+    )
+    szse = szse_chunked.result
+
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    (checkpoint_dir / "runtime_summary.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "prospective-context-checkpoint-runtime-v1",
+                "operation_date": operation_date,
+                "universe": runtime_universe,
+                "sse_capital": {
+                    "resumed_chunks": int(capital.resumed_chunks),
+                    "executed_chunks": int(capital.executed_chunks),
+                },
+                "szse_etf": {
+                    "resumed_chunks": int(szse_chunked.resumed_chunks),
+                    "executed_chunks": int(szse_chunked.executed_chunks),
+                },
+                "formal_evidence_handoff": False,
+                "qualification_granted": False,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+        ) + "\n",
+        encoding="utf-8",
     )
 
     shares = pd.concat(
