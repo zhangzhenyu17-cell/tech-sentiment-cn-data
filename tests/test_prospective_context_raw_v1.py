@@ -341,6 +341,12 @@ def test_public_contract_is_forward_only_and_contains_no_private_model_semantics
     assert persistence["cross_operation_date_reuse_allowed"] is False
     assert persistence["formal_evidence_handoff"] is False
     assert persistence["qualification_granted_by_checkpoint"] is False
+    assert persistence["normal_failure_publish_attempt_required"] is True
+    assert persistence["hard_runner_termination_publish_guaranteed"] is False
+    assert (
+        persistence["maximum_expected_loss_on_hard_termination"]
+        == "CURRENT_UNPUBLISHED_WORK_UNITS_ONLY"
+    )
     firewall = contract["privacy_and_research_firewall"]
     assert all(value is False for value in firewall.values())
     serialized = json.dumps(contract, ensure_ascii=False).lower()
