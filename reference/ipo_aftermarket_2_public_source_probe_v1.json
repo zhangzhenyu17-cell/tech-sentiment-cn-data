@@ -1,0 +1,53 @@
+{
+  "contract_id": "ipo_aftermarket_2_public_source_probe_v1",
+  "status": "PUBLIC_SOURCE_REACHABILITY_PROBE_ONLY",
+  "as_of": "2026-09-21",
+  "base_public_bundle": {
+    "release_tag": "ipo-aftermarket-public-v1",
+    "asset": "ipo-aftermarket-public-v1-20260921-dd10c3a4f8e3.tar.gz",
+    "sha256": "961e2f36ad25170323d3d8836fa5e1bf268f9a0057becedffa9a023da833308a",
+    "source_commit": "dd10c3a4f8e3bcb1f3f1cc7dbbb2c3fe6cc279eb"
+  },
+  "sources": {
+    "industry_change": {
+      "interface": "stock_industry_change_cninfo",
+      "provider": "CNINFO_VIA_AKSHARE",
+      "purpose": "HISTORICAL_PUBLIC_INDUSTRY_ASSIGNMENT_REACHABILITY"
+    },
+    "industry_pe": {
+      "interface": "stock_industry_pe_ratio_cninfo",
+      "provider": "CNINFO_VIA_AKSHARE",
+      "taxonomy": "证监会行业分类",
+      "purpose": "EXACT_DATE_PUBLIC_INDUSTRY_PE_REACHABILITY",
+      "documentation_warns_recent_only": true
+    },
+    "filing_facts": {
+      "producer": "materialize_versioned_filing_facts",
+      "provider": "OFFICIAL_CNINFO_FILINGS",
+      "purpose": "IPO_EARLY_LIFE_PIT_FILING_REPLAYABILITY"
+    },
+    "fundamental_state": {
+      "producer": "materialize_fundamental_state_evidence",
+      "contract": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1",
+      "purpose": "IPO_EARLY_LIFE_PIT_STATE_COVERAGE"
+    }
+  },
+  "probe_policy": {
+    "deterministic_public_samples_only": true,
+    "private_event_identities_allowed": false,
+    "research_eligibility_allowed": false,
+    "forward_outcomes_allowed": false,
+    "research_verdict_allowed": false,
+    "holdings_allowed": false,
+    "parameter_or_threshold_search": false,
+    "production_or_trading_authority": false
+  },
+  "probe_dates": [
+    "2019",
+    "2022",
+    "2024",
+    "2026",
+    "AS_OF"
+  ],
+  "hard_success_semantics": "PROBE_EXECUTED_AND_REPORTED; SOURCE_UNREACHABILITY_IS_A_VALID_RESULT"
+}

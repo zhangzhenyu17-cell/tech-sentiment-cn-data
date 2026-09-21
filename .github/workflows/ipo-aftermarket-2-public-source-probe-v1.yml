@@ -1,0 +1,93 @@
+name: ipo-aftermarket-2-public-source-probe-v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      as_of:
+        description: Frozen public source-probe date
+        required: true
+        default: "2026-09-21"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install public data toolchain
+        run: python -m pip install -e ".[data]"
+
+      - name: Audit public tree
+        run: python scripts/audit_public_tree.py
+
+      - name: Download exact IPO public V1 base bundle
+        env:
+          GH_TOKEN: \${{ github.token }}
+          BASE_ASSET: ipo-aftermarket-public-v1-20260921-dd10c3a4f8e3.tar.gz
+          EXPECTED_SHA: 961e2f36ad25170323d3d8836fa5e1bf268f9a0057becedffa9a023da833308a
+        run: |
+          set -euo pipefail
+          mkdir -p input/base input/bundle
+          gh release download ipo-aftermarket-public-v1 \
+            --pattern "\${BASE_ASSET}" \
+            --dir input/base
+          ACTUAL_SHA="$(sha256sum "input/base/\${BASE_ASSET}" | awk '{print $1}')"
+          test "\${ACTUAL_SHA}" = "\${EXPECTED_SHA}"
+          tar -xzf "input/base/\${BASE_ASSET}" -C input/bundle
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("input/bundle/manifest.json").read_text())
+          assert manifest["status"] == "PUBLIC_INPUT_BUNDLE_QUALIFIED"
+          assert manifest["source_commit"] == "dd10c3a4f8e3bcb1f3f1cc7dbbb2c3fe6cc279eb"
+          assert manifest["as_of"] == "2026-09-21"
+          assert manifest["public_only"] is True
+          assert manifest["research_results_present"] is False
+          assert manifest["forward_result_computation_run"] is False
+          PY
+
+      - name: Probe generic public PIT source reachability
+        run: |
+          set -euo pipefail
+          python scripts/probe_ipo_aftermarket_2_public_sources_v1.py \
+            --bundle-dir input/bundle \
+            --as-of "\${{ inputs.as_of }}" \
+            --source-commit "\${GITHUB_SHA}" \
+            --out-dir dist/probe
+
+      - name: Assert probe output boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          p = json.loads(Path("dist/probe/probe_summary.json").read_text())
+          assert p["status"] == "PUBLIC_SOURCE_PROBE_COMPLETE"
+          assert p["private_event_identities_used"] is False
+          assert p["forward_outcomes_used"] is False
+          assert p["research_eligibility_computed"] is False
+          assert p["production_or_trading_authority_changed"] is False
+          print(json.dumps(p, ensure_ascii=False, sort_keys=True, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipo-aftermarket-2-public-source-probe-\${{ github.run_id }}
+          path: |
+            dist/probe/industry_change_probe.csv
+            dist/probe/industry_pe_probe.csv
+            dist/probe/filing_state_probe.csv
+            dist/probe/probe_summary.json
+          if-no-files-found: error
+          retention-days: 90
