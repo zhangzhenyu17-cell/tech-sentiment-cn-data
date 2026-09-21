@@ -67,13 +67,49 @@ def _save(
     )
 
 
-def test_semantic_fingerprint_covers_contract_and_transport_for_both_universes() -> None:
+def test_semantic_fingerprint_excludes_operational_plumbing_for_both_universes() -> None:
     for universe in ("STAR50", "ChiNext50"):
         payload = semantic_fingerprint(ROOT, family=f"universe:{universe}")
         files = {row["path"] for row in payload["producer_files"]}
-        assert "reference/prospective_context_raw_v1.json" in files
-        assert "src/tech_sentiment/bounded_retry.py" in files
+        assert "reference/prospective_context_raw_v1.json" not in files
+        assert "src/tech_sentiment/bounded_retry.py" not in files
         assert payload["checkpoint_revision"].startswith("semantic:")
+
+
+def test_semantic_fingerprint_ignores_persistence_workflow_but_tracks_quality(
+    tmp_path: Path,
+) -> None:
+    family = "capital:sse"
+    initial = semantic_fingerprint(ROOT, family=family)
+    required = [row["path"] for row in initial["producer_files"]]
+    required.append("reference/prospective_context_raw_v1.json")
+    for relative in required:
+        source = ROOT / relative
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
+
+    baseline = semantic_fingerprint(tmp_path, family=family)
+    contract_path = tmp_path / "reference/prospective_context_raw_v1.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["workflow"]["diagnostic_note"] = "operational-only"
+    contract["intermediate_checkpoint_persistence"]["diagnostic_note"] = (
+        "operational-only"
+    )
+    contract_path.write_text(
+        json.dumps(contract, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    operational = semantic_fingerprint(tmp_path, family=family)
+    assert operational["producer_fingerprint"] == baseline["producer_fingerprint"]
+
+    contract["quality"]["minimum_constituent_symbol_coverage_over_capture_window"] = 0.96
+    contract_path.write_text(
+        json.dumps(contract, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    semantic = semantic_fingerprint(tmp_path, family=family)
+    assert semantic["producer_fingerprint"] != baseline["producer_fingerprint"]
 
 
 def test_progress_snapshot_packages_only_permanent_units_and_restores_exactly(
