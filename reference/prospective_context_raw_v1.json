@@ -70,7 +70,6 @@
   },
   "intermediate_checkpoint_persistence": {
     "schema": "prospective-context-checkpoint-bundle-v1",
-    "release_tag": "prospective-context-checkpoints-v1",
     "completed_work_units_published_immutably": true,
     "publish_completed_units_even_when_later_capture_step_fails": true,
     "restore_precedence": "IMMUTABLE_COMPLETED_WORK_UNIT_BEFORE_PROVIDER_RECOMPUTATION",
@@ -81,6 +80,7 @@
     "transport_incomplete_units_published_as_permanent": false,
     "final_qualification_rerun_after_restore_required": true,
     "formal_evidence_handoff": false,
-    "qualification_granted_by_checkpoint": false
+    "qualification_granted_by_checkpoint": false,
+    "release_tag_template": "prospective-context-checkpoints-YYYY-MM-DD"
   }
 }
