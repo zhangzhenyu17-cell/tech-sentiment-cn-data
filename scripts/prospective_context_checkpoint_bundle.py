@@ -5,10 +5,10 @@ import json
 from pathlib import Path
 
 from tech_sentiment.prospective_context_checkpoint_v1 import (
-    CHECKPOINT_RELEASE_TAG,
+    checkpoint_release_tag,
     expected_checkpoint_assets,
     package_complete_checkpoints,
-    plan_available_checkpoint_assets,
+    plan_available_checkpoint_bundles,
     restore_checkpoint_bundle,
 )
 from tech_sentiment.prospective_context_raw_v1 import capture_trading_dates
@@ -47,7 +47,7 @@ def main() -> None:
 
     plan = sub.add_parser("plan")
     plan.add_argument("--expected", required=True)
-    plan.add_argument("--remote-assets", required=True)
+    plan.add_argument("--manifest-dir", required=True)
     plan.add_argument("--out", default="")
 
     package = sub.add_parser("package")
@@ -59,6 +59,7 @@ def main() -> None:
         "--out-dir",
         default="dist/prospective_context_checkpoints",
     )
+    package.add_argument("--operation-date", required=True)
     package.add_argument("--out", default="")
 
     restore = sub.add_parser("restore")
@@ -86,7 +87,7 @@ def main() -> None:
         )
         payload = {
             "schema_version": "prospective-context-checkpoint-expected-v1",
-            "release_tag": CHECKPOINT_RELEASE_TAG,
+            "release_tag": checkpoint_release_tag(args.operation_date),
             "operation_date": args.operation_date,
             "trading_days": int(len(dates)),
             "start_date": str(dates.min().date()),
@@ -97,17 +98,18 @@ def main() -> None:
         expected_payload = json.loads(
             Path(args.expected).read_text(encoding="utf-8")
         )
-        remote_names = Path(args.remote_assets).read_text(
-            encoding="utf-8"
-        ).splitlines()
-        payload = plan_available_checkpoint_assets(
-            expected_payload.get("assets") or [],
-            remote_names,
+        manifests = []
+        for path in sorted(Path(args.manifest_dir).glob("*.manifest.json")):
+            manifests.append(json.loads(path.read_text(encoding="utf-8")))
+        payload = plan_available_checkpoint_bundles(
+            expected=expected_payload,
+            manifests=manifests,
         )
     elif args.command == "package":
         payload = package_complete_checkpoints(
             args.cache_root,
             out_dir=args.out_dir,
+            operation_date=args.operation_date,
         )
     else:
         asset_dir = Path(args.asset_dir)
@@ -128,7 +130,6 @@ def main() -> None:
             )
         payload = {
             "schema_version": "prospective-context-checkpoint-restore-v1",
-            "release_tag": CHECKPOINT_RELEASE_TAG,
             "restored_count": len(restored),
             "restored": restored,
         }
