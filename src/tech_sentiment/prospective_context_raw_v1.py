@@ -17,10 +17,18 @@ from .capital_input_data import (
     qualify_trailing_etf_coverage,
 )
 from .data_akshare import download_universe_history, fetch_current_csindex_universe
+from .immutable_checkpoint import ImmutableCheckpointStore
 from .index_history import read_adjustments_csv, read_anchor_csv, reconstruct_index_history
 from .index_price import fetch_index_history
 from .production_universe import active_symbols_on
-from .resumable_capital import materialize_capital_monthly
+from .prospective_context_checkpoint_v1 import (
+    semantic_fingerprint,
+    universe_checkpoint_identity,
+)
+from .resumable_capital import (
+    materialize_capital_monthly,
+    materialize_szse_etf_monthly,
+)
 from .v4c03_szse_etf_shares import fetch_szse_etf_share_history
 
 
