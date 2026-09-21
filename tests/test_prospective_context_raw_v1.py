@@ -6,12 +6,19 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from tech_sentiment.immutable_checkpoint import ImmutableCheckpointStore
+from tech_sentiment.prospective_context_checkpoint_v1 import semantic_fingerprint
+from tech_sentiment.resumable_capital import (
+    expected_capital_checkpoint_identities,
+    expected_szse_etf_checkpoint_identities,
+)
 from tech_sentiment.prospective_context_raw_v1 import (
     RECEIPT_NAME,
     _stamp_capture,
     _validate_window_symbol_coverage,
     _validate_live_snapshot_exact,
     _validate_same_day_capital_preflight,
+    _same_day_capital_checkpoint_preflight_ready,
     capture_trading_dates,
     package_capture,
 )
@@ -191,6 +198,125 @@ def test_same_day_capital_preflight_passes_only_exact_operation_date_rows() -> N
         diagnostics={},
     )
 
+
+def test_exact_same_capture_capital_checkpoints_can_satisfy_freshness_without_provider(
+    tmp_path: Path,
+) -> None:
+    dates = pd.to_datetime(["2026-09-18", "2026-09-21"])
+    operation_date = "2026-09-21"
+
+    capital_revision = str(
+        semantic_fingerprint(ROOT, family="capital:sse")[
+            "checkpoint_revision"
+        ]
+    )
+    szse_revision = str(
+        semantic_fingerprint(ROOT, family="capital:szse")[
+            "checkpoint_revision"
+        ]
+    )
+    sse_expected = expected_capital_checkpoint_identities(
+        trading_dates=dates,
+        fund_codes=["588000"],
+        checkpoint_revision=capital_revision,
+        capture_date=operation_date,
+    )
+    szse_expected = expected_szse_etf_checkpoint_identities(
+        trading_dates=dates,
+        fund_codes=["159915"],
+        checkpoint_revision=szse_revision,
+        capture_date=operation_date,
+    )
+
+    sse_store = ImmutableCheckpointStore(tmp_path / "sse")
+    for _, identity in sse_expected:
+        if identity.producer == "sse-etf-share-history":
+            sse_store.save(
+                identity,
+                frames={
+                    "data": pd.DataFrame(
+                        {
+                            "date": dates,
+                            "fund_code": ["588000", "588000"],
+                            "fund_shares": [1.0, 2.0],
+                        }
+                    ),
+                    "errors": pd.DataFrame(columns=["date", "error"]),
+                },
+                metadata={
+                    "capture_date": operation_date,
+                    "permanent_reuse_eligible": True,
+                },
+            )
+        else:
+            sse_store.save(
+                identity,
+                frames={
+                    "sse": pd.DataFrame(
+                        {
+                            "date": dates,
+                            "sse_a_share_turnover_yuan": [1.0, 1.0],
+                        }
+                    ),
+                    "szse": pd.DataFrame(
+                        {
+                            "date": dates,
+                            "szse_a_share_turnover_yuan": [1.0, 1.0],
+                        }
+                    ),
+                    "combined": pd.DataFrame(
+                        {
+                            "date": dates,
+                            "amount": [2.0, 2.0],
+                        }
+                    ),
+                    "errors": pd.DataFrame(
+                        columns=["date", "exchange", "error"]
+                    ),
+                },
+                metadata={
+                    "capture_date": operation_date,
+                    "permanent_reuse_eligible": True,
+                },
+            )
+
+    szse_store = ImmutableCheckpointStore(tmp_path / "szse")
+    for _, identity in szse_expected:
+        szse_store.save(
+            identity,
+            frames={
+                "data": pd.DataFrame(
+                    {
+                        "date": dates,
+                        "fund_code": ["159915", "159915"],
+                        "fund_shares": [1.0, 2.0],
+                    }
+                ),
+                "errors": pd.DataFrame(
+                    columns=["chunk_start", "chunk_end", "error"]
+                ),
+            },
+            metadata={
+                "capture_date": operation_date,
+                "permanent_reuse_eligible": True,
+            },
+        )
+
+    assert _same_day_capital_checkpoint_preflight_ready(
+        repo_root=ROOT,
+        checkpoint_dir=tmp_path,
+        trading_dates=pd.DatetimeIndex(dates),
+        operation_date=operation_date,
+    )
+    assert not _same_day_capital_checkpoint_preflight_ready(
+        repo_root=ROOT,
+        checkpoint_dir=tmp_path,
+        trading_dates=pd.DatetimeIndex(
+            pd.to_datetime(["2026-09-18", "2026-09-22"])
+        ),
+        operation_date="2026-09-22",
+    )
+
 def test_public_contract_is_forward_only_and_contains_no_private_model_semantics() -> None:
     contract = json.loads(
         (ROOT / "reference/prospective_context_raw_v1.json").read_text(
@@ -206,6 +332,14 @@ def test_public_contract_is_forward_only_and_contains_no_private_model_semantics
     )
     assert contract["workflow"]["workflow_dispatch_only"] is True
     assert contract["workflow"]["automatic_trigger_allowed"] is False
+    persistence = contract["intermediate_checkpoint_persistence"]
+    assert persistence["completed_work_units_published_immutably"] is True
+    assert persistence["publish_completed_units_even_when_later_capture_step_fails"] is True
+    assert persistence["semantic_revision_separate_from_operational_git_commit"] is True
+    assert persistence["operation_date_is_part_of_reuse_identity"] is True
+    assert persistence["cross_operation_date_reuse_allowed"] is False
+    assert persistence["formal_evidence_handoff"] is False
+    assert persistence["qualification_granted_by_checkpoint"] is False
     firewall = contract["privacy_and_research_firewall"]
     assert all(value is False for value in firewall.values())
     serialized = json.dumps(contract, ensure_ascii=False).lower()
@@ -265,3 +399,13 @@ def test_public_capture_workflow_is_manual_only() -> None:
     assert "\n  pull_request:" not in text
     assert "\n  workflow_run:" not in text
     assert "contents: write" in text
+    assert "Resolve exact durable checkpoint identities" in text
+    assert "Restore exact immutable completed work units" in text
+    assert "Package every completed reusable checkpoint" in text
+    assert "Publish immutable completed work units" in text
+    assert "prospective-context-checkpoints-${{ inputs.operation_date }}" in text
+    assert "prospective_context_checkpoint_bundle.py expected" in text
+    assert "prospective_context_checkpoint_bundle.py restore" in text
+    assert "prospective_context_checkpoint_bundle.py package" in text
+    assert "always() && steps.capture.outcome != 'skipped'" in text
+    assert "steps.capture.outcome == 'success'" in text
