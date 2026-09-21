@@ -1,0 +1,140 @@
+name: ipo-aftermarket-public-v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      as_of:
+        description: Frozen public materialization date
+        required: true
+        default: "2026-09-21"
+
+permissions:
+  contents: write
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[data]"
+      - name: Materialize public IPO metadata and benchmark
+        run: |
+          python scripts/materialize_ipo_aftermarket_metadata_v1.py \
+            --contract reference/ipo_aftermarket_public_v1.json \
+            --as-of "${{ inputs.as_of }}" \
+            --source-commit "${{ github.sha }}" \
+            --out-dir dist/metadata
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipo-aftermarket-metadata-${{ github.run_id }}
+          path: dist/metadata
+          retention-days: 90
+
+  shard:
+    needs: metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ipo-aftermarket-metadata-${{ github.run_id }}
+          path: input/metadata
+      - name: Materialize deterministic shard
+        run: |
+          python scripts/materialize_ipo_aftermarket_shard_v1.py \
+            --metadata input/metadata/ipo_metadata.csv \
+            --as-of "${{ inputs.as_of }}" \
+            --source-commit "${{ github.sha }}" \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count 12 \
+            --out-dir "dist/shard-${{ matrix.shard }}"
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: ipo-aftermarket-shard-${{ matrix.shard }}-${{ github.run_id }}
+          path: dist/shard-${{ matrix.shard }}
+          retention-days: 90
+
+  finalize:
+    needs: [metadata, shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ipo-aftermarket-metadata-${{ github.run_id }}
+          path: input/metadata
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ipo-aftermarket-shard-*-${{ github.run_id }}
+          path: input/shards
+      - name: Validate and finalize public-only bundle
+        run: |
+          python scripts/finalize_ipo_aftermarket_public_v1.py \
+            --contract reference/ipo_aftermarket_public_v1.json \
+            --metadata-dir input/metadata \
+            --shards-dir input/shards \
+            --as-of "${{ inputs.as_of }}" \
+            --source-commit "${{ github.sha }}" \
+            --out-dir dist/final
+      - name: Package immutable public bundle
+        id: package
+        run: |
+          set -euo pipefail
+          DATE="$(echo "${{ inputs.as_of }}" | tr -d '-')"
+          SHORT="${GITHUB_SHA:0:12}"
+          BASE="ipo-aftermarket-public-v1-${DATE}-${SHORT}"
+          tar -czf "dist/${BASE}.tar.gz" -C dist/final .
+          sha256sum "dist/${BASE}.tar.gz" > "dist/${BASE}.tar.gz.sha256"
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+      - name: Publish immutable public release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="ipo-aftermarket-public-v1"
+          BASE="${{ steps.package.outputs.base }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" \
+              --title "IPO aftermarket public inputs v1" \
+              --notes "Public IPO metadata, raw market prices, unlock calendar and benchmark inputs only. No private model, threshold, holding, research result or trading authority."
+          fi
+          for FILE in "dist/${BASE}.tar.gz" "dist/${BASE}.tar.gz.sha256"; do
+            NAME="$(basename "$FILE")"
+            if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fxq "$NAME"; then
+              mkdir -p verify
+              gh release download "$TAG" --pattern "$NAME" --dir verify
+              cmp "$FILE" "verify/$NAME"
+            else
+              gh release upload "$TAG" "$FILE"
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipo-aftermarket-public-final-${{ github.run_id }}
+          path: |
+            dist/final
+            dist/ipo-aftermarket-public-v1-*.tar.gz
+            dist/ipo-aftermarket-public-v1-*.sha256
+          retention-days: 90

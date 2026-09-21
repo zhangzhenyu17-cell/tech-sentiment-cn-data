@@ -1,0 +1,31 @@
+{
+  "contract_id": "ipo_aftermarket_public_v1",
+  "status": "FROZEN_PUBLIC_INPUT_SCOPE",
+  "frozen_date": "2026-09-21",
+  "listing_start": "2019-01-01",
+  "materialization_as_of": "2026-09-21",
+  "max_post_listing_sessions": 120,
+  "benchmark": {
+    "index_code": "000985",
+    "start_date": "2018-11-01",
+    "price_adjustment": "NONE"
+  },
+  "stock_price_adjustment": "NONE",
+  "minimum_price_symbol_coverage": 0.95,
+  "public_only": true,
+  "private_model_semantics_allowed": false,
+  "private_thresholds_allowed": false,
+  "portfolio_or_holdings_data_allowed": false,
+  "research_results_allowed": false,
+  "forward_result_computation_allowed": false,
+  "automatic_trigger_allowed": false,
+  "allowlisted_outputs": [
+    "ipo_metadata.csv",
+    "ipo_prices.csv",
+    "ipo_unlocks.csv",
+    "ipo_unlock_status.csv",
+    "benchmark_prices.csv",
+    "download_errors.csv",
+    "manifest.json"
+  ]
+}
