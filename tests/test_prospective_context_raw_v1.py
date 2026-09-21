@@ -11,6 +11,7 @@ from tech_sentiment.prospective_context_raw_v1 import (
     _stamp_capture,
     _validate_window_symbol_coverage,
     _validate_live_snapshot_exact,
+    _validate_same_day_capital_preflight,
     capture_trading_dates,
     package_capture,
 )
@@ -112,6 +113,83 @@ def test_constituent_coverage_reuses_frozen_window_symbol_semantics() -> None:
             universe="TEST50",
         )
 
+
+
+def test_same_day_capital_preflight_fails_closed_when_588000_not_published() -> None:
+    sse = pd.DataFrame(
+        {
+            "date": ["2026-09-18"],
+            "fund_code": ["588000"],
+            "fund_shares": [9_000_000_000.0],
+        }
+    )
+    szse = pd.DataFrame(
+        {
+            "date": ["2026-09-21"],
+            "fund_code": ["159915"],
+            "fund_shares": [7_000_000_000.0],
+        }
+    )
+    turnover = pd.DataFrame(
+        {
+            "date": ["2026-09-21"],
+            "amount": [1.2e12],
+        }
+    )
+    with pytest.raises(ValueError, match="588000") as exc:
+        _validate_same_day_capital_preflight(
+            operation_date="2026-09-21",
+            sse_etf_data=sse,
+            szse_etf_data=szse,
+            turnover_data=turnover,
+            diagnostics={"sse_588000_errors": [{"error": "NO_MATCHING_ETF_ROW"}]},
+        )
+    assert "SAME_DAY_PUBLIC_SOURCE_NOT_READY" in str(exc.value)
+
+
+def test_same_day_capital_preflight_lists_all_missing_sources() -> None:
+    with pytest.raises(ValueError) as exc:
+        _validate_same_day_capital_preflight(
+            operation_date="2026-09-21",
+            sse_etf_data=pd.DataFrame(),
+            szse_etf_data=pd.DataFrame(),
+            turnover_data=pd.DataFrame(),
+            diagnostics={},
+        )
+    message = str(exc.value)
+    assert "588000" in message
+    assert "159915" in message
+    assert "SSE_SZSE_TURNOVER" in message
+
+
+def test_same_day_capital_preflight_passes_only_exact_operation_date_rows() -> None:
+    sse = pd.DataFrame(
+        {
+            "date": ["2026-09-21"],
+            "fund_code": ["588000"],
+            "fund_shares": [9_000_000_000.0],
+        }
+    )
+    szse = pd.DataFrame(
+        {
+            "date": ["2026-09-21"],
+            "fund_code": ["159915"],
+            "fund_shares": [7_000_000_000.0],
+        }
+    )
+    turnover = pd.DataFrame(
+        {
+            "date": ["2026-09-21"],
+            "amount": [1.2e12],
+        }
+    )
+    _validate_same_day_capital_preflight(
+        operation_date="2026-09-21",
+        sse_etf_data=sse,
+        szse_etf_data=szse,
+        turnover_data=turnover,
+        diagnostics={},
+    )
 
 def test_public_contract_is_forward_only_and_contains_no_private_model_semantics() -> None:
     contract = json.loads(
