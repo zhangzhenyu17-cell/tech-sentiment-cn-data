@@ -211,6 +211,90 @@ def test_szse_etf_monthly_fresh_equals_resumed_across_operational_commit(tmp_pat
         check_dtype=False,
     )
 
+
+def test_sse_etf_missing_operation_row_is_never_permanent_reuse_eligible(tmp_path):
+    def etf_fetcher(*, trading_dates, fund_codes, sleep_seconds):
+        dates = pd.DatetimeIndex(trading_dates)
+        code = list(fund_codes)[0]
+        observed = dates[:-1]
+        return EtfShareFetchResult(
+            data=pd.DataFrame(
+                {
+                    "date": observed,
+                    "fund_code": code,
+                    "fund_shares": [100.0 + i for i in range(len(observed))],
+                }
+            ),
+            errors=pd.DataFrame(
+                {
+                    "date": [dates[-1]],
+                    "error": ["NO_MATCHING_ETF_ROW"],
+                }
+            ),
+        )
+
+    def turnover_fetcher(*, trading_dates, sleep_seconds):
+        return _turnover_result(trading_dates)
+
+    dates = pd.to_datetime(["2026-09-18", "2026-09-21"])
+    materialize_capital_monthly(
+        trading_dates=dates,
+        fund_codes=["588000"],
+        source_commit="commit-a",
+        checkpoint_revision="semantic:stable",
+        capture_date="2026-09-21",
+        checkpoint_dir=tmp_path,
+        sleep_seconds=0,
+        etf_history_fetcher=etf_fetcher,
+        turnover_history_fetcher=turnover_fetcher,
+    )
+
+    receipts = [
+        pd.read_json(path, typ="series")
+        for path in tmp_path.glob("*/receipt.json")
+    ]
+    etf_receipts = [
+        item
+        for item in receipts
+        if item["identity"]["producer"] == "sse-etf-share-history"
+    ]
+    assert len(etf_receipts) == 1
+    assert etf_receipts[0]["metadata"]["permanent_reuse_eligible"] is False
+
+
+def test_turnover_missing_required_date_is_never_permanent_reuse_eligible(tmp_path):
+    def etf_fetcher(*, trading_dates, fund_codes, sleep_seconds):
+        return _etf_result(trading_dates, fund_codes)
+
+    def turnover_fetcher(*, trading_dates, sleep_seconds):
+        dates = pd.DatetimeIndex(trading_dates)
+        return _turnover_result(dates[:-1])
+
+    dates = pd.to_datetime(["2026-09-18", "2026-09-21"])
+    materialize_capital_monthly(
+        trading_dates=dates,
+        fund_codes=["588000"],
+        source_commit="commit-a",
+        checkpoint_revision="semantic:stable",
+        capture_date="2026-09-21",
+        checkpoint_dir=tmp_path,
+        sleep_seconds=0,
+        etf_history_fetcher=etf_fetcher,
+        turnover_history_fetcher=turnover_fetcher,
+    )
+
+    receipts = [
+        pd.read_json(path, typ="series")
+        for path in tmp_path.glob("*/receipt.json")
+    ]
+    turnover_receipts = [
+        item
+        for item in receipts
+        if item["identity"]["producer"] == "sse-szse-a-share-turnover-history"
+    ]
+    assert len(turnover_receipts) == 1
+    assert turnover_receipts[0]["metadata"]["permanent_reuse_eligible"] is False
+
 def _financing_chunk(dates):
     dates = pd.DatetimeIndex(dates)
     raw = pd.DataFrame(
