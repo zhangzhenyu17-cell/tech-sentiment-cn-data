@@ -92,6 +92,7 @@ def fetch_current_csindex_universe(
         index_code = str(raw_code).strip().zfill(6)
         raw: pd.DataFrame | None = None
         primary_exc: BaseException | None = None
+        snapshot_source = "csindex_cons_xls"
         try:
             raw = _fetch_csindex_table_with_retry(
                 ak.index_stock_cons_csindex,
@@ -112,6 +113,7 @@ def fetch_current_csindex_universe(
             if fallback is None:
                 assert primary_exc is not None
                 raise primary_exc
+            snapshot_source = "csindex_closeweight_xls"
             try:
                 raw = _fetch_csindex_table_with_retry(
                     fallback,
@@ -143,11 +145,12 @@ def fetch_current_csindex_universe(
         frame["source_index"] = index_code
         frame["board"] = frame["symbol"].map(infer_board)
         frame["universe_mode"] = "current_snapshot"
+        frame["snapshot_source"] = snapshot_source
         frames.append(frame)
 
     if not frames:
         return pd.DataFrame(
-            columns=["symbol", "name", "source_index", "board", "universe_mode"]
+            columns=["symbol", "name", "source_index", "board", "universe_mode", "snapshot_source"]
         )
 
     combined = pd.concat(frames, ignore_index=True)
@@ -155,6 +158,7 @@ def fetch_current_csindex_universe(
         "source_index": lambda s: ",".join(sorted(set(map(str, s)))),
         "board": "first",
         "universe_mode": "first",
+        "snapshot_source": lambda s: ",".join(sorted(set(map(str, s)))),
     }
     if "name" in combined.columns:
         aggregation["name"] = "first"
