@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import gzip
 import hashlib
+import io
 import json
 from pathlib import Path
 import shutil
@@ -64,7 +66,80 @@ def _quality_metrics(source: Path) -> dict:
     }
 
 
-def build_market_bundle(input_dir: str | Path, output_dir: str | Path) -> dict:
+def _source_providers(source: Path) -> list[str]:
+    providers: set[str] = set()
+    for name in ("prices.csv", "index_prices.csv"):
+        frame = pd.read_csv(source / name, nrows=100000)
+        if "provider" in frame.columns:
+            providers.update(
+                value.strip()
+                for value in frame["provider"].dropna().astype(str)
+                if value.strip()
+            )
+    return sorted(providers)
+
+
+def _canonical_json(payload: dict) -> bytes:
+    return (
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    ).encode("utf-8")
+
+
+def _deterministic_tar_gz(files: list[tuple[str, bytes]], destination: Path) -> None:
+    with destination.open("wb") as raw:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz:
+            with tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as archive:
+                for name, data in sorted(files, key=lambda row: row[0]):
+                    info = tarfile.TarInfo(name=name)
+                    info.size = len(data)
+                    info.mtime = 0
+                    info.uid = 0
+                    info.gid = 0
+                    info.uname = ""
+                    info.gname = ""
+                    info.mode = 0o644
+                    archive.addfile(info, io.BytesIO(data))
+
+
+def _dated_manifest(
+    *,
+    source: Path,
+    target_date: str,
+    quality: dict,
+    public_repo_git_sha: str,
+) -> dict:
+    file_rows = []
+    payloads: list[tuple[str, bytes]] = []
+    for name in REQUIRED_FILES:
+        data = (source / name).read_bytes()
+        payloads.append((f"market_bundle/{name}", data))
+        file_rows.append(
+            {
+                "path": name,
+                "bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        )
+    return {
+        "bundle_kind": "public_market_data_dated_immutable",
+        "schema_version": "1.1",
+        "target_date": target_date,
+        "market_date": quality["market_date"],
+        "public_repo_git_sha": public_repo_git_sha,
+        "source_providers": _source_providers(source),
+        "contains_model_output": False,
+        "contains_private_evidence": False,
+        "quality": quality,
+        "files": file_rows,
+    }
+
+
+def build_market_bundle(
+    input_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    public_repo_git_sha: str = "UNSPECIFIED",
+) -> dict:
     source = Path(input_dir)
     destination = Path(output_dir)
     missing = [name for name in REQUIRED_FILES if not (source / name).is_file()]
@@ -99,6 +174,8 @@ def build_market_bundle(input_dir: str | Path, output_dir: str | Path) -> dict:
             "target_date": target_date,
             "market_date": quality["market_date"],
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "public_repo_git_sha": public_repo_git_sha,
+            "source_providers": _source_providers(source),
             "contains_model_output": False,
             "quality": quality,
             "files": files,
@@ -119,6 +196,30 @@ def build_market_bundle(input_dir: str | Path, output_dir: str | Path) -> dict:
         f"{_sha256(archive_path)}  {archive_path.name}\n",
         encoding="utf-8",
     )
+
+    dated_manifest = _dated_manifest(
+        source=source,
+        target_date=target_date,
+        quality=quality,
+        public_repo_git_sha=public_repo_git_sha,
+    )
+    dated_name = f"market-bundle-{quality['market_date']}"
+    dated_manifest_path = destination / f"{dated_name}.manifest.json"
+    dated_archive_path = destination / f"{dated_name}.tar.gz"
+    dated_checksum_path = destination / f"{dated_name}.sha256"
+
+    dated_manifest_bytes = _canonical_json(dated_manifest)
+    dated_payloads = [
+        (f"market_bundle/{name}", (source / name).read_bytes())
+        for name in REQUIRED_FILES
+    ]
+    dated_payloads.append(("market_bundle/manifest.json", dated_manifest_bytes))
+    _deterministic_tar_gz(dated_payloads, dated_archive_path)
+    dated_manifest_path.write_bytes(dated_manifest_bytes)
+    dated_checksum_path.write_text(
+        f"{_sha256(dated_archive_path)}  {dated_archive_path.name}\n",
+        encoding="utf-8",
+    )
     return manifest
 
 
@@ -126,12 +227,17 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a public-only market-data bundle.")
     parser.add_argument("--input-dir", required=True)
     parser.add_argument("--output-dir", default="dist")
+    parser.add_argument("--public-repo-git-sha", default="UNSPECIFIED")
     return parser
 
 
 def main() -> None:
     args = _parser().parse_args()
-    manifest = build_market_bundle(args.input_dir, args.output_dir)
+    manifest = build_market_bundle(
+        args.input_dir,
+        args.output_dir,
+        public_repo_git_sha=args.public_repo_git_sha,
+    )
     print(json.dumps(manifest, ensure_ascii=False))
 
 
