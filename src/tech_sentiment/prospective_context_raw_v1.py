@@ -25,6 +25,7 @@ from .prospective_context_checkpoint_v1 import (
     semantic_fingerprint,
     universe_checkpoint_identity,
 )
+from .prospective_preopen_timing_v2 import validate_preopen_capture_window
 from .resumable_capital import (
     expected_capital_checkpoint_identities,
     expected_szse_etf_checkpoint_identities,
@@ -389,17 +390,34 @@ def materialize_public_raw_capture(
     checkpoint_dir: Path,
     captured_at: datetime | None = None,
     client: Any | None = None,
+    timing_mode: str = "SAME_DAY_V1",
+    decision_date: str | None = None,
 ) -> CaptureResult:
     contract = _read_contract(contract_path)
     now = captured_at or datetime.now(ZoneInfo("UTC"))
     if now.tzinfo is None:
         raise ValueError("captured_at must be timezone-aware")
     capture_date = now.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
-    if operation_date != capture_date:
-        raise ValueError(
-            "forward raw capture rejects historical/future operation dates; "
-            f"operation_date={operation_date} capture_date={capture_date}"
+    timing_receipt: dict[str, Any] | None = None
+    checkpoint_capture_date = capture_date
+    if timing_mode == "SAME_DAY_V1":
+        if operation_date != capture_date:
+            raise ValueError(
+                "forward raw capture rejects historical/future operation dates; "
+                f"operation_date={operation_date} capture_date={capture_date}"
+            )
+    elif timing_mode == "PREOPEN_DUAL_CLOCK_V2":
+        if not decision_date:
+            raise ValueError("PREOPEN_DUAL_CLOCK_V2 requires decision_date")
+        timing_receipt = validate_preopen_capture_window(
+            market_session_date=operation_date,
+            decision_date=decision_date,
+            captured_at=now,
+            client=_client(client),
         )
+        checkpoint_capture_date = operation_date
+    else:
+        raise ValueError(f"unsupported capture timing_mode: {timing_mode}")
     warmup_days = int(contract["warmup"]["trading_days"])
     trading_dates = capture_trading_dates(
         operation_date,
@@ -699,7 +717,7 @@ def materialize_public_raw_capture(
         source_commit=source_commit,
         checkpoint_dir=checkpoint_dir / "sse",
         checkpoint_revision=str(capital_descriptor["checkpoint_revision"]),
-        capture_date=capture_date,
+        capture_date=checkpoint_capture_date,
         sleep_seconds=0.05,
     )
     szse_chunked = materialize_szse_etf_monthly(
@@ -708,7 +726,7 @@ def materialize_public_raw_capture(
         source_commit=source_commit,
         checkpoint_dir=checkpoint_dir / "szse",
         checkpoint_revision=str(szse_descriptor["checkpoint_revision"]),
-        capture_date=capture_date,
+        capture_date=checkpoint_capture_date,
         sleep_seconds=0.05,
     )
     szse = szse_chunked.result
@@ -851,6 +869,12 @@ def materialize_public_raw_capture(
         "capture_date_asia_shanghai": capture_date,
         "capture_clock_provenance": "GITHUB_ACTIONS_RUN_METADATA_EXTERNAL_TO_CANONICAL_PAYLOAD",
         "source_commit": source_commit,
+        "timing_mode": timing_mode,
+        **(
+            {"preopen_timing": timing_receipt}
+            if timing_receipt is not None
+            else {}
+        ),
         "start_date": start_date,
         "end_date": end_date,
         "trading_days": int(len(trading_dates)),
