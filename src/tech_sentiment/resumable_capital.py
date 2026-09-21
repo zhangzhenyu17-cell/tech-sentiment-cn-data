@@ -16,6 +16,11 @@ from .capital_input_data import (
     fetch_sse_szse_a_share_turnover_history,
 )
 from .immutable_checkpoint import CheckpointIdentity, ImmutableCheckpointStore
+from .v4c03_szse_etf_shares import (
+    SZSE_ETF_SHARE_SOURCE_ID,
+    SzseEtfShareFetchResult,
+    fetch_szse_etf_share_history,
+)
 
 
 CAPITAL_CHUNK_VERSION = "capital-monthly-checkpoint-v1"
@@ -29,7 +34,7 @@ class ResumableCapitalResult:
     executed_chunks: int
 
 
-def _month_groups(trading_dates: Iterable[object]) -> list[pd.DatetimeIndex]:
+def month_groups(trading_dates: Iterable[object]) -> list[pd.DatetimeIndex]:
     dates = (
         pd.DatetimeIndex(pd.to_datetime(list(trading_dates), errors="raise"))
         .normalize()
@@ -42,10 +47,10 @@ def _month_groups(trading_dates: Iterable[object]) -> list[pd.DatetimeIndex]:
     return [pd.DatetimeIndex(part.values) for _, part in series.groupby(dates.to_period("M"))]
 
 
-def _identity(
+def checkpointcheckpoint_identity(
     *,
     producer: str,
-    source_commit: str,
+    source_revision: str,
     source_identities: tuple[str, ...],
     dates: pd.DatetimeIndex,
     query_identity: dict[str, object],
@@ -53,7 +58,7 @@ def _identity(
     return CheckpointIdentity(
         producer=producer,
         producer_version=CAPITAL_CHUNK_VERSION,
-        source_commit=source_commit,
+        source_commit=source_revision,
         source_identities=source_identities,
         query_identity=query_identity,
         scope={
@@ -97,6 +102,8 @@ def materialize_capital_monthly(
     fund_codes: Iterable[str],
     source_commit: str,
     checkpoint_dir: str | Path,
+    checkpoint_revision: str | None = None,
+    capture_date: str | None = None,
     sleep_seconds: float = 0.05,
     etf_history_fetcher: Callable[..., EtfShareFetchResult] = fetch_sse_etf_share_history,
     turnover_history_fetcher: Callable[..., ExchangeTurnoverFetchResult] = fetch_sse_szse_a_share_turnover_history,
@@ -114,13 +121,16 @@ def materialize_capital_monthly(
     resumed = 0
     executed = 0
 
-    for dates in _month_groups(trading_dates):
-        etf_identity = _identity(
+    for dates in month_groups(trading_dates):
+        etf_identity = checkpoint_identity(
             producer="sse-etf-share-history",
-            source_commit=source_commit,
+            source_revision=checkpoint_revision or source_commit,
             source_identities=(SSE_ETF_SHARE_SOURCE_ID,),
             dates=dates,
-            query_identity={"fund_codes": list(codes)},
+            query_identity={
+                "fund_codes": list(codes),
+                "capture_date": capture_date,
+            },
         )
         loaded_etf = store.load(etf_identity)
         if loaded_etf is None:
@@ -132,7 +142,20 @@ def materialize_capital_monthly(
             store.save(
                 etf_identity,
                 frames={"data": etf_result.data, "errors": etf_result.errors},
-                metadata={"fund_codes": list(codes)},
+                metadata={
+                    "fund_codes": list(codes),
+                    "actual_source_commit": source_commit,
+                    "checkpoint_revision": checkpoint_revision or source_commit,
+                    "capture_date": capture_date,
+                    "permanent_reuse_eligible": bool(
+                        etf_result.errors.empty
+                        or (
+                            "error" in etf_result.errors.columns
+                            and etf_result.errors["error"].astype(str)
+                            .eq("NO_MATCHING_ETF_ROW").all()
+                        )
+                    ),
+                },
             )
             executed += 1
         else:
@@ -144,12 +167,15 @@ def materialize_capital_monthly(
         etf_data_parts.append(_normalize_etf_frame(etf_result.data))
         etf_error_parts.append(etf_result.errors)
 
-        turnover_identity = _identity(
+        turnover_identity = checkpoint_identity(
             producer="sse-szse-a-share-turnover-history",
-            source_commit=source_commit,
+            source_revision=checkpoint_revision or source_commit,
             source_identities=(SSE_TURNOVER_SOURCE_ID, SZSE_TURNOVER_SOURCE_ID),
             dates=dates,
-            query_identity={"scope": "SSE_SZSE_A_SHARES"},
+            query_identity={
+                "scope": "SSE_SZSE_A_SHARES",
+                "capture_date": capture_date,
+            },
         )
         loaded_turnover = store.load(turnover_identity)
         if loaded_turnover is None:
@@ -165,7 +191,13 @@ def materialize_capital_monthly(
                     "combined": turnover_result.combined,
                     "errors": turnover_result.errors,
                 },
-                metadata={"scope": "SSE_SZSE_A_SHARES"},
+                metadata={
+                    "scope": "SSE_SZSE_A_SHARES",
+                    "actual_source_commit": source_commit,
+                    "checkpoint_revision": checkpoint_revision or source_commit,
+                    "capture_date": capture_date,
+                    "permanent_reuse_eligible": bool(turnover_result.errors.empty),
+                },
             )
             executed += 1
         else:
@@ -199,8 +231,169 @@ def materialize_capital_monthly(
     )
 
 
+
+
+@dataclass(frozen=True)
+class ResumableSzseEtfResult:
+    result: SzseEtfShareFetchResult
+    resumed_chunks: int
+    executed_chunks: int
+
+
+def materialize_szse_etf_monthly(
+    *,
+    trading_dates: Iterable[object],
+    fund_codes: Iterable[str],
+    source_commit: str,
+    checkpoint_dir: str | Path,
+    checkpoint_revision: str | None = None,
+    capture_date: str | None = None,
+    sleep_seconds: float = 0.05,
+    fetcher: Callable[..., SzseEtfShareFetchResult] = fetch_szse_etf_share_history,
+) -> ResumableSzseEtfResult:
+    codes = tuple(sorted({str(code).zfill(6) for code in fund_codes}))
+    if not codes:
+        raise ValueError("at least one fund code is required")
+    store = ImmutableCheckpointStore(checkpoint_dir)
+    data_parts: list[pd.DataFrame] = []
+    error_parts: list[pd.DataFrame] = []
+    resumed = 0
+    executed = 0
+
+    for dates in month_groups(trading_dates):
+        identity = checkpoint_identity(
+            producer="szse-etf-share-history",
+            source_revision=checkpoint_revision or source_commit,
+            source_identities=(SZSE_ETF_SHARE_SOURCE_ID,),
+            dates=dates,
+            query_identity={
+                "fund_codes": list(codes),
+                "capture_date": capture_date,
+            },
+        )
+        loaded = store.load(identity)
+        if loaded is None:
+            result = fetcher(
+                start_date=str(pd.Timestamp(dates.min()).date()),
+                end_date=str(pd.Timestamp(dates.max()).date()),
+                trading_dates=dates,
+                fund_codes=codes,
+                sleep_seconds=sleep_seconds,
+            )
+            store.save(
+                identity,
+                frames={"data": result.data, "errors": result.errors},
+                metadata={
+                    "fund_codes": list(codes),
+                    "actual_source_commit": source_commit,
+                    "checkpoint_revision": checkpoint_revision or source_commit,
+                    "capture_date": capture_date,
+                    "permanent_reuse_eligible": bool(result.errors.empty),
+                },
+            )
+            executed += 1
+        else:
+            result = SzseEtfShareFetchResult(
+                data=loaded.frames["data"],
+                errors=loaded.frames["errors"],
+            )
+            resumed += 1
+        data_parts.append(_normalize_etf_frame(result.data))
+        error_parts.append(result.errors)
+
+    combined = SzseEtfShareFetchResult(
+        data=_normalize_etf_frame(_concat(data_parts, sort=("date", "fund_code"))),
+        errors=_concat(error_parts, sort=("chunk_start", "chunk_end")),
+    )
+    return ResumableSzseEtfResult(
+        result=combined,
+        resumed_chunks=resumed,
+        executed_chunks=executed,
+    )
+
+
+def expected_capital_checkpoint_identities(
+    *,
+    trading_dates: Iterable[object],
+    fund_codes: Iterable[str],
+    checkpoint_revision: str,
+    capture_date: str,
+) -> list[tuple[str, CheckpointIdentity]]:
+    codes = tuple(sorted({str(code).zfill(6) for code in fund_codes}))
+    rows: list[tuple[str, CheckpointIdentity]] = []
+    for dates in month_groups(trading_dates):
+        rows.append(
+            (
+                "sse",
+                checkpoint_identity(
+                    producer="sse-etf-share-history",
+                    source_revision=checkpoint_revision,
+                    source_identities=(SSE_ETF_SHARE_SOURCE_ID,),
+                    dates=dates,
+                    query_identity={
+                        "fund_codes": list(codes),
+                        "capture_date": capture_date,
+                    },
+                ),
+            )
+        )
+        rows.append(
+            (
+                "sse",
+                checkpoint_identity(
+                    producer="sse-szse-a-share-turnover-history",
+                    source_revision=checkpoint_revision,
+                    source_identities=(
+                        SSE_TURNOVER_SOURCE_ID,
+                        SZSE_TURNOVER_SOURCE_ID,
+                    ),
+                    dates=dates,
+                    query_identity={
+                        "scope": "SSE_SZSE_A_SHARES",
+                        "capture_date": capture_date,
+                    },
+                ),
+            )
+        )
+    return rows
+
+
+def expected_szse_etf_checkpoint_identities(
+    *,
+    trading_dates: Iterable[object],
+    fund_codes: Iterable[str],
+    checkpoint_revision: str,
+    capture_date: str,
+) -> list[tuple[str, CheckpointIdentity]]:
+    codes = tuple(sorted({str(code).zfill(6) for code in fund_codes}))
+    rows: list[tuple[str, CheckpointIdentity]] = []
+    for dates in month_groups(trading_dates):
+        rows.append(
+            (
+                "szse",
+                checkpoint_identity(
+                    producer="szse-etf-share-history",
+                    source_revision=checkpoint_revision,
+                    source_identities=(SZSE_ETF_SHARE_SOURCE_ID,),
+                    dates=dates,
+                    query_identity={
+                        "fund_codes": list(codes),
+                        "capture_date": capture_date,
+                    },
+                ),
+            )
+        )
+    return rows
+
+
 __all__ = [
     "CAPITAL_CHUNK_VERSION",
     "ResumableCapitalResult",
+    "ResumableSzseEtfResult",
+    "month_groups",
+    "checkpoint_identity",
     "materialize_capital_monthly",
+    "materialize_szse_etf_monthly",
+    "expected_capital_checkpoint_identities",
+    "expected_szse_etf_checkpoint_identities",
 ]
