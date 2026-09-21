@@ -1,0 +1,101 @@
+name: prospective-context-raw-v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation_date:
+        description: Exact Asia/Shanghai same-day A-share trading date (YYYY-MM-DD)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prospective-context-raw-v1
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install public data environment
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[data,dev]"
+
+      - name: Capture public-only forward raw Context inputs
+        run: |
+          python scripts/build_prospective_context_raw_v1.py             --operation-date "${{ inputs.operation_date }}"             --source-commit "$GITHUB_SHA"
+
+      - name: Resolve immutable capture identity
+        id: identity
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifests = list(
+              Path("dist/prospective_context_packages").glob(
+                  "prospective-context-raw-*.manifest.json"
+              )
+          )
+          if len(manifests) != 1:
+              raise SystemExit(
+                  f"expected one package manifest, got {len(manifests)}"
+              )
+          payload = json.loads(manifests[0].read_text(encoding="utf-8"))
+          tag = str(payload["release_tag"])
+          base = tag
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"tag={tag}\n")
+              handle.write(f"base={base}\n")
+          PY
+
+      - name: Publish or exact-verify immutable public raw capture
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.identity.outputs.tag }}
+          BASE: ${{ steps.identity.outputs.base }}
+        run: |
+          set -euo pipefail
+          ROOT="dist/prospective_context_packages"
+          ARCHIVE="$ROOT/$BASE.tar.gz"
+          CHECKSUM="$ROOT/$BASE.sha256"
+          MANIFEST="$ROOT/$BASE.manifest.json"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            mkdir -p existing
+            gh release download "$TAG"               --pattern "$BASE.sha256"               --pattern "$BASE.manifest.json"               --dir existing
+            cmp --silent "$CHECKSUM" "existing/$BASE.sha256" || {
+              echo "IMMUTABLE_PUBLIC_RAW_CAPTURE_CONFLICT: checksum drift" >&2
+              exit 1
+            }
+            cmp --silent "$MANIFEST" "existing/$BASE.manifest.json" || {
+              echo "IMMUTABLE_PUBLIC_RAW_CAPTURE_CONFLICT: manifest drift" >&2
+              exit 1
+            }
+            echo "Exact immutable public raw capture already exists: $TAG"
+          else
+            gh release create "$TAG"               --target "$GITHUB_SHA"               --title "Prospective public raw Context capture ${{ inputs.operation_date }}"               --notes "Public-only forward raw inputs. Historical rows are warm-up known at capture time only; historical replay and retroactive evidence qualification are forbidden."
+            gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" "$MANIFEST"
+          fi
+
+      - name: Upload contemporaneous raw capture artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospective-context-raw-v1-${{ inputs.operation_date }}
+          path: |
+            dist/prospective_context_raw/
+            dist/prospective_context_packages/
+          if-no-files-found: error
+          retention-days: 90
