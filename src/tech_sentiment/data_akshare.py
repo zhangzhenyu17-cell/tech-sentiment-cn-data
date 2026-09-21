@@ -28,9 +28,24 @@ def _client(client: Any | None = None) -> Any:
     return ak
 
 
+def _is_retryable_request_error(exc: BaseException) -> bool:
+    """Return True only for transient HTTP/client transport failures.
+
+    Keep the requests dependency lazy because the base package intentionally
+    installs without the optional data extra.
+    """
+    try:
+        from requests.exceptions import RequestException
+    except ImportError:  # pragma: no cover - requests is part of the data extra
+        return False
+    return isinstance(exc, RequestException)
+
+
 def fetch_current_csindex_universe(
     index_codes: Iterable[str],
     *,
+    retries: int = 2,
+    retry_backoff_seconds: float = 1.0,
     client: Any | None = None,
 ) -> pd.DataFrame:
     """Fetch the latest constituents for one or more CSI index codes.
@@ -40,12 +55,26 @@ def fetch_current_csindex_universe(
     ``current_snapshot`` and must not be treated as point-in-time historical
     membership for a formal backtest.
     """
+    if retries < 0:
+        raise ValueError("retries must be >= 0")
+    if retry_backoff_seconds < 0:
+        raise ValueError("retry_backoff_seconds must be >= 0")
+
     ak = _client(client)
     frames: list[pd.DataFrame] = []
 
     for raw_code in index_codes:
         index_code = str(raw_code).strip().zfill(6)
-        raw = ak.index_stock_cons_csindex(symbol=index_code)
+        raw = None
+        for attempt in range(retries + 1):
+            try:
+                raw = ak.index_stock_cons_csindex(symbol=index_code)
+                break
+            except Exception as exc:
+                if not _is_retryable_request_error(exc) or attempt >= retries:
+                    raise
+                if retry_backoff_seconds > 0:
+                    time.sleep(retry_backoff_seconds * (attempt + 1))
         if raw is None or len(raw) == 0:
             continue
 
