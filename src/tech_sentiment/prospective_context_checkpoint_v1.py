@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 import gzip
 from hashlib import sha256
 import json
@@ -10,14 +9,11 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from .immutable_checkpoint import (
-    CheckpointIdentity,
-    ImmutableCheckpointStore,
-)
+from .immutable_checkpoint import CheckpointIdentity, ImmutableCheckpointStore
 
 
-CHECKPOINT_BUNDLE_SCHEMA = "prospective-context-checkpoint-bundle-v1"
-CHECKPOINT_RELEASE_TAG = "prospective-context-checkpoints-v1"
+CHECKPOINT_BUNDLE_SCHEMA = "prospective-context-checkpoint-progress-v1"
+CHECKPOINT_RELEASE_TAG_PREFIX = "prospective-context-checkpoints"
 UNIVERSE_CHECKPOINT_VERSION = "prospective-universe-checkpoint-v1"
 
 
@@ -42,6 +38,7 @@ _UNIVERSE_SEMANTIC_FILES = {
         "src/tech_sentiment/index_price.py",
         "src/tech_sentiment/production_universe.py",
         "src/tech_sentiment/universe.py",
+        "src/tech_sentiment/bounded_retry.py",
     ),
 }
 
@@ -84,6 +81,11 @@ def file_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def checkpoint_release_tag(operation_date: str) -> str:
+    date = pd.Timestamp(operation_date).date().isoformat()
+    return f"{CHECKPOINT_RELEASE_TAG_PREFIX}-{date}"
+
+
 def semantic_fingerprint(
     repo_root: str | Path,
     *,
@@ -101,6 +103,7 @@ def semantic_fingerprint(
         files = _SZSE_ETF_SEMANTIC_FILES
     else:
         raise ValueError(f"unknown prospective checkpoint family: {family}")
+
     rows: list[dict[str, Any]] = []
     for relative in files:
         path = root / relative
@@ -167,7 +170,6 @@ def universe_checkpoint_identity(
     )
 
 
-
 def expected_checkpoint_assets(
     repo_root: str | Path,
     *,
@@ -175,7 +177,7 @@ def expected_checkpoint_assets(
     operation_date: str,
     trading_dates: Iterable[object],
 ) -> list[dict[str, Any]]:
-    """Resolve exact durable checkpoint assets eligible for one capture."""
+    """Resolve exact checkpoint fingerprints eligible for one capture."""
     from .resumable_capital import (
         expected_capital_checkpoint_identities,
         expected_szse_etf_checkpoint_identities,
@@ -201,9 +203,6 @@ def expected_checkpoint_assets(
                 "store_name": "universe",
                 "producer": identity.producer,
                 "fingerprint": identity.fingerprint,
-                "asset_base": checkpoint_asset_base(
-                    "universe", identity.fingerprint
-                ),
             }
         )
 
@@ -223,9 +222,6 @@ def expected_checkpoint_assets(
                 "store_name": store_name,
                 "producer": identity.producer,
                 "fingerprint": identity.fingerprint,
-                "asset_base": checkpoint_asset_base(
-                    store_name, identity.fingerprint
-                ),
             }
         )
 
@@ -245,56 +241,9 @@ def expected_checkpoint_assets(
                 "store_name": store_name,
                 "producer": identity.producer,
                 "fingerprint": identity.fingerprint,
-                "asset_base": checkpoint_asset_base(
-                    store_name, identity.fingerprint
-                ),
             }
         )
     return rows
-
-
-def plan_available_checkpoint_assets(
-    expected: Iterable[dict[str, Any]],
-    remote_asset_names: Iterable[str],
-) -> dict[str, Any]:
-    remote = {str(name).strip() for name in remote_asset_names if str(name).strip()}
-    selected: list[dict[str, Any]] = []
-    missing: list[dict[str, Any]] = []
-    for item in expected:
-        base = str(item["asset_base"])
-        required = {
-            f"{base}.tar.gz",
-            f"{base}.manifest.json",
-            f"{base}.sha256",
-        }
-        present = required & remote
-        if present and present != required:
-            raise ValueError(
-                f"partial immutable checkpoint asset set for {base}: "
-                f"present={sorted(present)}"
-            )
-        if present == required:
-            selected.append(dict(item))
-        else:
-            missing.append(dict(item))
-    return {
-        "schema_version": CHECKPOINT_BUNDLE_SCHEMA,
-        "release_tag": CHECKPOINT_RELEASE_TAG,
-        "selected": selected,
-        "missing": missing,
-        "selected_count": len(selected),
-        "missing_count": len(missing),
-    }
-
-
-def checkpoint_asset_base(store_name: str, fingerprint: str) -> str:
-    safe_store = (
-        str(store_name)
-        .replace("/", "-")
-        .replace("\\", "-")
-        .replace("_", "-")
-    )
-    return f"pcraw-checkpoint-v1-{safe_store}-{fingerprint}"
 
 
 def _safe_relative(value: str) -> str:
@@ -304,15 +253,23 @@ def _safe_relative(value: str) -> str:
     return path.as_posix()
 
 
-def _deterministic_tar(archive_path: Path, *, root: Path) -> None:
+def _deterministic_progress_tar(
+    archive_path: Path,
+    *,
+    cache_root: Path,
+    checkpoint_dirs: list[Path],
+) -> None:
     with archive_path.open("wb") as raw:
         with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as zipped:
             with tarfile.open(fileobj=zipped, mode="w") as tar:
+                files: list[Path] = []
+                for directory in checkpoint_dirs:
+                    files.extend(path for path in directory.rglob("*") if path.is_file())
                 for path in sorted(
-                    (p for p in root.rglob("*") if p.is_file()),
-                    key=lambda p: p.relative_to(root).as_posix(),
+                    files,
+                    key=lambda p: p.relative_to(cache_root).as_posix(),
                 ):
-                    rel = _safe_relative(path.relative_to(root).as_posix())
+                    rel = _safe_relative(path.relative_to(cache_root).as_posix())
                     info = tar.gettarinfo(str(path), arcname=rel)
                     info.uid = 0
                     info.gid = 0
@@ -323,82 +280,220 @@ def _deterministic_tar(archive_path: Path, *, root: Path) -> None:
                         tar.addfile(info, handle)
 
 
-def _manifest_identity(payload: dict[str, Any]) -> str:
-    unsigned = dict(payload)
-    unsigned.pop("bundle_identity", None)
-    return _sha256_bytes(_canonical_json(unsigned).encode("utf-8"))
+def _progress_identity_payload(manifest: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": manifest["schema_version"],
+        "operation_date": manifest["operation_date"],
+        "release_tag": manifest["release_tag"],
+        "archive_sha256": manifest["archive_sha256"],
+        "archive_bytes": manifest["archive_bytes"],
+        "checkpoint_units": manifest["checkpoint_units"],
+        "formal_evidence_handoff": manifest["formal_evidence_handoff"],
+        "qualification_granted": manifest["qualification_granted"],
+        "reuse_semantics": manifest["reuse_semantics"],
+    }
+
+
+def _validate_progress_manifest(manifest: dict[str, Any]) -> None:
+    if manifest.get("schema_version") != CHECKPOINT_BUNDLE_SCHEMA:
+        raise ValueError("prospective checkpoint manifest schema mismatch")
+    expected = _sha256_bytes(
+        _canonical_json(_progress_identity_payload(manifest)).encode("utf-8")
+    )
+    if manifest.get("bundle_identity") != expected:
+        raise ValueError("prospective checkpoint manifest identity mismatch")
+    if manifest.get("release_tag") != checkpoint_release_tag(
+        str(manifest.get("operation_date") or "")
+    ):
+        raise ValueError("prospective checkpoint release tag mismatch")
 
 
 def package_complete_checkpoints(
     cache_root: str | Path,
     *,
     out_dir: str | Path,
+    operation_date: str,
 ) -> dict[str, Any]:
     root = Path(cache_root)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    bundles: list[dict[str, Any]] = []
-    if not root.exists():
-        return {
+    release_tag = checkpoint_release_tag(operation_date)
+    checkpoint_dirs: list[Path] = []
+    units: list[dict[str, Any]] = []
+
+    if root.exists():
+        for receipt_path in sorted(root.glob("*/*/receipt.json")):
+            checkpoint_dir = receipt_path.parent
+            store_name = checkpoint_dir.parent.name
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            if receipt.get("completion_state") != "COMPLETE_CHUNK":
+                continue
+            metadata = dict(receipt.get("metadata") or {})
+            if metadata.get("permanent_reuse_eligible") is not True:
+                continue
+            if metadata.get("capture_date") not in (None, operation_date) and metadata.get(
+                "operation_date"
+            ) not in (None, operation_date):
+                continue
+            fingerprint = str(receipt.get("fingerprint") or "")
+            if not fingerprint or checkpoint_dir.name != fingerprint:
+                raise ValueError("checkpoint directory fingerprint mismatch")
+            checkpoint_dirs.append(checkpoint_dir)
+            units.append(
+                {
+                    "store_name": store_name,
+                    "checkpoint_fingerprint": fingerprint,
+                    "checkpoint_receipt_sha256": str(
+                        receipt.get("receipt_sha256") or ""
+                    ),
+                    "checkpoint_identity": receipt.get("identity"),
+                    "checkpoint_metadata": metadata,
+                }
+            )
+
+    if not units:
+        index = {
             "schema_version": CHECKPOINT_BUNDLE_SCHEMA,
-            "release_tag": CHECKPOINT_RELEASE_TAG,
+            "release_tag": release_tag,
+            "operation_date": operation_date,
             "bundles": [],
         }
+        (out / "checkpoint-index.json").write_text(
+            json.dumps(index, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return index
 
-    for receipt_path in sorted(root.glob("*/*/receipt.json")):
-        checkpoint_dir = receipt_path.parent
-        store_name = checkpoint_dir.parent.name
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        if receipt.get("completion_state") != "COMPLETE_CHUNK":
-            continue
-        metadata = receipt.get("metadata") or {}
-        if metadata.get("permanent_reuse_eligible") is not True:
-            continue
-        fingerprint = str(receipt.get("fingerprint") or "")
-        if not fingerprint or checkpoint_dir.name != fingerprint:
-            raise ValueError("checkpoint directory fingerprint mismatch")
-        base = checkpoint_asset_base(store_name, fingerprint)
-        archive = out / f"{base}.tar.gz"
-        _deterministic_tar(archive, root=checkpoint_dir)
-        archive_sha = file_sha256(archive)
-        manifest: dict[str, Any] = {
-            "schema_version": CHECKPOINT_BUNDLE_SCHEMA,
-            "release_tag": CHECKPOINT_RELEASE_TAG,
-            "store_name": store_name,
-            "checkpoint_fingerprint": fingerprint,
-            "checkpoint_receipt_sha256": str(receipt.get("receipt_sha256") or ""),
-            "checkpoint_identity": receipt.get("identity"),
-            "checkpoint_metadata": metadata,
-            "archive": archive.name,
-            "archive_sha256": archive_sha,
-            "archive_bytes": int(archive.stat().st_size),
-            "asset_base": base,
-            "formal_evidence_handoff": False,
-            "qualification_granted": False,
-            "reuse_semantics": "EXACT_CHECKPOINT_IDENTITY_ONLY",
-        }
-        manifest["bundle_identity"] = _manifest_identity(manifest)
-        manifest_path = out / f"{base}.manifest.json"
-        manifest_path.write_text(
-            json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        sha_path = out / f"{base}.sha256"
-        sha_path.write_text(
-            f"{archive_sha}  {archive.name}\n",
-            encoding="utf-8",
-        )
-        bundles.append(manifest)
+    provisional = out / ".progress.tmp.tar.gz"
+    _deterministic_progress_tar(
+        provisional,
+        cache_root=root,
+        checkpoint_dirs=checkpoint_dirs,
+    )
+    archive_sha = file_sha256(provisional)
+    manifest: dict[str, Any] = {
+        "schema_version": CHECKPOINT_BUNDLE_SCHEMA,
+        "operation_date": operation_date,
+        "release_tag": release_tag,
+        "archive_sha256": archive_sha,
+        "archive_bytes": int(provisional.stat().st_size),
+        "checkpoint_units": sorted(
+            units,
+            key=lambda item: (
+                str(item["store_name"]),
+                str(item["checkpoint_fingerprint"]),
+            ),
+        ),
+        "formal_evidence_handoff": False,
+        "qualification_granted": False,
+        "reuse_semantics": "EXACT_SAME_CAPTURE_CHECKPOINT_IDENTITY_ONLY",
+    }
+    manifest["bundle_identity"] = _sha256_bytes(
+        _canonical_json(_progress_identity_payload(manifest)).encode("utf-8")
+    )
+    base = (
+        f"pcraw-progress-v1-"
+        f"{operation_date.replace('-', '')}-"
+        f"{manifest['bundle_identity'][:20]}"
+    )
+    manifest["asset_base"] = base
+    archive = out / f"{base}.tar.gz"
+    provisional.replace(archive)
+    manifest["archive"] = archive.name
+
+    manifest_path = out / f"{base}.manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    sha_path = out / f"{base}.sha256"
+    sha_path.write_text(
+        f"{archive_sha}  {archive.name}\n",
+        encoding="utf-8",
+    )
     index = {
         "schema_version": CHECKPOINT_BUNDLE_SCHEMA,
-        "release_tag": CHECKPOINT_RELEASE_TAG,
-        "bundles": bundles,
+        "release_tag": release_tag,
+        "operation_date": operation_date,
+        "bundles": [manifest],
     }
     (out / "checkpoint-index.json").write_text(
         json.dumps(index, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
     return index
+
+
+def plan_available_checkpoint_bundles(
+    *,
+    expected: dict[str, Any],
+    manifests: Iterable[dict[str, Any]],
+) -> dict[str, Any]:
+    operation_date = str(expected["operation_date"])
+    expected_rows = expected.get("assets") or []
+    expected_fingerprints = {
+        str(item["fingerprint"]) for item in expected_rows
+    }
+    candidates: list[dict[str, Any]] = []
+
+    for manifest in manifests:
+        _validate_progress_manifest(manifest)
+        if str(manifest["operation_date"]) != operation_date:
+            continue
+        unit_fingerprints = {
+            str(item["checkpoint_fingerprint"])
+            for item in manifest.get("checkpoint_units") or []
+        }
+        useful = unit_fingerprints & expected_fingerprints
+        if useful:
+            candidates.append(
+                {
+                    "asset_base": str(manifest["asset_base"]),
+                    "bundle_identity": str(manifest["bundle_identity"]),
+                    "useful_fingerprints": sorted(useful),
+                    "useful_count": len(useful),
+                    "unit_count": len(unit_fingerprints),
+                }
+            )
+
+    # Prefer snapshots that add the most not-yet-covered expected work. Multiple
+    # immutable snapshots may be selected; exact checkpoint identities make
+    # overlapping restores byte-verifiable and harmless.
+    selected: list[dict[str, Any]] = []
+    covered: set[str] = set()
+    remaining = sorted(
+        candidates,
+        key=lambda row: (
+            -int(row["useful_count"]),
+            str(row["bundle_identity"]),
+        ),
+    )
+    while True:
+        best = None
+        best_gain: set[str] = set()
+        for candidate in remaining:
+            gain = set(candidate["useful_fingerprints"]) - covered
+            if len(gain) > len(best_gain):
+                best = candidate
+                best_gain = gain
+        if best is None or not best_gain:
+            break
+        selected.append(best)
+        covered.update(best_gain)
+        remaining.remove(best)
+
+    missing = expected_fingerprints - covered
+    return {
+        "schema_version": CHECKPOINT_BUNDLE_SCHEMA,
+        "release_tag": checkpoint_release_tag(operation_date),
+        "operation_date": operation_date,
+        "selected": selected,
+        "selected_count": len(selected),
+        "covered_checkpoint_count": len(covered),
+        "expected_checkpoint_count": len(expected_fingerprints),
+        "missing_checkpoint_count": len(missing),
+        "missing_fingerprints": sorted(missing),
+    }
 
 
 def _identity_from_payload(payload: dict[str, Any]) -> CheckpointIdentity:
@@ -422,19 +517,14 @@ def restore_checkpoint_bundle(
 ) -> dict[str, Any]:
     archive = Path(archive_path)
     manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != CHECKPOINT_BUNDLE_SCHEMA:
-        raise ValueError("prospective checkpoint manifest schema mismatch")
-    if manifest.get("bundle_identity") != _manifest_identity(manifest):
-        raise ValueError("prospective checkpoint manifest identity mismatch")
+    _validate_progress_manifest(manifest)
     if file_sha256(archive) != manifest.get("archive_sha256"):
         raise ValueError("prospective checkpoint archive SHA256 mismatch")
     if int(manifest.get("archive_bytes") or -1) != archive.stat().st_size:
         raise ValueError("prospective checkpoint archive size mismatch")
 
-    store_name = _safe_relative(str(manifest["store_name"]))
-    fingerprint = str(manifest["checkpoint_fingerprint"])
-    target = Path(cache_root) / store_name / fingerprint
-    target.mkdir(parents=True, exist_ok=True)
+    root = Path(cache_root)
+    root.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive, mode="r:gz") as handle:
         members = handle.getmembers()
         for member in members:
@@ -444,36 +534,38 @@ def restore_checkpoint_bundle(
             source = handle.extractfile(member)
             if source is None:
                 raise ValueError(f"checkpoint member unreadable: {rel}")
-            destination = target / rel
+            destination = root / rel
+            destination.parent.mkdir(parents=True, exist_ok=True)
             incoming = source.read()
             if destination.exists() and destination.read_bytes() != incoming:
-                raise ValueError(
-                    f"checkpoint restore conflict: {store_name}/{fingerprint}/{rel}"
-                )
+                raise ValueError(f"checkpoint restore conflict: {rel}")
             destination.write_bytes(incoming)
 
-    identity = _identity_from_payload(dict(manifest["checkpoint_identity"]))
-    if identity.fingerprint != fingerprint:
-        raise ValueError("restored checkpoint identity/fingerprint mismatch")
-    loaded = ImmutableCheckpointStore(Path(cache_root) / store_name).load(identity)
-    if loaded is None:
-        raise ValueError("restored checkpoint cannot be loaded")
-    if str(loaded.receipt.get("receipt_sha256") or "") != str(
-        manifest.get("checkpoint_receipt_sha256") or ""
-    ):
-        raise ValueError("restored checkpoint receipt SHA mismatch")
+    for item in manifest.get("checkpoint_units") or []:
+        store_name = _safe_relative(str(item["store_name"]))
+        fingerprint = str(item["checkpoint_fingerprint"])
+        identity = _identity_from_payload(dict(item["checkpoint_identity"]))
+        if identity.fingerprint != fingerprint:
+            raise ValueError("restored checkpoint identity/fingerprint mismatch")
+        loaded = ImmutableCheckpointStore(root / store_name).load(identity)
+        if loaded is None:
+            raise ValueError("restored checkpoint cannot be loaded")
+        if str(loaded.receipt.get("receipt_sha256") or "") != str(
+            item.get("checkpoint_receipt_sha256") or ""
+        ):
+            raise ValueError("restored checkpoint receipt SHA mismatch")
     return manifest
 
 
 __all__ = [
     "CHECKPOINT_BUNDLE_SCHEMA",
-    "CHECKPOINT_RELEASE_TAG",
+    "CHECKPOINT_RELEASE_TAG_PREFIX",
     "UNIVERSE_CHECKPOINT_VERSION",
+    "checkpoint_release_tag",
     "semantic_fingerprint",
     "expected_checkpoint_assets",
-    "plan_available_checkpoint_assets",
     "universe_checkpoint_identity",
-    "checkpoint_asset_base",
     "package_complete_checkpoints",
+    "plan_available_checkpoint_bundles",
     "restore_checkpoint_bundle",
 ]
