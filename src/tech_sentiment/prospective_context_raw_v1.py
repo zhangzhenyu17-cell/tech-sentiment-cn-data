@@ -380,6 +380,9 @@ def materialize_public_raw_capture(
             "anchor_effective_date": cfg["anchor_effective_date"],
             "active_constituents": len(active),
             "live_snapshot_exact_match": True,
+            "live_snapshot_source_variants": sorted(
+                set(live["snapshot_source"].astype(str))
+            ),
             "capture_window_constituent_symbol_coverage": coverage,
             "download_error_rows": int(len(downloaded.errors)),
             "reconstruction": {
