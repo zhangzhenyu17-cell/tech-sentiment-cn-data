@@ -19,7 +19,10 @@ def test_workflow_is_manual_only_and_bounded() -> None:
 
     assert 'SHARD_COUNT: "12"' in text
     assert "max-parallel: 4" in text
-    assert "timeout-minutes: 180" in text
+    # Live filing retrieval can exceed 30 minutes even for the two-symbol preflight.
+    # Keep both preflight and shard materialization below GitHub's six-hour ceiling
+    # without weakening the frozen scope or PIT contract.
+    assert text.count("timeout-minutes: 360") >= 2
     assert "shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]" in text
     assert "fail-fast: false" in text
 
