@@ -102,7 +102,8 @@ jobs:
             echo "Exact immutable market bundle already exists: $TAG"
           else
             echo "Exact immutable market bundle missing; dispatching existing publisher."
-            gh workflow run publish-market-bundle.yml --ref main
+            gh workflow run publish-market-bundle.yml --ref main \
+              -f target_date="$MARKET_SESSION_DATE"
           fi
 
       - name: Dispatch exact pre-open public raw capture once
