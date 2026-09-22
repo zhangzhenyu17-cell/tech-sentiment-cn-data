@@ -85,7 +85,34 @@ jobs:
           print(f"REQUESTED_EXACT_TARGET_DATE={requested}")
           PY
 
+      - name: Reuse complete existing immutable dated bundle
+        id: immutable_reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="market-bundle-${END_DATE}"
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            ASSETS="$(gh release view "${TAG}" --json assets --jq '.assets[].name')"
+            COMPLETE=true
+            for REQUIRED in "${TAG}.tar.gz" "${TAG}.sha256" "${TAG}.manifest.json"; do
+              if ! grep -Fxq "${REQUIRED}" <<<"${ASSETS}"; then
+                COMPLETE=false
+                echo "Existing immutable release is incomplete; preserving fail-closed publication path: missing ${REQUIRED}"
+              fi
+            done
+            if [ "${COMPLETE}" = "true" ]; then
+              echo "reuse=true" >> "$GITHUB_OUTPUT"
+              echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+              echo "Reusing complete immutable dated release without recomputation: ${TAG}"
+              exit 0
+            fi
+          fi
+          echo "reuse=false" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
       - name: Download point-in-time STAR 50 market data
+        if: steps.immutable_reuse.outputs.reuse != 'true'
         run: |
           tech-sentiment-data production-index \
             --anchor-manifest data/reference/kc50_anchor_manifest.csv \
@@ -108,6 +135,7 @@ jobs:
             --out data/daily/index_prices.csv
 
       - name: Build allowlisted public bundle and deterministic dated identity
+        if: steps.immutable_reuse.outputs.reuse != 'true'
         run: |
           tech-sentiment-bundle \
             --input-dir data/daily \
@@ -115,6 +143,7 @@ jobs:
             --public-repo-git-sha "$GITHUB_SHA"
 
       - name: Resolve immutable dated bundle identity
+        if: steps.immutable_reuse.outputs.reuse != 'true'
         id: dated
         run: |
           python - <<'PY'
@@ -137,6 +166,7 @@ jobs:
           PY
 
       - name: Publish latest release assets
+        if: steps.immutable_reuse.outputs.reuse != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -153,7 +183,7 @@ jobs:
             --clobber
 
       - name: Publish or exact-verify immutable dated public bundle
-        if: steps.dated.outputs.publish == 'true'
+        if: steps.immutable_reuse.outputs.reuse != 'true' && steps.dated.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -189,6 +219,11 @@ jobs:
           fi
 
       - name: Non-trading target-date receipt
-        if: steps.dated.outputs.publish != 'true'
+        if: steps.immutable_reuse.outputs.reuse != 'true' && steps.dated.outputs.publish != 'true'
         run: |
           echo "No immutable dated release published because target_date=${{ steps.dated.outputs.target_date }} differs from market_date=${{ steps.dated.outputs.market_date }}."
+
+      - name: Existing immutable dated bundle receipt
+        if: steps.immutable_reuse.outputs.reuse == 'true'
+        run: |
+          echo "Immutable dated release already complete; producer recomputation skipped: ${{ steps.immutable_reuse.outputs.tag }}"
