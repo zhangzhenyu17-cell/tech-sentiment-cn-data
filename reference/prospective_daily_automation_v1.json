@@ -8,9 +8,13 @@
       "triggers": [
         "schedule"
       ],
-      "cron_utc": "55 15 * * *",
-      "intended_time_asia_shanghai": "23:55",
-      "necessity": "Dispatch exact public market bundle fallback and exact outcome-blind pre-open public raw capture for the next prospective trading-day cycle."
+      "cron_utc": "55 15-17 * * *",
+      "intended_time_asia_shanghai": [
+        "23:55",
+        "00:55",
+        "01:55"
+      ],
+      "necessity": "Dispatch exact public bundle/raw capture with bounded idempotent retries before the private 02:10 handoff."
     }
   },
   "target_workflows": [
