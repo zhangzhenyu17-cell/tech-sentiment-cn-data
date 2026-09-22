@@ -43,7 +43,7 @@ def test_workflow_has_three_layer_preflight_and_recovery_controls() -> None:
     assert "fail-on-cache-miss: true" in text
     assert "LEGACY_QUERY_PRIMARY_COMMIT" in text
     assert "LEGACY_QUERY_SECONDARY_COMMIT" in text
-    assert "--legacy-checkpoint-dir .cache/fundamental_extended_pit_legacy" in text
+    assert "--legacy-checkpoint-dir .cache/fundamental_extended_pit_legacy/filings" in text
     assert "--legacy-query-checkpoint-source-commit" in text
     assert "--max-financial-documents-per-symbol 1" in text
     assert "always() && steps.materialize.outcome != 'skipped'" in text
@@ -78,3 +78,19 @@ def test_workflow_decomposition_matches_observed_timeout_lessons() -> None:
     assert "executed_symbol_queries\"] == 0" in text
     assert "reused_legacy_symbol_queries\"] == 2" in text
     assert "max_financial_documents_per_symbol\"] == 1" in text
+
+
+def test_workflow_addresses_legacy_v4a_double_filings_layout() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert (
+        "--legacy-checkpoint-dir .cache/"
+        "fundamental_extended_pit_preflight_legacy/filings"
+    ) in text
+    assert (
+        "--legacy-checkpoint-dir .cache/"
+        "fundamental_extended_pit_legacy/filings"
+    ) in text
+    assert "test -d .cache/fundamental_extended_pit_preflight_legacy/filings" in text
+    assert "test -d .cache/fundamental_extended_pit_legacy/filings" in text
+    assert "find .cache/fundamental_extended_pit_preflight_legacy/filings" in text
+    assert "find .cache/fundamental_extended_pit_legacy/filings" in text
