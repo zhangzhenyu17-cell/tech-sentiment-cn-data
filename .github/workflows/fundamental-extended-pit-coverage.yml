@@ -109,10 +109,12 @@ jobs:
         run: |
           rm -rf .cache/fundamental_extended_pit_preflight_legacy
           mv .cache/capital_pit_v4a/derived/filings .cache/fundamental_extended_pit_preflight_legacy
+          test -d .cache/fundamental_extended_pit_preflight_legacy/filings
+          find .cache/fundamental_extended_pit_preflight_legacy/filings -name receipt.json -print -quit | grep -q .
 
       - name: Representative live materialization
         run: |
-          python scripts/materialize_fundamental_extended_pit.py             --symbols-csv stage/preflight/pilot_symbols.csv             --trading-calendar-csv stage/shared/calendar/trading_calendar.csv             --target-start-date "$TARGET_START_DATE"             --end-date "$END_DATE"             --source-commit "$GITHUB_SHA"             --checkpoint-dir .cache/fundamental_extended_pit_preflight             --legacy-checkpoint-dir .cache/fundamental_extended_pit_preflight_legacy             --output-dir stage/preflight/output             --warmup-years 2             --checkpoint-source-commit "$LEGACY_QUERY_PRIMARY_COMMIT"             --legacy-query-checkpoint-source-commit "$LEGACY_QUERY_SECONDARY_COMMIT"             --progress-checkpoint-source-commit "$PROGRESS_GENERATION_ID"             --hard-failure-circuit-breaker-threshold 3             --max-financial-documents-per-symbol 1             --fail-on-hard-errors
+          python scripts/materialize_fundamental_extended_pit.py             --symbols-csv stage/preflight/pilot_symbols.csv             --trading-calendar-csv stage/shared/calendar/trading_calendar.csv             --target-start-date "$TARGET_START_DATE"             --end-date "$END_DATE"             --source-commit "$GITHUB_SHA"             --checkpoint-dir .cache/fundamental_extended_pit_preflight             --legacy-checkpoint-dir .cache/fundamental_extended_pit_preflight_legacy/filings             --output-dir stage/preflight/output             --warmup-years 2             --checkpoint-source-commit "$LEGACY_QUERY_PRIMARY_COMMIT"             --legacy-query-checkpoint-source-commit "$LEGACY_QUERY_SECONDARY_COMMIT"             --progress-checkpoint-source-commit "$PROGRESS_GENERATION_ID"             --hard-failure-circuit-breaker-threshold 3             --max-financial-documents-per-symbol 1             --fail-on-hard-errors
       - name: Validate representative execution classes
         run: |
           python - <<'PY'
@@ -219,6 +221,8 @@ jobs:
         run: |
           rm -rf .cache/fundamental_extended_pit_legacy
           mv .cache/capital_pit_v4a/derived/filings .cache/fundamental_extended_pit_legacy
+          test -d .cache/fundamental_extended_pit_legacy/filings
+          find .cache/fundamental_extended_pit_legacy/filings -name receipt.json -print -quit | grep -q .
 
       - name: Restore durable shard progress
         id: restore
@@ -232,7 +236,7 @@ jobs:
         id: materialize
         run: |
           mkdir -p "stage/shard-${{ matrix.shard }}"
-          python scripts/materialize_fundamental_extended_pit.py             --symbols-csv stage/shard-input/symbols.csv             --trading-calendar-csv stage/shared-download/stage/shared/calendar/trading_calendar.csv             --target-start-date "$TARGET_START_DATE"             --end-date "$END_DATE"             --source-commit "$GITHUB_SHA"             --checkpoint-dir .cache/fundamental_extended_pit             --legacy-checkpoint-dir .cache/fundamental_extended_pit_legacy             --output-dir "stage/shard-${{ matrix.shard }}"             --warmup-years 2             --checkpoint-source-commit "$LEGACY_QUERY_PRIMARY_COMMIT"             --legacy-query-checkpoint-source-commit "$LEGACY_QUERY_SECONDARY_COMMIT"             --progress-checkpoint-source-commit "$PROGRESS_GENERATION_ID"             --hard-failure-circuit-breaker-threshold 3             --fail-on-hard-errors
+          python scripts/materialize_fundamental_extended_pit.py             --symbols-csv stage/shard-input/symbols.csv             --trading-calendar-csv stage/shared-download/stage/shared/calendar/trading_calendar.csv             --target-start-date "$TARGET_START_DATE"             --end-date "$END_DATE"             --source-commit "$GITHUB_SHA"             --checkpoint-dir .cache/fundamental_extended_pit             --legacy-checkpoint-dir .cache/fundamental_extended_pit_legacy/filings             --output-dir "stage/shard-${{ matrix.shard }}"             --warmup-years 2             --checkpoint-source-commit "$LEGACY_QUERY_PRIMARY_COMMIT"             --legacy-query-checkpoint-source-commit "$LEGACY_QUERY_SECONDARY_COMMIT"             --progress-checkpoint-source-commit "$PROGRESS_GENERATION_ID"             --hard-failure-circuit-breaker-threshold 3             --fail-on-hard-errors
       - name: Save durable shard progress
         if: ${{ always() && steps.materialize.outcome != 'skipped' }}
         uses: actions/cache/save@v4
