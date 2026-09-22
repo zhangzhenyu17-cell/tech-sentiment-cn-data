@@ -1,0 +1,26 @@
+{
+  "schema_version": "prospective-active-rail-v2",
+  "status": "ACTIVE",
+  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "active_public_orchestrator": "prospective-public-daily-orchestrator-v1.yml",
+  "active_public_capture": "prospective-context-raw-preopen-v2.yml",
+  "legacy_fail_closed": [
+    "prospective-context-raw-v1.yml"
+  ],
+  "timing_contract": {
+    "market_session": "T",
+    "decision_date": "immediate next A-share trading day T+1",
+    "same_session_not_before_asia_shanghai": "23:45",
+    "data_freeze_deadline_asia_shanghai": "05:30"
+  },
+  "safety": {
+    "forward_outcome_read_allowed": false,
+    "historical_backfill_allowed": false,
+    "model_change_allowed": false,
+    "threshold_change_allowed": false,
+    "universe_change_allowed": false,
+    "evidence_qualification_change_allowed": false,
+    "production_change_allowed": false,
+    "trading_authority_change_allowed": false
+  }
+}
