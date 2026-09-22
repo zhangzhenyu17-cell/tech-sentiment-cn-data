@@ -136,7 +136,7 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert "publish-market-bundle.yml" in text
     assert "prospective-context-raw-preopen-v2.yml" in text
     assert "market-bundle-$MARKET_SESSION_DATE" in text
-    assert "gh release view "$RAW_TAG"" in text
+    assert 'gh release view "$RAW_TAG"' in text
     assert "--ref main" in text
     assert "akshare==1.18.94" in text
     assert "pandas==3.0.5" in text
