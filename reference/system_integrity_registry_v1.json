@@ -1,0 +1,23 @@
+{
+  "schema_version": "system-integrity-registry-v1",
+  "status": "PUBLIC_CONTROL_AND_BOUNDARY_GUARD_NOT_MODEL_AUTHORITY",
+  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "sources": {
+    "workflow_control_plane": "reference/workflow_control_plane_registry_v1.json",
+    "prospective_active_rail": "reference/prospective_active_rail_v2.json",
+    "public_tree_audit": "scripts/audit_public_tree.py"
+  },
+  "invariants": {
+    "public_repo_may_contain_private_model_logic": false,
+    "public_repo_may_contain_private_evidence": false,
+    "public_repo_may_contain_portfolio_holdings": false,
+    "public_repo_may_contain_secrets": false,
+    "workflow_trigger_drift_allowed": false,
+    "legacy_prospective_reactivation_allowed": false,
+    "model_change_allowed": false,
+    "threshold_change_allowed": false,
+    "universe_change_allowed": false,
+    "evidence_qualification_change_allowed": false,
+    "trading_authority_change_allowed": false
+  }
+}
