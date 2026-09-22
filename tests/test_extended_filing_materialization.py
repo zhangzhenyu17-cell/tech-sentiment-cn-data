@@ -249,3 +249,110 @@ def test_materializer_hard_failure_circuit_breaker_stops_repeated_query_class(
     )
     assert len(result.coverage) == 3
     assert result.coverage["query_status"].eq("FAILED").all()
+
+
+def test_materializer_reuses_second_legacy_query_generation_without_provider_call(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    legacy_root = tmp_path / "legacy"
+    progress_root = tmp_path / "progress"
+    first_legacy = "1" * 40
+    second_legacy = "2" * 40
+    progress_commit = "3" * 40
+    raw = _announcement()
+    query_identity = materializer._symbol_query_identity(
+        source_commit=second_legacy,
+        symbol="688012",
+        query_start="2023-01-01",
+        query_end="2025-09-01",
+    )
+    materializer.ImmutableCheckpointStore(legacy_root).save(
+        query_identity,
+        frames={"announcements": raw},
+        metadata={"entity_id": "688012.SH"},
+    )
+
+    monkeypatch.setattr(
+        materializer,
+        "fetch_cninfo_announcements_direct",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy query checkpoint should avoid provider call")
+        ),
+    )
+    monkeypatch.setattr(
+        materializer,
+        "download_official_document",
+        lambda url: _Downloaded(),
+    )
+    monkeypatch.setattr(materializer, "extract_pdf_text", lambda content: _text())
+
+    result = materializer.materialize_extended_filing_facts(
+        ["688012"],
+        target_start_date="2025-01-01",
+        end_date="2025-09-01",
+        trading_dates=pd.date_range("2025-08-25", "2025-09-02", freq="B"),
+        source_commit="4" * 40,
+        checkpoint_dir=progress_root,
+        checkpoint_source_commit=first_legacy,
+        legacy_checkpoint_dir=legacy_root,
+        legacy_query_checkpoint_source_commits=[second_legacy],
+        progress_checkpoint_source_commit=progress_commit,
+    )
+
+    assert result.summary["executed_symbol_queries"] == 0
+    assert result.summary["reused_legacy_symbol_queries"] == 1
+    assert result.summary["legacy_query_hits_by_source_commit"] == {
+        second_legacy: 1
+    }
+
+
+def test_materializer_preflight_document_limit_uses_same_selector_but_one_document(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    raw = pd.concat([_announcement(), _announcement()], ignore_index=True)
+    raw.loc[0, "公告标题"] = "2024年年度报告"
+    raw.loc[0, "公告时间"] = "2025-04-30 10:00:00"
+    raw.loc[0, "公告链接"] = raw.loc[0, "公告链接"].replace(
+        "1210000000", "1210000001"
+    )
+    raw.loc[0, "公告附件链接"] = raw.loc[0, "公告附件链接"].replace(
+        "1210000000", "1210000001"
+    )
+
+    calls = {"download": 0}
+    monkeypatch.setattr(
+        materializer,
+        "fetch_cninfo_announcements_direct",
+        lambda **kwargs: raw.copy(),
+    )
+
+    class Downloaded(_Downloaded):
+        pass
+
+    def download(url):
+        calls["download"] += 1
+        item = Downloaded()
+        item.url = url
+        item.retrieval_url = url
+        item.sha256 = "a" * 64
+        return item
+
+    monkeypatch.setattr(materializer, "download_official_document", download)
+    monkeypatch.setattr(materializer, "extract_pdf_text", lambda content: _text())
+
+    result = materializer.materialize_extended_filing_facts(
+        ["688012"],
+        target_start_date="2025-01-01",
+        end_date="2025-09-01",
+        trading_dates=pd.date_range("2025-04-28", "2025-09-02", freq="B"),
+        source_commit="5" * 40,
+        checkpoint_dir=tmp_path / "checkpoint",
+        max_financial_documents_per_symbol=1,
+    )
+
+    assert calls["download"] == 1
+    assert result.summary["max_financial_documents_per_symbol"] == 1
+    assert result.coverage.iloc[0]["financial_documents"] == 1
+    assert result.coverage.iloc[0]["parsed_documents"] == 1
