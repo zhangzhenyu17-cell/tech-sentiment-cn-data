@@ -35,6 +35,7 @@ def is_transient_network_error(exc: BaseException) -> bool:
         BrokenPipeError,
         socket.timeout,
         http.client.RemoteDisconnected,
+        http.client.IncompleteRead,
     )
     if isinstance(exc, transient):
         return True
