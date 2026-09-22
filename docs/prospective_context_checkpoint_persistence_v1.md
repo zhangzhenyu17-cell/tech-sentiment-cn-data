@@ -124,6 +124,28 @@ forward-fill, historical replay, or evidence promotion. If
 `NOT_YET_PUBLISHED` still exhausts after 23:45, the correct action is a later
 manual retry before 05:30, not a fallback to older data.
 
+## Daily automation wrapper
+
+The frozen `prospective-context-raw-preopen-v2` workflow remains a manual
+`workflow_dispatch` surface. A separate thin orchestrator,
+`.github/workflows/prospective-public-daily-orchestrator-v1.yml`, is explicitly
+allowlisted under `reference/prospective_daily_automation_v1.json`.
+
+Its schedule is `55 15 * * *` UTC (approximately 23:55 Asia/Shanghai). It:
+
+1. resolves the exact A-share trading-day pair from the live trading calendar;
+2. no-ops on non-trading days or outside the eligible pre-open automation window;
+3. requests the existing `publish-market-bundle.yml` only when the exact
+   `market-bundle-T` immutable release is missing;
+4. dispatches the existing pre-open public raw workflow only when the exact
+   `prospective-context-raw-preopen-v2-T-for-T+1` release is absent and no
+   capture is already active.
+
+The wrapper does not materialize model outputs or evidence. It cannot substitute
+rolling latest, stale rows, prior dates, interpolation, historical replay, or
+backfill. Provider publication readiness, PIT validation, and the 05:30 freeze
+remain enforced by the target workflow itself.
+
 ## Failure behavior
 
 Normal capture failure:
