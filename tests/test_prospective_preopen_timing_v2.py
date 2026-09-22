@@ -108,7 +108,7 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
         "prospective-public-daily-orchestrator-v1.yml"
     ]
     assert entry["triggers"] == ["schedule"]
-    assert entry["cron_utc"] == "55 15 * * *"
+    assert entry["cron_utc"] == "55 15-17 * * *"
     assert manifest["authorization_scope"] == "FROZEN_PROSPECTIVE_DAILY_OPERATIONS_ONLY"
 
     safety = manifest["safety"]
@@ -131,7 +131,7 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     text = (
         root / ".github/workflows/prospective-public-daily-orchestrator-v1.yml"
     ).read_text(encoding="utf-8")
-    assert 'cron: "55 15 * * *"' in text
+    assert 'cron: "55 15-17 * * *"' in text
     assert "workflow_dispatch:" in text
     assert "actions: write" in text
     assert "publish-market-bundle.yml" in text
