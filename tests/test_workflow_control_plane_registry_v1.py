@@ -106,15 +106,29 @@ def test_public_ci_cancels_superseded_runs() -> None:
     assert "cancel-in-progress: true" in text
 
 
-def test_failure_capture_covers_public_automatic_and_prospective_leaf_rails() -> None:
-    text = _workflow_text("engineering-failure-capture.yml")
-    for name in (
-        "publish-market-bundle",
-        "prospective-public-daily-orchestrator-v1",
-        "prospective-context-raw-preopen-v2",
-        "tests",
-    ):
-        assert f'- "{name}"' in text, name
+def test_failure_capture_covers_all_public_automatic_and_active_prospective_leaf_rails() -> None:
+    payload = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    failure = _workflow_text("engineering-failure-capture.yml")
+
+    for row in payload["workflows"]:
+        if row["file"] == "engineering-failure-capture.yml":
+            continue
+        automatic = any(
+            trigger in row["triggers"]
+            for trigger in ("schedule", "workflow_run", "push", "pull_request")
+        )
+        if not automatic:
+            continue
+        match = re.search(
+            r"^name:\s*[\"']?([^\"'\n]+)[\"']?",
+            _workflow_text(row["file"]),
+            flags=re.MULTILINE,
+        )
+        assert match is not None, row["file"]
+        workflow_name = match.group(1).strip()
+        assert f'- "{workflow_name}"' in failure, row["file"]
+
+    assert '- "prospective-context-raw-preopen-v2"' in failure
 
 
 def test_all_public_automatic_workflows_have_bounded_runtime() -> None:
