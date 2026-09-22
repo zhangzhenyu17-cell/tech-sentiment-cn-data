@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       market_session_date:
-        description: Market session date T (YYYY-MM-DD)
+        description: Market session date T (YYYY-MM-DD); operationally run at/after 23:45 Asia/Shanghai on T
         required: true
         type: string
       decision_date:
-        description: Immediate next A-share trading day T+1 (YYYY-MM-DD)
+        description: Immediate next A-share trading day T+1 (YYYY-MM-DD); capture must finish by 05:30 Asia/Shanghai
         required: true
         type: string
 
@@ -31,10 +31,38 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      - name: Reject operationally premature same-session provider probe
+        env:
+          MARKET_SESSION_DATE: ${{ inputs.market_session_date }}
+          DECISION_DATE: ${{ inputs.decision_date }}
+        run: |
+          python - <<'PY'
+          from datetime import datetime, time
+          import os
+          from zoneinfo import ZoneInfo
+
+          now = datetime.now(ZoneInfo("Asia/Shanghai"))
+          session = os.environ["MARKET_SESSION_DATE"]
+          decision = os.environ["DECISION_DATE"]
+          if now.date().isoformat() == session and now.timetz().replace(tzinfo=None) < time(23, 45):
+              raise SystemExit(
+                  "PREOPEN_PUBLIC_SOURCE_PUBLICATION_WINDOW_NOT_YET_MATURE: "
+                  "the frozen evidence window is already legal after 15:00, but the "
+                  "required 588000/159915 official ETF-share sources have not been "
+                  "operationally reliable that early. Re-run at/after 23:45 "
+                  "Asia/Shanghai on T, or on T+1 before 05:30. "
+                  f"session={session} decision={decision} now={now.isoformat()}"
+              )
+          PY
+
       - name: Install public data environment
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[data,dev]"
+          # Pin the provider adapter used by the frozen pre-open rail so a
+          # future AKShare release cannot silently alter endpoint behavior.
+          python -m pip install "akshare==1.18.94" "pandas==3.0.5" "pytest==8.4.2"
+          python -m pip install -e ".[data,dev]"
+          python -m pip check
 
       - name: Resolve exact durable checkpoint identities
         run: |

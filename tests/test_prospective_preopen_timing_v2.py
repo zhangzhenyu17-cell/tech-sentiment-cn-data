@@ -86,3 +86,9 @@ def test_preopen_workflow_is_manual_only() -> None:
     assert "market_session_date" in text
     assert "decision_date" in text
     assert "prospective-context-checkpoints-${{ inputs.market_session_date }}" in text
+    assert "PREOPEN_PUBLIC_SOURCE_PUBLICATION_WINDOW_NOT_YET_MATURE" in text
+    assert "time(23, 45)" in text
+    assert '"akshare==1.18.94"' in text
+    assert '"pandas==3.0.5"' in text
+    assert '"pytest==8.4.2"' in text
+    assert "python -m pip check" in text

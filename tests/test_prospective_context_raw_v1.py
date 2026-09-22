@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -19,6 +20,7 @@ from tech_sentiment.prospective_context_raw_v1 import (
     _validate_live_snapshot_exact,
     _validate_same_day_capital_preflight,
     _same_day_capital_checkpoint_preflight_ready,
+    _same_day_capital_preflight,
     capture_trading_dates,
     package_capture,
 )
@@ -152,6 +154,7 @@ def test_same_day_capital_preflight_fails_closed_when_588000_not_published() -> 
             diagnostics={"sse_588000_errors": [{"error": "NO_MATCHING_ETF_ROW"}]},
         )
     assert "SAME_DAY_PUBLIC_SOURCE_NOT_READY" in str(exc.value)
+    assert "readiness_class=NOT_YET_PUBLISHED" in str(exc.value)
 
 
 def test_same_day_capital_preflight_lists_all_missing_sources() -> None:
@@ -167,6 +170,128 @@ def test_same_day_capital_preflight_lists_all_missing_sources() -> None:
     assert "588000" in message
     assert "159915" in message
     assert "SSE_SZSE_TURNOVER" in message
+
+
+def test_preopen_publication_probe_retries_known_not_yet_published_state() -> None:
+    calls = {"sse": 0, "szse": 0, "turnover": 0}
+    sleeps: list[float] = []
+
+    def sse_fetcher(**_kwargs):
+        calls["sse"] += 1
+        if calls["sse"] == 1:
+            return SimpleNamespace(
+                data=pd.DataFrame(),
+                errors=pd.DataFrame(
+                    [{"date": "2026-09-22", "error": "NO_MATCHING_ETF_ROW"}]
+                ),
+            )
+        return SimpleNamespace(
+            data=pd.DataFrame(
+                {
+                    "date": ["2026-09-22"],
+                    "fund_code": ["588000"],
+                    "fund_shares": [9_000_000_000.0],
+                }
+            ),
+            errors=pd.DataFrame(columns=["date", "error"]),
+        )
+
+    def szse_fetcher(**_kwargs):
+        calls["szse"] += 1
+        if calls["szse"] == 1:
+            return SimpleNamespace(
+                data=pd.DataFrame(),
+                errors=pd.DataFrame(
+                    [
+                        {
+                            "chunk_start": "2026-09-22",
+                            "chunk_end": "2026-09-22",
+                            "error": "RuntimeError: SZSE ETF source returned no rows",
+                        }
+                    ]
+                ),
+            )
+        return SimpleNamespace(
+            data=pd.DataFrame(
+                {
+                    "date": ["2026-09-22"],
+                    "fund_code": ["159915"],
+                    "fund_shares": [7_000_000_000.0],
+                }
+            ),
+            errors=pd.DataFrame(columns=["chunk_start", "chunk_end", "error"]),
+        )
+
+    def turnover_fetcher(**_kwargs):
+        calls["turnover"] += 1
+        return SimpleNamespace(
+            combined=pd.DataFrame(
+                {
+                    "date": ["2026-09-22"],
+                    "amount": [1.2e12],
+                }
+            ),
+            errors=pd.DataFrame(columns=["date", "exchange", "error"]),
+        )
+
+    _same_day_capital_preflight(
+        operation_date="2026-09-22",
+        publication_retry_attempts=2,
+        publication_retry_backoff_seconds=3.0,
+        sleeper=sleeps.append,
+        sse_history_fetcher=sse_fetcher,
+        szse_history_fetcher=szse_fetcher,
+        turnover_history_fetcher=turnover_fetcher,
+    )
+
+    assert calls == {"sse": 2, "szse": 2, "turnover": 2}
+    assert sleeps == [3.0]
+
+
+def test_preopen_publication_probe_does_not_retry_schema_or_source_failure() -> None:
+    calls = {"sse": 0}
+    sleeps: list[float] = []
+
+    def sse_fetcher(**_kwargs):
+        calls["sse"] += 1
+        return SimpleNamespace(
+            data=pd.DataFrame(),
+            errors=pd.DataFrame(
+                [{"date": "2026-09-22", "error": "ValueError: schema drift"}]
+            ),
+        )
+
+    def szse_fetcher(**_kwargs):
+        return SimpleNamespace(
+            data=pd.DataFrame(
+                {
+                    "date": ["2026-09-22"],
+                    "fund_code": ["159915"],
+                    "fund_shares": [7_000_000_000.0],
+                }
+            ),
+            errors=pd.DataFrame(columns=["chunk_start", "chunk_end", "error"]),
+        )
+
+    def turnover_fetcher(**_kwargs):
+        return SimpleNamespace(
+            combined=pd.DataFrame({"date": ["2026-09-22"], "amount": [1.2e12]}),
+            errors=pd.DataFrame(columns=["date", "exchange", "error"]),
+        )
+
+    with pytest.raises(ValueError, match="SOURCE_FAILURE_OR_INCOMPLETE"):
+        _same_day_capital_preflight(
+            operation_date="2026-09-22",
+            publication_retry_attempts=4,
+            publication_retry_backoff_seconds=3.0,
+            sleeper=sleeps.append,
+            sse_history_fetcher=sse_fetcher,
+            szse_history_fetcher=szse_fetcher,
+            turnover_history_fetcher=turnover_fetcher,
+        )
+
+    assert calls["sse"] == 1
+    assert sleeps == []
 
 
 def test_same_day_capital_preflight_passes_only_exact_operation_date_rows() -> None:
