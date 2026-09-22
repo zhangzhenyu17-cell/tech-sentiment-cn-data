@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import requests
@@ -262,6 +262,7 @@ def fetch_cninfo_announcements_direct(
     timeout: float = 30.0,
     sleep_seconds: float = 0.15,
     session: requests.Session | None = None,
+    progress_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> pd.DataFrame:
     """Fetch CNINFO announcements with exact orgId, exchange column and pagination.
 
@@ -287,6 +288,15 @@ def fetch_cninfo_announcements_direct(
     try:
         org_id = resolve_cninfo_org_id(code, timeout=min(timeout, 15.0), session=client)
         page = 1
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "event": "CNINFO_QUERY_START",
+                    "symbol": code,
+                    "start_date": str(start.date()),
+                    "end_date": str(end.date()),
+                }
+            )
         while True:
             body = {
                 "pageNum": str(page),
@@ -312,6 +322,17 @@ def fetch_cninfo_announcements_direct(
                 data=body,
             )
             announcements, has_more = _announcement_page(payload)
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "event": "CNINFO_QUERY_PAGE",
+                        "symbol": code,
+                        "page": page,
+                        "rows": len(announcements),
+                        "accumulated_rows": len(rows),
+                        "has_more": bool(has_more),
+                    }
+                )
             for item in announcements:
                 sec_code = "".join(
                     ch for ch in str(item.get("secCode") or code) if ch.isdigit()
@@ -379,6 +400,15 @@ def fetch_cninfo_announcements_direct(
         if owned:
             client.close()
 
+    if progress_callback is not None:
+        progress_callback(
+            {
+                "event": "CNINFO_QUERY_COMPLETE",
+                "symbol": code,
+                "pages": page,
+                "rows": len(rows),
+            }
+        )
     if not rows:
         return pd.DataFrame(columns=columns)
     return (
