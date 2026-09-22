@@ -1,0 +1,33 @@
+{
+  "schema_version": "prospective-daily-automation-v1",
+  "authorized_on": "2026-09-22",
+  "authorization_scope": "FROZEN_PROSPECTIVE_DAILY_OPERATIONS_ONLY",
+  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "automatic_workflow_allowlist": {
+    "prospective-public-daily-orchestrator-v1.yml": {
+      "triggers": [
+        "schedule"
+      ],
+      "cron_utc": "55 15 * * *",
+      "intended_time_asia_shanghai": "23:55",
+      "necessity": "Dispatch exact public market bundle fallback and exact outcome-blind pre-open public raw capture for the next prospective trading-day cycle."
+    }
+  },
+  "target_workflows": [
+    "publish-market-bundle.yml",
+    "prospective-context-raw-preopen-v2.yml"
+  ],
+  "safety": {
+    "trading_calendar_required": true,
+    "non_trading_day_noop": true,
+    "exact_dated_release_required": true,
+    "rolling_latest_substitution_allowed": false,
+    "historical_backfill_allowed": false,
+    "private_model_material_allowed": false,
+    "private_evidence_allowed": false,
+    "forward_outcome_read_allowed": false,
+    "research_result_allowed": false,
+    "evidence_qualification_changed": false,
+    "trading_authority_changed": false
+  }
+}
