@@ -148,8 +148,10 @@ def materialize_extended_filing_facts(
     warmup_years: int = 2,
     checkpoint_source_commit: str | None = None,
     legacy_checkpoint_dir: str | Path | None = None,
+    legacy_query_checkpoint_source_commits: Iterable[str] | None = None,
     progress_checkpoint_source_commit: str | None = None,
     hard_failure_circuit_breaker_threshold: int = 3,
+    max_financial_documents_per_symbol: int | None = None,
 ) -> ExtendedFilingMaterializationResult:
     """Materialize direct official-filing raw PIT primitives only.
 
@@ -162,6 +164,11 @@ def materialize_extended_filing_facts(
         raise ValueError("warmup_years must be >= 1")
     if hard_failure_circuit_breaker_threshold < 1:
         raise ValueError("hard_failure_circuit_breaker_threshold must be >= 1")
+    if (
+        max_financial_documents_per_symbol is not None
+        and max_financial_documents_per_symbol < 1
+    ):
+        raise ValueError("max_financial_documents_per_symbol must be >= 1")
 
     target_start = pd.Timestamp(target_start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
@@ -178,6 +185,13 @@ def materialize_extended_filing_facts(
     )
 
     query_checkpoint_commit = str(checkpoint_source_commit or source_commit)
+    legacy_query_commits: list[str] = []
+    for value in (
+        [query_checkpoint_commit]
+        + [str(item) for item in (legacy_query_checkpoint_source_commits or [])]
+    ):
+        if value and value not in legacy_query_commits:
+            legacy_query_commits.append(value)
     progress_commit = str(progress_checkpoint_source_commit or source_commit)
     unique_symbols = sorted({str(value).zfill(6) for value in symbols})
     if not unique_symbols:
@@ -189,6 +203,7 @@ def materialize_extended_filing_facts(
 
     resumed_symbol_queries = 0
     reused_legacy_symbol_queries = 0
+    legacy_query_hits_by_source_commit: Counter[str] = Counter()
     executed_symbol_queries = 0
     resumed_documents = 0
     executed_documents = 0
@@ -206,23 +221,31 @@ def materialize_extended_filing_facts(
             query_start=str(query_start.date()),
             query_end=str(end.date()),
         )
-        legacy_query_identity = _symbol_query_identity(
-            source_commit=query_checkpoint_commit,
-            symbol=symbol,
-            query_start=str(query_start.date()),
-            query_end=str(end.date()),
-        )
-
         loaded_query = store.load(progress_query_identity)
         if loaded_query is not None:
             raw = loaded_query.frames["announcements"]
             resumed_symbol_queries += 1
         else:
-            loaded_legacy_query = legacy_store.load(legacy_query_identity)
+            loaded_legacy_query = None
+            loaded_legacy_query_commit: str | None = None
+            for legacy_commit in legacy_query_commits:
+                legacy_query_identity = _symbol_query_identity(
+                    source_commit=legacy_commit,
+                    symbol=symbol,
+                    query_start=str(query_start.date()),
+                    query_end=str(end.date()),
+                )
+                candidate = legacy_store.load(legacy_query_identity)
+                if candidate is not None:
+                    loaded_legacy_query = candidate
+                    loaded_legacy_query_commit = legacy_commit
+                    break
             if loaded_legacy_query is not None:
                 raw = loaded_legacy_query.frames["announcements"]
                 resumed_symbol_queries += 1
                 reused_legacy_symbol_queries += 1
+                if loaded_legacy_query_commit is not None:
+                    legacy_query_hits_by_source_commit[loaded_legacy_query_commit] += 1
             else:
                 try:
                     raw = fetch_cninfo_announcements_direct(
@@ -295,6 +318,7 @@ def materialize_extended_filing_facts(
         soft_data_insufficient_documents = 0
         symbol_failed = False
 
+        eligible_documents_seen = 0
         for _, announcement in candidates.iterrows():
             publication = announcement["公告时间"]
             try:
@@ -306,7 +330,13 @@ def materialize_extended_filing_facts(
                 continue
             if available_date > end:
                 continue
+            if (
+                max_financial_documents_per_symbol is not None
+                and eligible_documents_seen >= max_financial_documents_per_symbol
+            ):
+                break
 
+            eligible_documents_seen += 1
             financial_documents += 1
             document_id = "UNKNOWN"
             try:
@@ -495,7 +525,12 @@ def materialize_extended_filing_facts(
         "end_date": str(end.date()),
         "warmup_years": int(warmup_years),
         "query_checkpoint_source_commit": query_checkpoint_commit,
+        "legacy_query_checkpoint_source_commits": legacy_query_commits,
+        "legacy_query_hits_by_source_commit": dict(
+            sorted(legacy_query_hits_by_source_commit.items())
+        ),
         "progress_checkpoint_source_commit": progress_commit,
+        "max_financial_documents_per_symbol": max_financial_documents_per_symbol,
         "symbols": len(unique_symbols),
         "filing_fact_rows": int(len(facts)),
         "observed_fact_types": observed_fact_types,
