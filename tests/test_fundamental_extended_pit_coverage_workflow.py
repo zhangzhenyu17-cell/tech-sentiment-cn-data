@@ -94,3 +94,18 @@ def test_workflow_addresses_legacy_v4a_double_filings_layout() -> None:
     assert "test -d .cache/fundamental_extended_pit_legacy/filings" in text
     assert "find .cache/fundamental_extended_pit_preflight_legacy/filings" in text
     assert "find .cache/fundamental_extended_pit_legacy/filings" in text
+
+
+def test_shared_input_artifact_layout_is_gated_before_matrix_fanout() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "shared_inputs_gate:" in text
+    assert "needs: shared_inputs_gate" in text
+    assert "Validate downloaded shared-input artifact layout" in text
+    assert "stage/shared-download/shared/pit_symbol_scope/capital_pit_symbols.csv" in text
+    assert "stage/shared-download/shared/pit_symbol_scope/capital_pit_symbol_scope.json" in text
+    assert "stage/shared-download/shared/calendar/trading_calendar.csv" in text
+    assert "stage/shared-download/shared/calendar/trading_calendar_manifest.json" in text
+    assert "stage/shared-download/preflight/output/extended_filing_summary.json" in text
+    assert "stage/shared-download/stage/shared/" not in text
+    assert "needs: [preflight, shared_inputs_gate, materialize]" in text
+    assert "needs.shared_inputs_gate.result == 'success'" in text
