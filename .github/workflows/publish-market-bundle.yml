@@ -2,6 +2,11 @@ name: publish-market-bundle
 
 on:
   workflow_dispatch:
+    inputs:
+      target_date:
+        description: Optional exact latest closed A-share trading session (YYYY-MM-DD); blank preserves ordinary current-day behavior
+        required: false
+        type: string
   schedule:
     - cron: "30 9 * * 1-5"
 
@@ -33,13 +38,51 @@ jobs:
           pytest -q
 
       - name: Resolve market-data window
+        env:
+          REQUESTED_TARGET_DATE: ${{ inputs.target_date }}
         run: |
           python - <<'PY' >> "$GITHUB_ENV"
-          from datetime import datetime, timedelta
+          from datetime import datetime, time, timedelta
+          import os
           from zoneinfo import ZoneInfo
-          today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
-          print(f"START_DATE={today - timedelta(days=500):%Y-%m-%d}")
-          print(f"END_DATE={today:%Y-%m-%d}")
+
+          zone = ZoneInfo("Asia/Shanghai")
+          now = datetime.now(zone)
+          today = now.date()
+          requested = os.environ.get("REQUESTED_TARGET_DATE", "").strip()
+
+          if requested:
+              import akshare as ak
+              import pandas as pd
+
+              target = datetime.strptime(requested, "%Y-%m-%d").date()
+              raw = ak.tool_trade_date_hist_sina()
+              if raw is None or len(raw) == 0:
+                  raise SystemExit("A_SHARE_TRADING_CALENDAR_UNAVAILABLE")
+              col = "trade_date" if "trade_date" in raw.columns else raw.columns[0]
+              trading_days = (
+                  pd.to_datetime(raw[col], errors="raise")
+                  .dt.date
+                  .drop_duplicates()
+                  .sort_values()
+                  .tolist()
+              )
+              closed = [
+                  value
+                  for value in trading_days
+                  if datetime.combine(value, time(15, 0), tzinfo=zone) <= now
+              ]
+              if not closed or target != closed[-1]:
+                  raise SystemExit(
+                      "EXACT_BUNDLE_TARGET_MUST_BE_LATEST_CLOSED_A_SHARE_SESSION: "
+                      f"requested={target} latest_closed={closed[-1] if closed else None}"
+                  )
+          else:
+              target = today
+
+          print(f"START_DATE={target - timedelta(days=500):%Y-%m-%d}")
+          print(f"END_DATE={target:%Y-%m-%d}")
+          print(f"REQUESTED_EXACT_TARGET_DATE={requested}")
           PY
 
       - name: Download point-in-time STAR 50 market data

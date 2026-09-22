@@ -141,6 +141,14 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert "--ref main" in text
     assert "akshare==1.18.94" in text
     assert "pandas==3.0.5" in text
+    assert '-f target_date="$MARKET_SESSION_DATE"' in text
+
+    publisher = (
+        root / ".github/workflows/publish-market-bundle.yml"
+    ).read_text(encoding="utf-8")
+    assert "target_date:" in publisher
+    assert "EXACT_BUNDLE_TARGET_MUST_BE_LATEST_CLOSED_A_SHARE_SESSION" in publisher
+    assert "REQUESTED_EXACT_TARGET_DATE" in publisher
     assert "session_close = datetime.combine" in text
     assert "freeze_deadline = datetime.combine" in text
     assert "ACTIVE_SESSION_TO_DECISION_PREOPEN_WINDOW" in text

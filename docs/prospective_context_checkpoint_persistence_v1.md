@@ -136,7 +136,9 @@ Its schedule is `55 15 * * *` UTC (approximately 23:55 Asia/Shanghai). It:
 1. resolves the exact A-share trading-day pair from the live trading calendar;
 2. preserves the active session-close → next-trading-day 05:30 window across intervening weekends or exchange holidays, and no-ops only when the current time is outside that exact trading-calendar window;
 3. requests the existing `publish-market-bundle.yml` only when the exact
-   `market-bundle-T` immutable release is missing;
+   `market-bundle-T` immutable release is missing, passing T through the publisher's
+   guarded `target_date` input; that input accepts only the latest already-closed
+   A-share trading session, so it cannot become an arbitrary historical backfill path;
 4. dispatches the existing pre-open public raw workflow only when the exact
    `prospective-context-raw-preopen-v2-T-for-T+1` release is absent and no
    capture is already active.
