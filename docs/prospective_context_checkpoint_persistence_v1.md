@@ -134,7 +134,7 @@ allowlisted under `reference/prospective_daily_automation_v1.json`.
 Its schedule is `55 15 * * *` UTC (approximately 23:55 Asia/Shanghai). It:
 
 1. resolves the exact A-share trading-day pair from the live trading calendar;
-2. no-ops on non-trading days or outside the eligible pre-open automation window;
+2. preserves the active session-close → next-trading-day 05:30 window across intervening weekends or exchange holidays, and no-ops only when the current time is outside that exact trading-calendar window;
 3. requests the existing `publish-market-bundle.yml` only when the exact
    `market-bundle-T` immutable release is missing;
 4. dispatches the existing pre-open public raw workflow only when the exact
@@ -144,7 +144,7 @@ Its schedule is `55 15 * * *` UTC (approximately 23:55 Asia/Shanghai). It:
 The wrapper does not materialize model outputs or evidence. It cannot substitute
 rolling latest, stale rows, prior dates, interpolation, historical replay, or
 backfill. Provider publication readiness, PIT validation, and the 05:30 freeze
-remain enforced by the target workflow itself.
+remain enforced by the target workflow itself. This also prevents a delayed 23:55 scheduler invocation that crosses midnight into a weekend/holiday from silently dropping the prior trading session.
 
 ## Failure behavior
 

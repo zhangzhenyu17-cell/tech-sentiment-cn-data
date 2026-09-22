@@ -19,7 +19,6 @@
   ],
   "safety": {
     "trading_calendar_required": true,
-    "non_trading_day_noop": true,
     "exact_dated_release_required": true,
     "rolling_latest_substitution_allowed": false,
     "historical_backfill_allowed": false,
@@ -28,6 +27,8 @@
     "forward_outcome_read_allowed": false,
     "research_result_allowed": false,
     "evidence_qualification_changed": false,
-    "trading_authority_changed": false
+    "trading_authority_changed": false,
+    "non_trading_day_outside_active_window_noop": true,
+    "intervening_non_trading_days_preserve_active_window": true
   }
 }
