@@ -89,6 +89,41 @@ Examples:
 
 The final capture still requires exact operation-date rows and the frozen trailing-60 / 80% ETF coverage rule.
 
+## Pre-open V2 provider-publication readiness
+
+The evidence-eligible capture window opens after the market session closes at 15:00
+Asia/Shanghai and closes at the next trading day's 05:30 freeze. That eligibility
+window does **not** imply that every official upstream source has published the
+session's final row immediately after 15:00.
+
+Operational evidence observed on the first two capture days:
+
+- run `35622176775` started at approximately 23:55 Asia/Shanghai for
+  2026-09-21 and successfully obtained the required public capital inputs;
+- run `35707188405` started at approximately 16:52 Asia/Shanghai for
+  2026-09-22 and failed closed because SSE `588000` returned
+  `NO_MATCHING_ETF_ROW` and SZSE `159915` returned no rows, while the
+  bilateral turnover rail was already present.
+
+The manual pre-open workflow therefore uses an **operational** same-session
+not-before guard of 23:45 Asia/Shanghai. This does not narrow or expand evidence
+eligibility: it only prevents a known-premature provider probe and wasted runner
+work. A run on the decision date before 05:30 remains allowed.
+
+The capital freshness preflight also distinguishes:
+
+- `NOT_YET_PUBLISHED`: only the known exact-date ETF rows are absent through
+  the expected empty/no-row provider responses. Pre-open V2 retries this state
+  four probes with short bounded backoff;
+- `SOURCE_FAILURE_OR_INCOMPLETE`: schema, transport, or otherwise unexpected
+  incompleteness. This class fails closed immediately after each provider's own
+  bounded transport retries.
+
+Neither class permits stale carry-forward, alternate dates, interpolation,
+forward-fill, historical replay, or evidence promotion. If
+`NOT_YET_PUBLISHED` still exhausts after 23:45, the correct action is a later
+manual retry before 05:30, not a fallback to older data.
+
 ## Failure behavior
 
 Normal capture failure:
