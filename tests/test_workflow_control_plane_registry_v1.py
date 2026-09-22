@@ -88,3 +88,30 @@ def test_control_plane_registry_cannot_grant_model_or_trading_authority() -> Non
     assert "MODEL_FORMULA" in payload["not_authoritative_for"]
     assert "EVIDENCE_QUALIFICATION" in payload["not_authoritative_for"]
     assert "TRADING_AUTHORITY" in payload["not_authoritative_for"]
+
+
+def test_scheduled_public_workflows_serialize_runs() -> None:
+    payload = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    for row in payload["workflows"]:
+        if "schedule" not in row["triggers"]:
+            continue
+        text = _workflow_text(row["file"])
+        assert "\nconcurrency:\n" in text, row["file"]
+        assert "cancel-in-progress: false" in text, row["file"]
+
+
+def test_public_ci_cancels_superseded_runs() -> None:
+    text = _workflow_text("tests.yml")
+    assert "\nconcurrency:\n" in text
+    assert "cancel-in-progress: true" in text
+
+
+def test_failure_capture_covers_public_automatic_and_prospective_leaf_rails() -> None:
+    text = _workflow_text("engineering-failure-capture.yml")
+    for name in (
+        "publish-market-bundle",
+        "prospective-public-daily-orchestrator-v1",
+        "prospective-context-raw-preopen-v2",
+        "tests",
+    ):
+        assert f'- "{name}"' in text, name
