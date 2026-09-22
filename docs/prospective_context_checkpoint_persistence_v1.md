@@ -131,7 +131,7 @@ The frozen `prospective-context-raw-preopen-v2` workflow remains a manual
 `.github/workflows/prospective-public-daily-orchestrator-v1.yml`, is explicitly
 allowlisted under `reference/prospective_daily_automation_v1.json`.
 
-Its schedule is `55 15 * * *` UTC (approximately 23:55 Asia/Shanghai). It:
+Its bounded retry schedule is `55 15-17 * * *` UTC (approximately 23:55, 00:55, and 01:55 Asia/Shanghai). Exact releases and active-run checks make later attempts idempotent no-ops after success. It:
 
 1. resolves the exact A-share trading-day pair from the live trading calendar;
 2. preserves the active session-close → next-trading-day 05:30 window across intervening weekends or exchange holidays, and no-ops only when the current time is outside that exact trading-calendar window;
