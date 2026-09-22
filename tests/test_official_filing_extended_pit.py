@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+import pandas as pd
+import pytest
+
+from tech_sentiment.official_filing_extended_pit import (
+    EXTENDED_FILING_PARSER_VERSION,
+    build_extended_filing_fact_rows,
+    extract_extended_filing_facts,
+)
+
+
+def _sample_text() -> str:
+    return """
+    2025年半年度报告
+    合并资产负债表 单位：人民币万元
+    货币资金 12,345 11,111
+    短期借款 2,000 1,500
+    一年内到期的非流动负债 300 200
+    长期借款 4,000 3,500
+    应付债券 500 450
+    租赁负债 120 100
+
+    合并利润表 单位：人民币万元
+    研发费用 888 777
+
+    合并现金流量表 单位：人民币万元
+    购建固定资产、无形资产和其他长期资产支付的现金 1,234 1,100
+    期末现金及现金等价物余额 9,876 8,765
+    """
+
+
+def test_extract_extended_pit_primitives_requires_explicit_units_and_keeps_debt_raw() -> None:
+    facts = extract_extended_filing_facts(_sample_text())
+
+    assert facts["MONETARY_FUNDS"] == pytest.approx(123_450_000.0)
+    assert facts["CASH_AND_CASH_EQUIVALENTS_END"] == pytest.approx(98_760_000.0)
+    assert facts["CAPEX_CASH_PAID"] == pytest.approx(12_340_000.0)
+    assert facts["R_AND_D_EXPENSE"] == pytest.approx(8_880_000.0)
+    assert facts["SHORT_TERM_BORROWINGS"] == pytest.approx(20_000_000.0)
+    assert facts["CURRENT_PORTION_NON_CURRENT_LIABILITIES"] == pytest.approx(
+        3_000_000.0
+    )
+    assert facts["LONG_TERM_BORROWINGS"] == pytest.approx(40_000_000.0)
+    assert facts["BONDS_PAYABLE"] == pytest.approx(5_000_000.0)
+    assert facts["LEASE_LIABILITIES"] == pytest.approx(1_200_000.0)
+
+    assert "DEBT" not in facts
+    assert "CASH" not in facts
+
+
+def test_extended_pit_primitives_fail_closed_without_explicit_table_unit() -> None:
+    with pytest.raises(ValueError, match="explicit table unit"):
+        extract_extended_filing_facts(
+            "2025年半年度报告\n货币资金 12345 11111\n短期借款 2000 1500"
+        )
+
+
+def test_build_extended_rows_preserves_document_provenance() -> None:
+    rows = build_extended_filing_fact_rows(
+        entity_id="688012.SH",
+        title="2025年半年度报告",
+        evidence_available_date="2025-08-30",
+        publication_timestamp="2025-08-29 18:30:00+08:00",
+        source_identity="CNINFO_ANNOUNCEMENT_ARCHIVE",
+        provider="CNINFO",
+        document_id="1210000000",
+        revision_id="DOCUMENT:1210000000:SHA256:" + "a" * 64,
+        document_url="https://static.cninfo.com.cn/finalpage/2025-08-29/1210000000.PDF",
+        document_sha256="a" * 64,
+        text=_sample_text(),
+    )
+
+    assert set(rows["fact_type"]) == {
+        "MONETARY_FUNDS",
+        "CASH_AND_CASH_EQUIVALENTS_END",
+        "CAPEX_CASH_PAID",
+        "R_AND_D_EXPENSE",
+        "SHORT_TERM_BORROWINGS",
+        "CURRENT_PORTION_NON_CURRENT_LIABILITIES",
+        "LONG_TERM_BORROWINGS",
+        "BONDS_PAYABLE",
+        "LEASE_LIABILITIES",
+    }
+    assert set(rows["unit"]) == {"CNY"}
+    assert set(rows["parser_version"]) == {EXTENDED_FILING_PARSER_VERSION}
+    assert set(rows["document_id"]) == {"1210000000"}
+    assert set(rows["document_sha256"]) == {"a" * 64}
+    assert set(pd.to_datetime(rows["period_end"]).dt.strftime("%Y-%m-%d")) == {
+        "2025-06-30"
+    }
