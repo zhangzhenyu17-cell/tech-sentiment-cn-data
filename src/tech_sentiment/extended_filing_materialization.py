@@ -229,6 +229,21 @@ def materialize_extended_filing_facts(
                         symbol=symbol,
                         start_date=query_start.strftime("%Y%m%d"),
                         end_date=end.strftime("%Y%m%d"),
+                        progress_callback=lambda payload, entity=entity: print(
+                            json.dumps(
+                                {
+                                    **payload,
+                                    "entity_id": entity,
+                                    "elapsed_seconds": round(
+                                        max(time.monotonic() - started_at, 0.001),
+                                        1,
+                                    ),
+                                },
+                                ensure_ascii=False,
+                                sort_keys=True,
+                            ),
+                            flush=True,
+                        ),
                     )
                     store.save(
                         progress_query_identity,
@@ -290,12 +305,36 @@ def materialize_extended_filing_facts(
                     continue
 
         candidates = _select_primary_numeric_filing_candidates(raw)
+        print(
+            json.dumps(
+                {
+                    "event": "EXTENDED_PIT_SYMBOL_PLAN",
+                    "entity_id": entity,
+                    "candidate_documents": int(len(candidates)),
+                    "query_source": (
+                        "LEGACY_CHECKPOINT"
+                        if loaded_query is None and loaded_legacy_query is not None
+                        else "CURRENT_CHECKPOINT"
+                        if loaded_query is not None
+                        else "LIVE_PROVIDER"
+                    ),
+                    "elapsed_seconds": round(
+                        max(time.monotonic() - started_at, 0.001),
+                        1,
+                    ),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            flush=True,
+        )
         financial_documents = 0
         parsed_documents = 0
         soft_data_insufficient_documents = 0
         symbol_failed = False
 
-        for _, announcement in candidates.iterrows():
+        candidate_total = int(len(candidates))
+        for candidate_index, (_, announcement) in enumerate(candidates.iterrows(), start=1):
             publication = announcement["公告时间"]
             try:
                 available_date, _ = _market_available_date(
@@ -322,6 +361,24 @@ def materialize_extended_filing_facts(
                     )
 
                 document_id, _ = _parse_document_identity(announcement["公告链接"])
+                print(
+                    json.dumps(
+                        {
+                            "event": "EXTENDED_PIT_DOCUMENT_START",
+                            "entity_id": entity,
+                            "document_id": document_id,
+                            "document_index": candidate_index,
+                            "candidate_documents": candidate_total,
+                            "elapsed_seconds": round(
+                                max(time.monotonic() - started_at, 0.001),
+                                1,
+                            ),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
                 document_identity = _extended_document_identity(
                     source_commit=progress_commit,
                     symbol=symbol,
@@ -372,6 +429,25 @@ def materialize_extended_filing_facts(
                     )
                     executed_documents += 1
 
+                print(
+                    json.dumps(
+                        {
+                            "event": "EXTENDED_PIT_DOCUMENT_COMPLETE",
+                            "entity_id": entity,
+                            "document_id": document_id,
+                            "document_index": candidate_index,
+                            "candidate_documents": candidate_total,
+                            "resumed": loaded is not None,
+                            "elapsed_seconds": round(
+                                max(time.monotonic() - started_at, 0.001),
+                                1,
+                            ),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
                 if len(facts):
                     facts = facts.copy()
                     facts["filing_title"] = str(announcement["公告标题"])
