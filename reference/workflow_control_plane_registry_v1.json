@@ -1,0 +1,346 @@
+{
+  "schema_version": "workflow-control-plane-registry-v1",
+  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "scope": "ENGINEERING_AND_OPERATIONS_CONTROL_PLANE_ONLY",
+  "authoritative_for": "WORKFLOW_TRIGGER_PERMISSION_AND_LIFECYCLE_STATE",
+  "not_authoritative_for": [
+    "MODEL_FORMULA",
+    "MODEL_THRESHOLD",
+    "UNIVERSE",
+    "EVIDENCE_QUALIFICATION",
+    "PRODUCTION_PERMISSION",
+    "PORTFOLIO_POLICY",
+    "TRADING_AUTHORITY"
+  ],
+  "invariants": {
+    "unregistered_workflow_allowed": false,
+    "trigger_drift_allowed": false,
+    "permission_drift_allowed": false,
+    "legacy_reactivation_allowed": false,
+    "automatic_research_trigger_expansion_allowed": false,
+    "model_change_allowed": false,
+    "threshold_change_allowed": false,
+    "universe_change_allowed": false,
+    "evidence_qualification_change_allowed": false,
+    "trading_authority_change_allowed": false
+  },
+  "active_automated_allowlist": [
+    "engineering-failure-capture.yml",
+    "prospective-public-daily-orchestrator-v1.yml",
+    "publish-market-bundle.yml",
+    "tests.yml"
+  ],
+  "prospective_active_rail_registry": "reference/prospective_active_rail_v2.json",
+  "workflows": [
+    {
+      "file": "bse50-source-preflight.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: read"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "engineering-failure-capture.yml",
+      "triggers": [
+        "workflow_run"
+      ],
+      "crons": [],
+      "permissions": [
+        "actions: read",
+        "contents: read",
+        "issues: write"
+      ],
+      "governance_class": "ACTIVE_AUTOMATED_GOVERNANCE"
+    },
+    {
+      "file": "fundamental-extended-pit-coverage.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: read"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "ipo-aftermarket-2-public-source-probe-v1.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: read"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "ipo-aftermarket-public-v1.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "prospective-context-raw-preopen-v2.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_DISPATCHED_LEAF"
+    },
+    {
+      "file": "prospective-context-raw-v1.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: read"
+      ],
+      "governance_class": "LEGACY_FAIL_CLOSED"
+    },
+    {
+      "file": "prospective-public-daily-orchestrator-v1.yml",
+      "triggers": [
+        "workflow_dispatch",
+        "schedule"
+      ],
+      "crons": [
+        "55 15-17 * * *"
+      ],
+      "permissions": [
+        "actions: write",
+        "contents: read"
+      ],
+      "governance_class": "ACTIVE_AUTOMATED_ORCHESTRATOR"
+    },
+    {
+      "file": "publish-market-bundle.yml",
+      "triggers": [
+        "workflow_dispatch",
+        "schedule"
+      ],
+      "crons": [
+        "30 9 * * 1-5"
+      ],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_AUTOMATED_DATA_PUBLICATION"
+    },
+    {
+      "file": "qualify-931152-oos-inputs.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "actions: read",
+        "contents: read"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "qualify-capital-inputs.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: read"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "tests.yml",
+      "triggers": [
+        "push",
+        "pull_request"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: read"
+      ],
+      "governance_class": "ACTIVE_ENGINEERING_CI"
+    },
+    {
+      "file": "v4a-capital.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4a-derived.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "actions: read",
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4a-financing.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4a-fundamental-earnings.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4a-issuer-aggregate.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4a-issuer-source.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4a-issuer-szse-migration.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4a-policy.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4a-prices.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4a-shared-inputs.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4c03-01-phase-a-public-universe.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4c03-02-phase-a-warmup.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4c03-04-phase-a-pit-evidence.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "ACTIVE_MANUAL_ONLY"
+    },
+    {
+      "file": "v4c03-04a-phase-a-pit-evidence-recovery.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "actions: read",
+        "contents: write"
+      ],
+      "governance_class": "RECOVERY_MANUAL_ONLY"
+    },
+    {
+      "file": "v4c03-04b-phase-a-turnover-repair.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "governance_class": "RECOVERY_MANUAL_ONLY"
+    }
+  ]
+}
