@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import tarfile
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -196,6 +197,35 @@ def _require_operation_date_row(
         raise ValueError(f"{label} lacks exact operation-date observation")
 
 
+def _classify_same_day_publication_readiness(
+    *,
+    missing: list[str],
+    diagnostics: dict[str, Any],
+) -> str:
+    """Separate ordinary publication lag from transport/schema failures.
+
+    This classification is diagnostic only. It never permits stale substitution,
+    forward-fill, interpolation, alternate dates, or evidence qualification.
+    """
+    detail = json.dumps(
+        diagnostics,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    expected_unpublished = {
+        "588000": "NO_MATCHING_ETF_ROW",
+        "159915": "SZSE ETF source returned no rows",
+    }
+    if missing and all(
+        source in expected_unpublished
+        and expected_unpublished[source] in detail
+        for source in missing
+    ):
+        return "NOT_YET_PUBLISHED"
+    return "SOURCE_FAILURE_OR_INCOMPLETE"
+
+
 def _validate_same_day_capital_preflight(
     *,
     operation_date: str,
@@ -235,14 +265,20 @@ def _validate_same_day_capital_preflight(
         missing.append("SSE_SZSE_TURNOVER")
 
     if missing:
+        diagnostic_payload = diagnostics or {}
         detail = json.dumps(
-            diagnostics or {},
+            diagnostic_payload,
             ensure_ascii=False,
             sort_keys=True,
             default=str,
         )
+        readiness_class = _classify_same_day_publication_readiness(
+            missing=missing,
+            diagnostics=diagnostic_payload,
+        )
         raise ValueError(
             "SAME_DAY_PUBLIC_SOURCE_NOT_READY: "
+            f"readiness_class={readiness_class} "
             f"operation_date={operation_date} missing={missing}; diagnostics={detail}"
         )
 
@@ -251,38 +287,67 @@ def _same_day_capital_preflight(
     *,
     operation_date: str,
     client: Any | None = None,
+    publication_retry_attempts: int = 1,
+    publication_retry_backoff_seconds: float = 0.0,
+    sleeper: Any = time.sleep,
+    sse_history_fetcher: Any = fetch_sse_etf_share_history,
+    szse_history_fetcher: Any = fetch_szse_etf_share_history,
+    turnover_history_fetcher: Any = fetch_sse_szse_a_share_turnover_history,
 ) -> None:
+    if publication_retry_attempts < 1:
+        raise ValueError("publication_retry_attempts must be >= 1")
+    if publication_retry_backoff_seconds < 0:
+        raise ValueError("publication_retry_backoff_seconds must be >= 0")
+
     target_dates = pd.DatetimeIndex([pd.Timestamp(operation_date).normalize()])
+    last_error: ValueError | None = None
 
-    sse = fetch_sse_etf_share_history(
-        trading_dates=target_dates,
-        fund_codes=["588000"],
-        sleep_seconds=0,
-    )
-    szse = fetch_szse_etf_share_history(
-        start_date=operation_date,
-        end_date=operation_date,
-        trading_dates=target_dates,
-        fund_codes=["159915"],
-        sleep_seconds=0,
-        client=client,
-    )
-    turnover = fetch_sse_szse_a_share_turnover_history(
-        trading_dates=target_dates,
-        sleep_seconds=0,
-    )
+    for attempt in range(1, publication_retry_attempts + 1):
+        sse = sse_history_fetcher(
+            trading_dates=target_dates,
+            fund_codes=["588000"],
+            sleep_seconds=0,
+        )
+        szse = szse_history_fetcher(
+            start_date=operation_date,
+            end_date=operation_date,
+            trading_dates=target_dates,
+            fund_codes=["159915"],
+            sleep_seconds=0,
+            client=client,
+        )
+        turnover = turnover_history_fetcher(
+            trading_dates=target_dates,
+            sleep_seconds=0,
+        )
 
-    _validate_same_day_capital_preflight(
-        operation_date=operation_date,
-        sse_etf_data=sse.data,
-        szse_etf_data=szse.data,
-        turnover_data=turnover.combined,
-        diagnostics={
-            "sse_588000_errors": sse.errors.to_dict("records"),
-            "szse_159915_errors": szse.errors.to_dict("records"),
-            "turnover_errors": turnover.errors.to_dict("records"),
-        },
-    )
+        try:
+            _validate_same_day_capital_preflight(
+                operation_date=operation_date,
+                sse_etf_data=sse.data,
+                szse_etf_data=szse.data,
+                turnover_data=turnover.combined,
+                diagnostics={
+                    "sse_588000_errors": sse.errors.to_dict("records"),
+                    "szse_159915_errors": szse.errors.to_dict("records"),
+                    "turnover_errors": turnover.errors.to_dict("records"),
+                    "publication_probe_attempt": attempt,
+                    "publication_probe_attempts": publication_retry_attempts,
+                },
+            )
+            return
+        except ValueError as exc:
+            last_error = exc
+            if "readiness_class=NOT_YET_PUBLISHED" not in str(exc):
+                raise
+            if attempt >= publication_retry_attempts:
+                break
+            sleeper(publication_retry_backoff_seconds)
+
+    assert last_error is not None
+    raise ValueError(
+        f"{last_error}; publication_probes_exhausted={publication_retry_attempts}"
+    ) from last_error
 
 
 def _same_day_capital_checkpoint_preflight_ready(
@@ -448,6 +513,12 @@ def materialize_public_raw_capture(
         _same_day_capital_preflight(
             operation_date=operation_date,
             client=client,
+            publication_retry_attempts=(
+                4 if timing_mode == "PREOPEN_DUAL_CLOCK_V2" else 1
+            ),
+            publication_retry_backoff_seconds=(
+                20.0 if timing_mode == "PREOPEN_DUAL_CLOCK_V2" else 0.0
+            ),
         )
 
     universe_receipts: dict[str, Any] = {}
