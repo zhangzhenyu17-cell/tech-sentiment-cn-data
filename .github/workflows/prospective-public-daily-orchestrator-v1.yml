@@ -1,0 +1,140 @@
+name: prospective-public-daily-orchestrator-v1
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "55 15 * * *"
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: prospective-public-daily-orchestrator-v1
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.16"
+          cache: pip
+
+      - name: Install exact trading-calendar environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "akshare==1.18.94" "pandas==3.0.5"
+
+      - name: Resolve exact prospective trading-day pair
+        id: pair
+        run: |
+          python - <<'PY'
+          from datetime import datetime, time
+          import os
+          from zoneinfo import ZoneInfo
+          import akshare as ak
+          import pandas as pd
+
+          zone = ZoneInfo("Asia/Shanghai")
+          now = datetime.now(zone)
+          raw = ak.tool_trade_date_hist_sina()
+          col = "trade_date" if "trade_date" in raw.columns else raw.columns[0]
+          dates = (
+              pd.to_datetime(raw[col], errors="raise")
+              .dt.normalize()
+              .drop_duplicates()
+              .sort_values()
+          )
+          strings = dates.dt.date.astype(str).tolist()
+          today = now.date().isoformat()
+          clock = now.timetz().replace(tzinfo=None)
+
+          should_run = False
+          session = ""
+          decision = ""
+          reason = "OUTSIDE_PREOPEN_AUTOMATION_WINDOW"
+
+          if time(15, 0) <= clock:
+              if today in strings:
+                  later = [value for value in strings if value > today]
+                  if later:
+                      session = today
+                      decision = later[0]
+                      should_run = True
+                      reason = "POST_CLOSE_SAME_SESSION"
+          elif clock <= time(5, 30):
+              if today in strings:
+                  earlier = [value for value in strings if value < today]
+                  if earlier:
+                      session = earlier[-1]
+                      decision = today
+                      should_run = True
+                      reason = "DECISION_DAY_PREOPEN_RECOVERY"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as h:
+              h.write(f"should_run={'true' if should_run else 'false'}\n")
+              h.write(f"market_session_date={session}\n")
+              h.write(f"decision_date={decision}\n")
+              h.write(f"reason={reason}\n")
+          print(
+              f"should_run={should_run} session={session} decision={decision} "
+              f"reason={reason} now={now.isoformat()}"
+          )
+          PY
+
+      - name: Ensure immutable market bundle is requested
+        if: steps.pair.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKET_SESSION_DATE: ${{ steps.pair.outputs.market_session_date }}
+        run: |
+          set -euo pipefail
+          TAG="market-bundle-$MARKET_SESSION_DATE"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Exact immutable market bundle already exists: $TAG"
+          else
+            echo "Exact immutable market bundle missing; dispatching existing publisher."
+            gh workflow run publish-market-bundle.yml --ref main
+          fi
+
+      - name: Dispatch exact pre-open public raw capture once
+        if: steps.pair.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKET_SESSION_DATE: ${{ steps.pair.outputs.market_session_date }}
+          DECISION_DATE: ${{ steps.pair.outputs.decision_date }}
+        run: |
+          set -euo pipefail
+          RAW_TAG="prospective-context-raw-preopen-v2-${MARKET_SESSION_DATE}-for-${DECISION_DATE}"
+          if gh release view "$RAW_TAG" >/dev/null 2>&1; then
+            echo "Exact immutable public raw release already exists: $RAW_TAG"
+            exit 0
+          fi
+
+          ACTIVE="$(
+            gh run list \
+              --workflow prospective-context-raw-preopen-v2.yml \
+              --limit 20 \
+              --json status \
+              --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length'
+          )"
+          if [ "$ACTIVE" -gt 0 ]; then
+            echo "A pre-open public raw capture is already active; not dispatching a duplicate."
+            exit 0
+          fi
+
+          gh workflow run prospective-context-raw-preopen-v2.yml \
+            --ref main \
+            -f market_session_date="$MARKET_SESSION_DATE" \
+            -f decision_date="$DECISION_DATE"
+          echo "Dispatched public raw capture: ${MARKET_SESSION_DATE} -> ${DECISION_DATE}"
+
+      - name: Record non-trading/no-op state
+        if: steps.pair.outputs.should_run != 'true'
+        run: |
+          echo "No prospective public dispatch required: ${{ steps.pair.outputs.reason }}"
