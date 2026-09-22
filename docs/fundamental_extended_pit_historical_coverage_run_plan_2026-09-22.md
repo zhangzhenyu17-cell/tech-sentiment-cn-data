@@ -181,3 +181,40 @@ long-run orchestration defect:
 The durable repair is therefore decomposition + cache reuse + bounded preflight,
 not timeout expansion alone. The 360-minute ceilings remain safety ceilings and
 are not the performance design target.
+
+
+## Failure lesson addendum — run 35732714685
+
+This run passed the repaired preflight completely, including exact V4-A legacy
+query reuse and the bounded SH/SZ live-document execution-class check. It then
+exposed a separate artifact-layout orchestration defect before any full work unit
+reached provider-facing materialization.
+
+The preflight upload contains paths under both `stage/shared/**` and
+`stage/preflight/**`. `actions/upload-artifact` therefore selected `stage/`
+as the least common ancestor and stored artifact members as:
+
+- `shared/pit_symbol_scope/**`;
+- `shared/calendar/**`;
+- `preflight/**`.
+
+After downloading the artifact into `stage/shared-download`, the workflow
+incorrectly addressed those files as `stage/shared-download/stage/shared/**`.
+Every materialize matrix job consequently failed at the local
+`Build deterministic shard scope` step with the same `FileNotFoundError`;
+no affected work unit reached legacy-cache restore or live provider requests.
+
+Durable repair:
+
+1. address downloaded files from the actual root
+   `stage/shared-download/shared/**`;
+2. add a single `shared_inputs_gate` job between preflight and the 48-unit
+   matrix;
+3. the gate validates the exact expected artifact files, 193-symbol manifest,
+   successful legacy-query preflight reuse, and outcome/evidence boundary flags;
+4. materialization fan-out is blocked unless that single gate succeeds;
+5. aggregate uses the same canonical downloaded artifact paths.
+
+This is an execution-orchestration correction only. It does not change scope,
+window, parser, PIT semantics, provider concurrency, evidence qualification,
+outcome access, Production, sizing, or trading authority.
