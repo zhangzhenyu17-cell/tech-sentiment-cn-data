@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
+import json
 from pathlib import Path
+import time
 from typing import Iterable
 
 import pandas as pd
@@ -77,6 +80,63 @@ def _severity(exc: Exception) -> str:
     return "HARD_FAILURE"
 
 
+def _hard_failure_signature(exc: Exception) -> str:
+    text = " ".join(str(exc).split())
+    for marker in (
+        "FINANCIAL_FILING_MISSING_IMMUTABLE_ATTACHMENT_URL",
+        "CNINFO request failed",
+        "checkpoint receipt hash mismatch",
+        "checkpoint file hash mismatch",
+        "checkpoint fingerprint mismatch",
+        "non-CNINFO endpoint refused",
+    ):
+        if marker in text:
+            return f"{type(exc).__name__}:{marker}"
+    return f"{type(exc).__name__}:{text[:160]}"
+
+
+def _emit_progress(
+    *,
+    completed_symbols: int,
+    total_symbols: int,
+    entity_id: str,
+    resumed_symbol_queries: int,
+    executed_symbol_queries: int,
+    resumed_documents: int,
+    executed_documents: int,
+    hard_failures: int,
+    soft_failures: int,
+    started_at: float,
+    circuit_breaker_signature: str | None,
+) -> None:
+    elapsed = max(time.monotonic() - started_at, 0.001)
+    rate = completed_symbols / elapsed
+    remaining = max(total_symbols - completed_symbols, 0)
+    eta_seconds = (remaining / rate) if rate > 0 else None
+    print(
+        json.dumps(
+            {
+                "event": "EXTENDED_PIT_PROGRESS",
+                "completed_symbols": completed_symbols,
+                "total_symbols": total_symbols,
+                "entity_id": entity_id,
+                "resumed_symbol_queries": resumed_symbol_queries,
+                "executed_symbol_queries": executed_symbol_queries,
+                "resumed_documents": resumed_documents,
+                "executed_documents": executed_documents,
+                "hard_failures": hard_failures,
+                "soft_failures": soft_failures,
+                "elapsed_seconds": round(elapsed, 1),
+                "eta_seconds": None if eta_seconds is None else round(eta_seconds, 1),
+                "circuit_breaker_signature": circuit_breaker_signature,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+
+
 def materialize_extended_filing_facts(
     symbols: Iterable[str],
     *,
@@ -89,6 +149,7 @@ def materialize_extended_filing_facts(
     checkpoint_source_commit: str | None = None,
     legacy_checkpoint_dir: str | Path | None = None,
     progress_checkpoint_source_commit: str | None = None,
+    hard_failure_circuit_breaker_threshold: int = 3,
 ) -> ExtendedFilingMaterializationResult:
     """Materialize direct official-filing raw PIT primitives only.
 
@@ -99,6 +160,8 @@ def materialize_extended_filing_facts(
 
     if warmup_years < 1:
         raise ValueError("warmup_years must be >= 1")
+    if hard_failure_circuit_breaker_threshold < 1:
+        raise ValueError("hard_failure_circuit_breaker_threshold must be >= 1")
 
     target_start = pd.Timestamp(target_start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
@@ -129,6 +192,10 @@ def materialize_extended_filing_facts(
     executed_symbol_queries = 0
     resumed_documents = 0
     executed_documents = 0
+    hard_failure_signatures: Counter[str] = Counter()
+    circuit_breaker_signature: str | None = None
+    started_at = time.monotonic()
+    completed_symbols = 0
 
     for symbol in unique_symbols:
         entity = _entity_id(symbol)
@@ -181,6 +248,13 @@ def materialize_extended_filing_facts(
                             "severity": "HARD_FAILURE",
                         }
                     )
+                    signature = _hard_failure_signature(exc)
+                    hard_failure_signatures[signature] += 1
+                    if (
+                        hard_failure_signatures[signature]
+                        >= hard_failure_circuit_breaker_threshold
+                    ):
+                        circuit_breaker_signature = signature
                     coverage_rows.append(
                         {
                             "source_identity": CNINFO_SOURCE_ID,
@@ -193,6 +267,26 @@ def materialize_extended_filing_facts(
                             "soft_data_insufficient_documents": 0,
                         }
                     )
+                    completed_symbols += 1
+                    _emit_progress(
+                        completed_symbols=completed_symbols,
+                        total_symbols=len(unique_symbols),
+                        entity_id=entity,
+                        resumed_symbol_queries=resumed_symbol_queries,
+                        executed_symbol_queries=executed_symbol_queries,
+                        resumed_documents=resumed_documents,
+                        executed_documents=executed_documents,
+                        hard_failures=sum(hard_failure_signatures.values()),
+                        soft_failures=sum(
+                            1
+                            for item in errors
+                            if item["severity"] == "SOFT_DATA_INSUFFICIENCY"
+                        ),
+                        started_at=started_at,
+                        circuit_breaker_signature=circuit_breaker_signature,
+                    )
+                    if circuit_breaker_signature is not None:
+                        break
                     continue
 
         candidates = _select_primary_numeric_filing_candidates(raw)
@@ -297,6 +391,14 @@ def materialize_extended_filing_facts(
                     soft_data_insufficient_documents += 1
                 else:
                     symbol_failed = True
+                    signature = _hard_failure_signature(exc)
+                    hard_failure_signatures[signature] += 1
+                    if (
+                        hard_failure_signatures[signature]
+                        >= hard_failure_circuit_breaker_threshold
+                    ):
+                        circuit_breaker_signature = signature
+                        break
 
         coverage_rows.append(
             {
@@ -320,6 +422,24 @@ def materialize_extended_filing_facts(
                 ),
             }
         )
+        completed_symbols += 1
+        _emit_progress(
+            completed_symbols=completed_symbols,
+            total_symbols=len(unique_symbols),
+            entity_id=entity,
+            resumed_symbol_queries=resumed_symbol_queries,
+            executed_symbol_queries=executed_symbol_queries,
+            resumed_documents=resumed_documents,
+            executed_documents=executed_documents,
+            hard_failures=sum(hard_failure_signatures.values()),
+            soft_failures=sum(
+                1 for item in errors if item["severity"] == "SOFT_DATA_INSUFFICIENCY"
+            ),
+            started_at=started_at,
+            circuit_breaker_signature=circuit_breaker_signature,
+        )
+        if circuit_breaker_signature is not None:
+            break
 
     facts = (
         pd.concat(fact_parts, ignore_index=True, sort=False)
@@ -384,6 +504,16 @@ def materialize_extended_filing_facts(
         "executed_symbol_queries": executed_symbol_queries,
         "resumed_documents": resumed_documents,
         "executed_documents": executed_documents,
+        "completed_symbols": completed_symbols,
+        "hard_failure_rows": int(
+            sum(1 for item in errors if item["severity"] == "HARD_FAILURE")
+        ),
+        "soft_data_insufficiency_rows": int(
+            sum(1 for item in errors if item["severity"] == "SOFT_DATA_INSUFFICIENCY")
+        ),
+        "hard_failure_circuit_breaker_threshold": hard_failure_circuit_breaker_threshold,
+        "circuit_breaker_tripped": circuit_breaker_signature is not None,
+        "circuit_breaker_signature": circuit_breaker_signature,
         "historical_materialization_is_evidence_qualification": False,
         "cash_model_field_mapping_defined": False,
         "debt_model_field_aggregation_defined": False,
