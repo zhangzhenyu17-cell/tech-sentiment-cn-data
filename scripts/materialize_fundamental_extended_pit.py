@@ -58,8 +58,15 @@ def main() -> int:
     parser.add_argument("--warmup-years", type=int, default=2)
     parser.add_argument("--checkpoint-source-commit")
     parser.add_argument("--legacy-checkpoint-dir", type=Path)
+    parser.add_argument(
+        "--legacy-query-checkpoint-source-commit",
+        action="append",
+        default=[],
+        dest="legacy_query_checkpoint_source_commits",
+    )
     parser.add_argument("--progress-checkpoint-source-commit")
     parser.add_argument("--hard-failure-circuit-breaker-threshold", type=int, default=3)
+    parser.add_argument("--max-financial-documents-per-symbol", type=int)
     parser.add_argument("--fail-on-hard-errors", action="store_true")
     args = parser.parse_args()
 
@@ -73,8 +80,10 @@ def main() -> int:
         warmup_years=args.warmup_years,
         checkpoint_source_commit=args.checkpoint_source_commit,
         legacy_checkpoint_dir=args.legacy_checkpoint_dir,
+        legacy_query_checkpoint_source_commits=args.legacy_query_checkpoint_source_commits,
         progress_checkpoint_source_commit=args.progress_checkpoint_source_commit,
         hard_failure_circuit_breaker_threshold=args.hard_failure_circuit_breaker_threshold,
+        max_financial_documents_per_symbol=args.max_financial_documents_per_symbol,
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
