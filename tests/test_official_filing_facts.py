@@ -1,3 +1,4 @@
+import http.client
 import json
 import sys
 from types import SimpleNamespace
@@ -799,6 +800,24 @@ class _FakeResponse:
 
     def read(self) -> bytes:
         return self._content
+
+
+def test_official_download_retries_incomplete_read_without_changing_identity():
+    calls: list[str] = []
+    original = "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF"
+
+    def opener(request, timeout):
+        calls.append(request.full_url)
+        if len(calls) < 3:
+            raise http.client.IncompleteRead(b"partial", 1024)
+        return _FakeResponse(b"%PDF-1.7 exact bulletin bytes")
+
+    downloaded = download_official_document(original, opener=opener)
+
+    assert calls == [original, original, original]
+    assert downloaded.url == original
+    assert downloaded.retrieval_url == original
+    assert downloaded.content == b"%PDF-1.7 exact bulletin bytes"
 
 
 def test_cninfo_static_403_uses_only_official_https_download_fallback():

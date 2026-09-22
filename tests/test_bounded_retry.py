@@ -1,3 +1,4 @@
+import http.client
 from urllib.error import HTTPError, URLError
 
 import pytest
@@ -46,3 +47,23 @@ def test_http_status_and_schema_failures_are_not_transport_retries():
     with pytest.raises(ValueError, match="schema drift"):
         call_with_bounded_network_retry(call, attempts=3, backoff_seconds=0)
     assert calls == 1
+
+
+def test_incomplete_read_is_transient_and_retried_verbatim():
+    calls: list[int] = []
+
+    def call():
+        calls.append(len(calls) + 1)
+        if len(calls) < 3:
+            raise http.client.IncompleteRead(b"partial", 1024)
+        return b"complete"
+
+    assert is_transient_network_error(
+        http.client.IncompleteRead(b"partial", 1024)
+    ) is True
+    assert call_with_bounded_network_retry(
+        call,
+        attempts=3,
+        backoff_seconds=0,
+    ) == b"complete"
+    assert calls == [1, 2, 3]
