@@ -23,7 +23,7 @@ def test_existing_complete_dated_release_is_reused_before_recomputation() -> Non
 
     reuse = _step_block(text, reuse_name)
     assert 'TAG="market-bundle-${END_DATE}"' in reuse
-    assert 'gh release view "${TAG}" --json assets --jq '.assets[].name'' in reuse
+    assert "gh release view \"\${TAG}\" --json assets --jq '.assets[].name'" in reuse
     for suffix in ("tar.gz", "sha256", "manifest.json"):
         assert f'"${{TAG}}.{suffix}"' in reuse
     assert 'echo "reuse=true" >> "$GITHUB_OUTPUT"' in reuse
