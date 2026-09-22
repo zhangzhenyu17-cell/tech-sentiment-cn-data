@@ -113,7 +113,8 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
 
     safety = manifest["safety"]
     assert safety["trading_calendar_required"] is True
-    assert safety["non_trading_day_noop"] is True
+    assert safety["non_trading_day_outside_active_window_noop"] is True
+    assert safety["intervening_non_trading_days_preserve_active_window"] is True
     assert safety["exact_dated_release_required"] is True
     for key in (
         "rolling_latest_substitution_allowed",
@@ -140,3 +141,6 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert "--ref main" in text
     assert "akshare==1.18.94" in text
     assert "pandas==3.0.5" in text
+    assert "session_close = datetime.combine" in text
+    assert "freeze_deadline = datetime.combine" in text
+    assert "ACTIVE_SESSION_TO_DECISION_PREOPEN_WINDOW" in text
