@@ -92,3 +92,51 @@ def test_preopen_workflow_is_manual_only() -> None:
     assert '"pandas==3.0.5"' in text
     assert '"pytest==8.4.2"' in text
     assert "python -m pip check" in text
+
+
+def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    manifest = json.loads(
+        (root / "reference/prospective_daily_automation_v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    entry = manifest["automatic_workflow_allowlist"][
+        "prospective-public-daily-orchestrator-v1.yml"
+    ]
+    assert entry["triggers"] == ["schedule"]
+    assert entry["cron_utc"] == "55 15 * * *"
+    assert manifest["authorization_scope"] == "FROZEN_PROSPECTIVE_DAILY_OPERATIONS_ONLY"
+
+    safety = manifest["safety"]
+    assert safety["trading_calendar_required"] is True
+    assert safety["non_trading_day_noop"] is True
+    assert safety["exact_dated_release_required"] is True
+    for key in (
+        "rolling_latest_substitution_allowed",
+        "historical_backfill_allowed",
+        "private_model_material_allowed",
+        "private_evidence_allowed",
+        "forward_outcome_read_allowed",
+        "research_result_allowed",
+        "evidence_qualification_changed",
+        "trading_authority_changed",
+    ):
+        assert safety[key] is False, key
+
+    text = (
+        root / ".github/workflows/prospective-public-daily-orchestrator-v1.yml"
+    ).read_text(encoding="utf-8")
+    assert 'cron: "55 15 * * *"' in text
+    assert "workflow_dispatch:" in text
+    assert "actions: write" in text
+    assert "publish-market-bundle.yml" in text
+    assert "prospective-context-raw-preopen-v2.yml" in text
+    assert "market-bundle-$MARKET_SESSION_DATE" in text
+    assert 'gh release view "$RAW_TAG"' in text
+    assert "--ref main" in text
+    assert "akshare==1.18.94" in text
+    assert "pandas==3.0.5" in text
