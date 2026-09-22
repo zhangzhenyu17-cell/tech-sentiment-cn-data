@@ -1,0 +1,43 @@
+{
+  "schema_version": "failure-response-automation-v1",
+  "authorized_on": "2026-09-22",
+  "authorization_scope": "PUBLIC_DATA_NORMAL_ENGINEERING_AUTONOMOUS_REPAIR_ONLY",
+  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "capture": {
+    "workflow": ".github/workflows/engineering-failure-capture.yml",
+    "trigger": "workflow_run",
+    "conclusions": [
+      "failure",
+      "timed_out",
+      "action_required"
+    ],
+    "creates_failure_lesson_issue": true,
+    "exact_run_identity_required": true
+  },
+  "copilot_handoff": {
+    "enabled": true,
+    "assignee": "copilot-swe-agent[bot]",
+    "target_branch": "main",
+    "auto_repair_workflow_allowlist": [
+      "tests",
+      "publish-market-bundle",
+      "prospective-public-daily-orchestrator-v1"
+    ],
+    "diagnosis_only_workflows": [
+      "prospective-context-raw-preopen-v2"
+    ],
+    "assignment_failure_falls_back_to_open_issue": true,
+    "automatic_merge": false
+  },
+  "safety": {
+    "private_material_allowed": false,
+    "research_or_evidence_compute_allowed": false,
+    "forward_outcome_read_allowed": false,
+    "pit_no_lookahead_change_allowed": false,
+    "evidence_qualification_change_allowed": false,
+    "source_semantics_weakening_allowed": false,
+    "historical_backfill_allowed": false,
+    "public_private_boundary_change_allowed": false,
+    "automatic_trigger_expansion_allowed": false
+  }
+}

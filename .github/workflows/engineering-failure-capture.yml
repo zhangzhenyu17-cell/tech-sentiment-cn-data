@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows:
       - "publish-market-bundle"
+      - "prospective-public-daily-orchestrator-v1"
+      - "prospective-context-raw-preopen-v2"
       - "qualify-931152-oos-inputs"
       - "qualify-capital-inputs"
       - "tests"
@@ -64,6 +66,13 @@ jobs:
               }
             }
 
+            const safeAutoRepairWorkflows = new Set([
+              "tests",
+              "publish-market-bundle",
+              "prospective-public-daily-orchestrator-v1",
+            ]);
+            const copilotCandidate = safeAutoRepairWorkflows.has(run.name);
+
             const attempt = run.run_attempt || 1;
             const marker = "<!-- failure-lesson:" + run.id + ":" + attempt + " -->";
             const title = "[Failure Lesson] " + run.name + " run " + run.id + " attempt " + attempt;
@@ -118,6 +127,7 @@ jobs:
               "- Normalized signature: `PENDING_LOG_DIAGNOSIS`",
               "- Protocol decision: `PENDING`",
               "- Later green run alone closes this failure: **false**",
+              "- Automatic repair lane: " + (copilotCandidate ? "`COPILOT_CANDIDATE`" : "`DIAGNOSIS_ONLY`"),
               "",
               "## Mandatory closeout",
               "",
@@ -135,9 +145,62 @@ jobs:
               "This issue reads Actions metadata only and grants no research/evidence/model authority.",
             ].join("\n");
 
-            await github.rest.issues.create({
+            const created = await github.rest.issues.create({
               owner,
               repo,
               title,
               body,
             });
+
+            if (!copilotCandidate) {
+              core.info("Failure is captured but not eligible for autonomous Copilot repair: " + run.name);
+              return;
+            }
+
+            const instructions = [
+              "按 GitHub v1.3 执行。",
+              "Inspect the exact failed run and logs before changing code.",
+              "This lane is public-data engineering only.",
+              "Never introduce private model semantics, thresholds, signals, holdings, private evidence, research results, secrets, or trading authority into the public repository.",
+              "Do not change evidence qualification, PIT/no-lookahead semantics, universe, or frozen source meaning.",
+              "If the failure is source-not-yet-published, provider outage, data insufficiency, or otherwise has no safe mechanical code fix, do not weaken freshness/PIT/qualification guards. Document the diagnosis instead.",
+              "For a deterministic engineering defect, make the smallest mechanical fix, add an exact regression test, preserve immutable completed work/checkpoints, and rerun only the smallest necessary scope.",
+              "Do not create new research workflows or broaden automatic triggers.",
+            ].join(" ");
+
+            try {
+              await github.request(
+                "POST /repos/{owner}/{repo}/issues/{issue_number}/assignees",
+                {
+                  owner,
+                  repo,
+                  issue_number: created.data.number,
+                  assignees: ["copilot-swe-agent[bot]"],
+                  agent_assignment: {
+                    target_repo: owner + "/" + repo,
+                    base_branch: "main",
+                    custom_instructions: instructions,
+                    custom_agent: "",
+                    model: "",
+                  },
+                  headers: {
+                    "X-GitHub-Api-Version": "2022-11-28",
+                  },
+                }
+              );
+              core.info("Assigned safe public-engineering Failure Lesson to Copilot cloud agent.");
+            } catch (error) {
+              core.warning("Copilot auto-assignment unavailable; Failure Lesson remains captured: " + error.message);
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: created.data.number,
+                body: [
+                  "Automatic Copilot repair handoff was attempted but was unavailable.",
+                  "",
+                  "The Failure Lesson remains open for the ChatGPT/GitHub v1.3 repair watcher.",
+                  "",
+                  "Assignment error: `" + String(error.message).replace(/`/g, "'") + "`",
+                ].join("\n"),
+              });
+            }

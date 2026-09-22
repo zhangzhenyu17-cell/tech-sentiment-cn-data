@@ -756,3 +756,33 @@ The issue is stage 1 of the learning loop. Engineering diagnosis must still
 finalize the verified root cause, regression test, rerun scope and protocol
 decision. This automatic capture is necessary to prevent failed runs from being
 forgotten after a later successful rerun.
+
+
+## Failure response automation v1 — 2026-09-22
+
+The existing `engineering-failure-capture.yml` remains the sole
+`workflow_run` failure trigger. It still creates a first-pass Failure Lesson
+issue for every monitored failure. The user additionally authorized a guarded
+Copilot cloud-agent handoff for the exact public normal-engineering allowlist:
+
+- `tests`;
+- `publish-market-bundle`;
+- `prospective-public-daily-orchestrator-v1`.
+
+`prospective-context-raw-preopen-v2` is monitored for durable failure capture
+but remains `DIAGNOSIS_ONLY` for autonomous agent assignment because provider
+readiness/freshness and PIT semantics must not be weakened by an automated code
+repair.
+
+The Copilot handoff may prepare a repair pull request but does not grant
+automatic merge authority. It must inspect the exact failed run first, preserve
+immutable completed work/checkpoints, add an exact regression test for
+deterministic defects, and keep the smallest rerun scope.
+
+No automatic repair may introduce private material, change PIT/no-lookahead or
+evidence qualification, weaken source semantics, enable historical backfill,
+expand research scope, or broaden automatic triggers.
+
+If Copilot is unavailable or out of quota, the Failure Lesson remains open and
+the capture workflow records the failed handoff instead of dropping the
+incident.
