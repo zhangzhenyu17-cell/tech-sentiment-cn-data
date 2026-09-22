@@ -59,6 +59,8 @@ def main() -> int:
     parser.add_argument("--checkpoint-source-commit")
     parser.add_argument("--legacy-checkpoint-dir", type=Path)
     parser.add_argument("--progress-checkpoint-source-commit")
+    parser.add_argument("--hard-failure-circuit-breaker-threshold", type=int, default=3)
+    parser.add_argument("--fail-on-hard-errors", action="store_true")
     args = parser.parse_args()
 
     result = materialize_extended_filing_facts(
@@ -72,6 +74,7 @@ def main() -> int:
         checkpoint_source_commit=args.checkpoint_source_commit,
         legacy_checkpoint_dir=args.legacy_checkpoint_dir,
         progress_checkpoint_source_commit=args.progress_checkpoint_source_commit,
+        hard_failure_circuit_breaker_threshold=args.hard_failure_circuit_breaker_threshold,
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -101,6 +104,11 @@ def main() -> int:
         + "\n",
         encoding="utf-8",
     )
+    if args.fail_on_hard_errors and (
+        int(result.summary.get("hard_failure_rows") or 0) > 0
+        or bool(result.summary.get("circuit_breaker_tripped"))
+    ):
+        raise SystemExit("extended PIT materialization has hard failures")
     return 0
 
 

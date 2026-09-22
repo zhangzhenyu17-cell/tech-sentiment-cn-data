@@ -212,3 +212,40 @@ def test_materializer_missing_immutable_attachment_is_hard_failure(
     assert result.coverage.iloc[0]["query_status"] == "FAILED"
     assert result.errors.iloc[0]["severity"] == "HARD_FAILURE"
     assert "MISSING_IMMUTABLE_ATTACHMENT_URL" in result.errors.iloc[0]["error"]
+
+
+def test_materializer_hard_failure_circuit_breaker_stops_repeated_query_class(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls = {"query": 0}
+
+    def fail_query(**kwargs):
+        calls["query"] += 1
+        raise RuntimeError("same deterministic provider failure")
+
+    monkeypatch.setattr(
+        materializer,
+        "fetch_cninfo_announcements_direct",
+        fail_query,
+    )
+
+    result = materializer.materialize_extended_filing_facts(
+        ["688001", "688002", "688003", "688004"],
+        target_start_date="2025-01-01",
+        end_date="2025-09-01",
+        trading_dates=pd.date_range("2025-01-01", "2025-09-01", freq="B"),
+        source_commit="6" * 40,
+        checkpoint_dir=tmp_path / "checkpoint",
+        hard_failure_circuit_breaker_threshold=3,
+    )
+
+    assert calls["query"] == 3
+    assert result.summary["completed_symbols"] == 3
+    assert result.summary["hard_failure_rows"] == 3
+    assert result.summary["circuit_breaker_tripped"] is True
+    assert result.summary["circuit_breaker_signature"] == (
+        "RuntimeError:same deterministic provider failure"
+    )
+    assert len(result.coverage) == 3
+    assert result.coverage["query_status"].eq("FAILED").all()

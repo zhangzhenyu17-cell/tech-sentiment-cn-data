@@ -1,0 +1,195 @@
+name: Fundamental Extended PIT Historical Coverage
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TARGET_START_DATE: "2022-01-04"
+  END_DATE: "2026-09-17"
+  CALENDAR_START_DATE: "2020-01-01"
+  SHARD_COUNT: "12"
+  PROGRESS_GENERATION_ID: "fund-ext-pit-v1-20220917-window-20260922"
+  CACHE_PREFIX: "fund-ext-pit-v1-20220917-window-20260922"
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data,dev]"
+      - name: Audit public tree
+        run: python scripts/audit_public_tree.py
+      - name: Targeted contract tests
+        run: |
+          pytest -q             tests/test_official_filing_extended_pit.py             tests/test_extended_filing_materialization.py             tests/test_audit_fundamental_extended_pit_coverage.py             tests/test_capital_pit_symbol_scope.py             tests/test_fundamental_extended_pit_coverage_workflow.py
+      - name: Build exact frozen 193-symbol scope
+        run: |
+          mkdir -p stage/shared/pit_symbol_scope
+          python scripts/build_capital_pit_symbol_scope.py --repo-root . --out-dir stage/shared/pit_symbol_scope
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("stage/shared/pit_symbol_scope/capital_pit_symbol_scope.json").read_text())
+          assert manifest["scope_version"] == "capital-pit-frozen-universe-v2", manifest
+          assert manifest["symbols"] == 193, manifest
+          assert manifest["bj_symbols"] == 0, manifest
+          PY
+      - name: Build real trading calendar including warmup
+        run: |
+          mkdir -p stage/shared/calendar
+          python scripts/build_v4a_shared_calendar.py             --start-date "$CALENDAR_START_DATE"             --end-date "$END_DATE"             --source-commit "$GITHUB_SHA"             --out-dir stage/shared/calendar
+      - name: Build representative SH + SZ pilot scope
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          scope = pd.read_csv("stage/shared/pit_symbol_scope/capital_pit_symbols.csv", dtype={"symbol": str}).sort_values("symbol")
+          pilot = pd.concat([
+              scope.loc[scope["market"].eq("SH")].head(1),
+              scope.loc[scope["market"].eq("SZ")].head(1),
+          ], ignore_index=True)
+          assert len(pilot) == 2, pilot
+          Path("stage/preflight").mkdir(parents=True, exist_ok=True)
+          pilot.to_csv("stage/preflight/pilot_symbols.csv", index=False)
+          print(pilot.to_string(index=False))
+          PY
+      - name: Representative live materialization
+        run: |
+          python scripts/materialize_fundamental_extended_pit.py             --symbols-csv stage/preflight/pilot_symbols.csv             --trading-calendar-csv stage/shared/calendar/trading_calendar.csv             --target-start-date "$TARGET_START_DATE"             --end-date "$END_DATE"             --source-commit "$GITHUB_SHA"             --checkpoint-dir .cache/fundamental_extended_pit_preflight             --output-dir stage/preflight/output             --warmup-years 2             --checkpoint-source-commit "$PROGRESS_GENERATION_ID"             --progress-checkpoint-source-commit "$PROGRESS_GENERATION_ID"             --hard-failure-circuit-breaker-threshold 3             --fail-on-hard-errors
+      - name: Validate representative execution classes
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          coverage = pd.read_csv("stage/preflight/output/extended_filing_coverage.csv")
+          assert len(coverage) == 2, coverage
+          assert not coverage["query_status"].eq("FAILED").any(), coverage
+          assert coverage["entity_id"].str.endswith((".SH", ".SZ")).all(), coverage
+          print(coverage.to_string(index=False))
+          PY
+      - name: Upload exact shared inputs and preflight receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: fundamental-extended-pit-shared-inputs
+          path: |
+            stage/shared/pit_symbol_scope/capital_pit_symbols.csv
+            stage/shared/pit_symbol_scope/capital_pit_symbol_scope.json
+            stage/shared/calendar/trading_calendar.csv
+            stage/shared/calendar/trading_calendar_manifest.json
+            stage/preflight/pilot_symbols.csv
+            stage/preflight/output
+          if-no-files-found: error
+          retention-days: 30
+
+  materialize:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data,dev]"
+      - name: Download exact shared inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: fundamental-extended-pit-shared-inputs
+          path: stage/shared-download
+      - name: Build deterministic shard scope
+        run: |
+          mkdir -p stage/shard-input
+          python - <<'PY'
+          import os
+          import pandas as pd
+          shard = int("${{ matrix.shard }}")
+          count = int(os.environ["SHARD_COUNT"])
+          scope = pd.read_csv("stage/shared-download/stage/shared/pit_symbol_scope/capital_pit_symbols.csv", dtype={"symbol": str}).sort_values("symbol").reset_index(drop=True)
+          part = scope.loc[scope.index % count == shard].copy()
+          if part.empty:
+              raise SystemExit(f"empty shard: {shard}")
+          part.to_csv("stage/shard-input/symbols.csv", index=False)
+          print({"shard": shard, "count": count, "symbols": len(part), "first": part.iloc[0]["symbol"], "last": part.iloc[-1]["symbol"]})
+          PY
+      - name: Restore durable shard progress
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/fundamental_extended_pit
+          key: ${{ env.CACHE_PREFIX }}-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ env.CACHE_PREFIX }}-shard-${{ matrix.shard }}-
+      - name: Materialize raw PIT shard
+        id: materialize
+        run: |
+          mkdir -p "stage/shard-${{ matrix.shard }}"
+          python scripts/materialize_fundamental_extended_pit.py             --symbols-csv stage/shard-input/symbols.csv             --trading-calendar-csv stage/shared-download/stage/shared/calendar/trading_calendar.csv             --target-start-date "$TARGET_START_DATE"             --end-date "$END_DATE"             --source-commit "$GITHUB_SHA"             --checkpoint-dir .cache/fundamental_extended_pit             --output-dir "stage/shard-${{ matrix.shard }}"             --warmup-years 2             --checkpoint-source-commit "$PROGRESS_GENERATION_ID"             --progress-checkpoint-source-commit "$PROGRESS_GENERATION_ID"             --hard-failure-circuit-breaker-threshold 3             --fail-on-hard-errors
+      - name: Save durable shard progress
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/fundamental_extended_pit
+          key: ${{ env.CACHE_PREFIX }}-shard-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Upload shard diagnostics and materialization
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fundamental-extended-pit-shard-${{ matrix.shard }}
+          path: |
+            stage/shard-input/symbols.csv
+            stage/shard-${{ matrix.shard }}
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    needs: [preflight, materialize]
+    if: ${{ always() && needs.preflight.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data,dev]"
+      - name: Download exact shared inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: fundamental-extended-pit-shared-inputs
+          path: stage/shared-download
+      - name: Download all shard outputs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fundamental-extended-pit-shard-*
+          path: stage/shards
+          merge-multiple: false
+      - name: Audit exact frozen-scope coverage and revision ambiguity
+        id: audit
+        run: |
+          mkdir -p stage/aggregate
+          python scripts/audit_fundamental_extended_pit_coverage.py             --scope-csv stage/shared-download/stage/shared/pit_symbol_scope/capital_pit_symbols.csv             --scope-manifest stage/shared-download/stage/shared/pit_symbol_scope/capital_pit_symbol_scope.json             --shard-root stage/shards             --out-dir stage/aggregate             --fail-on-hard-errors
+      - name: Upload aggregate public coverage audit
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fundamental-extended-pit-coverage-audit
+          path: stage/aggregate
+          if-no-files-found: error
+          retention-days: 90
