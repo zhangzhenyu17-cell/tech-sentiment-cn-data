@@ -482,3 +482,45 @@ def test_automatic_failure_capture_is_narrow_and_non_recursive() -> None:
     assert "PENDING_ROOT_CAUSE" in workflow
     trigger = workflow.split("permissions:", 1)[0]
     assert '"engineering-failure-capture"' not in trigger
+
+
+def test_failure_response_automation_is_public_engineering_only() -> None:
+    manifest = json.loads(
+        (ROOT / "reference/failure_response_automation_v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert (
+        manifest["authorization_scope"]
+        == "PUBLIC_DATA_NORMAL_ENGINEERING_AUTONOMOUS_REPAIR_ONLY"
+    )
+    handoff = manifest["copilot_handoff"]
+    assert handoff["enabled"] is True
+    assert handoff["assignee"] == "copilot-swe-agent[bot]"
+    assert handoff["target_branch"] == "main"
+    assert handoff["auto_repair_workflow_allowlist"] == [
+        "tests",
+        "publish-market-bundle",
+        "prospective-public-daily-orchestrator-v1",
+    ]
+    assert handoff["diagnosis_only_workflows"] == [
+        "prospective-context-raw-preopen-v2"
+    ]
+    assert handoff["automatic_merge"] is False
+    assert handoff["assignment_failure_falls_back_to_open_issue"] is True
+    for key, value in manifest["safety"].items():
+        assert value is False, key
+
+    workflow = (
+        ROOT / ".github/workflows/engineering-failure-capture.yml"
+    ).read_text(encoding="utf-8")
+    for name in (
+        "prospective-public-daily-orchestrator-v1",
+        "prospective-context-raw-preopen-v2",
+    ):
+        assert name in workflow
+    assert 'copilot-swe-agent[bot]' in workflow
+    assert "agent_assignment" in workflow
+    assert "COPILOT_CANDIDATE" in workflow
+    assert "DIAGNOSIS_ONLY" in workflow
+    assert "public-data engineering only" in workflow
