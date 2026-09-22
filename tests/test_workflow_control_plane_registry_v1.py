@@ -154,3 +154,42 @@ def test_public_automatic_write_surfaces_do_not_git_push_main() -> None:
         text = _workflow_text(row["file"])
         assert "git push origin HEAD:main" not in text, row["file"]
         assert "git push origin main" not in text, row["file"]
+
+
+def test_actions_supply_chain_is_first_party_and_version_allowlisted() -> None:
+    allowed = {
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/github-script@v7",
+        "actions/upload-artifact@v4",
+        "actions/download-artifact@v4",
+        "actions/cache/restore@v4",
+        "actions/cache/save@v4",
+    }
+    for path in WORKFLOWS.glob("*.yml"):
+        refs = re.findall(r"uses:\s*([^\s#]+)", path.read_text(encoding="utf-8"))
+        for ref in refs:
+            assert ref.startswith("actions/"), (path.name, ref)
+            assert ref in allowed, (path.name, ref)
+
+
+def test_elevated_public_permissions_are_narrow_and_role_specific() -> None:
+    payload = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    actions_write = {
+        row["file"] for row in payload["workflows"] if "actions: write" in row["permissions"]
+    }
+    issues_write = {
+        row["file"] for row in payload["workflows"] if "issues: write" in row["permissions"]
+    }
+    automatic_contents_write = {
+        row["file"]
+        for row in payload["workflows"]
+        if "contents: write" in row["permissions"]
+        and any(
+            trigger in row["triggers"]
+            for trigger in ("schedule", "workflow_run", "push", "pull_request")
+        )
+    }
+    assert actions_write == {"prospective-public-daily-orchestrator-v1.yml"}
+    assert issues_write == {"engineering-failure-capture.yml"}
+    assert automatic_contents_write == {"publish-market-bundle.yml"}
