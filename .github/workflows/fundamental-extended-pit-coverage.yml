@@ -170,15 +170,15 @@ jobs:
           test -f stage/shared-download/preflight/pilot_symbols.csv
           test -f stage/shared-download/preflight/output/extended_filing_summary.json
           python - <<'PY'
+          import csv
           import json
           from pathlib import Path
-          import pandas as pd
 
           root = Path("stage/shared-download")
-          scope = pd.read_csv(
-              root / "shared/pit_symbol_scope/capital_pit_symbols.csv",
-              dtype={"symbol": str},
-          )
+          with (root / "shared/pit_symbol_scope/capital_pit_symbols.csv").open(
+              newline="", encoding="utf-8"
+          ) as handle:
+              scope = list(csv.DictReader(handle))
           manifest = json.loads(
               (root / "shared/pit_symbol_scope/capital_pit_symbol_scope.json").read_text(
                   encoding="utf-8"
@@ -190,6 +190,7 @@ jobs:
               )
           )
           assert len(scope) == 193, len(scope)
+          assert all(row.get("symbol") for row in scope), scope[:3]
           assert manifest["scope_version"] == "capital-pit-frozen-universe-v2", manifest
           assert manifest["symbols"] == 193, manifest
           assert summary["executed_symbol_queries"] == 0, summary
