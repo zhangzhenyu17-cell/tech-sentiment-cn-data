@@ -26,6 +26,29 @@
 
 `share_count` 也暂不在本版本中提取，因为其单位是股/万股等非金额单位，需要独立的显式 share-unit parser 后才能安全标准化。
 
+## 独立 materializer
+
+工程入口已经提供：
+
+`src/tech_sentiment/extended_filing_materialization.py`
+
+手动 CLI：
+
+`scripts/materialize_fundamental_extended_pit.py`
+
+该 materializer：
+
+- 复用 CNINFO exact announcement/document identity；
+- 使用 immutable checkpoint；
+- 支持跨 runtime commit 的 progress checkpoint identity；
+- 保留 document URL / SHA256 / publication / available timestamp；
+- 缺失 extended line item 记为 `SOFT_DATA_INSUFFICIENCY`；
+- immutable attachment / provenance 破坏记为 hard failure；
+- 输出 raw facts / coverage / errors / summary；
+- 明确记录 `outcome_read=false` 与 `evidence_qualification_changed=false`。
+
+**当前只完成工程接线，尚未运行 frozen 192-entity 历史 materialization。** 真正执行该历史 coverage 计算属于后续单独授权事项。
+
 ## PIT / provenance
 
 输出行沿用现有 filing fact provenance columns，包括：
@@ -44,7 +67,7 @@
 
 本次工程：
 
-- 不运行历史全量 materialization；
+- 当前提交本身不运行历史全量 materialization；materializer 仅提供未来授权后的可复用工程入口；
 - 不改变已有 V4-A qualified facts；
 - 不修改现有 canonical filing parser 的版本或既有 checkpoint identity；
 - 不读取 forward / historical outcome；
