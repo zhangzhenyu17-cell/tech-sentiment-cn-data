@@ -115,3 +115,28 @@ def test_failure_capture_covers_public_automatic_and_prospective_leaf_rails() ->
         "tests",
     ):
         assert f'- "{name}"' in text, name
+
+
+def test_all_public_automatic_workflows_have_bounded_runtime() -> None:
+    payload = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    for row in payload["workflows"]:
+        if not any(
+            trigger in row["triggers"]
+            for trigger in ("schedule", "workflow_run", "push", "pull_request")
+        ):
+            continue
+        text = _workflow_text(row["file"])
+        assert "timeout-minutes:" in text, row["file"]
+
+
+def test_public_automatic_write_surfaces_do_not_git_push_main() -> None:
+    payload = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    for row in payload["workflows"]:
+        if not any(
+            trigger in row["triggers"]
+            for trigger in ("schedule", "workflow_run", "push", "pull_request")
+        ):
+            continue
+        text = _workflow_text(row["file"])
+        assert "git push origin HEAD:main" not in text, row["file"]
+        assert "git push origin main" not in text, row["file"]
