@@ -1,8 +1,12 @@
 # Prospective Public Raw Intermediate Checkpoint Persistence v1
 
+状态：**HISTORICAL V1 CHECKPOINT CONTRACT PRESERVED / CURRENT ACTIVE PUBLIC RAIL = AUTOMATED DUAL-CLOCK PRE-OPEN V2 / OUTCOME BLIND**
+
+`prospective-context-raw-v1` is now an explicit fail-closed legacy workflow. The active public operating path is `prospective-public-daily-orchestrator-v1` → `prospective-context-raw-preopen-v2`. Historical V1 artifacts and checkpoint semantics remain auditable, but the V1 workflow must not be used for new captures or backfill.
+
 ## Purpose
 
-This engineering layer makes the manual `prospective-context-raw-v1` workflow restartable:
+This engineering layer originally made the manual `prospective-context-raw-v1` workflow restartable:
 
 > completed compatible work is restored first; only missing work is recomputed.
 
@@ -127,7 +131,7 @@ manual retry before 05:30, not a fallback to older data.
 ## Daily automation wrapper
 
 The frozen `prospective-context-raw-preopen-v2` workflow remains a manual
-`workflow_dispatch` surface. A separate thin orchestrator,
+`workflow_dispatch` surface for guarded recovery, while normal daily operation is automatic through a separate thin orchestrator,
 `.github/workflows/prospective-public-daily-orchestrator-v1.yml`, is explicitly
 allowlisted under `reference/prospective_daily_automation_v1.json`.
 
