@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "45 15 * * *"
-    - cron: "15,45 16-20 * * *"
+    - cron: "15,45 16-19 * * *"
 
 permissions:
   actions: write
@@ -91,7 +91,7 @@ jobs:
           )
           PY
 
-      - name: Ensure immutable market bundle is requested
+      - name: Ensure complete immutable market bundle is requested
         if: steps.pair.outputs.should_run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -99,13 +99,37 @@ jobs:
         run: |
           set -euo pipefail
           TAG="market-bundle-$MARKET_SESSION_DATE"
+          COMPLETE=false
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Exact immutable market bundle already exists: $TAG"
-          else
-            echo "Exact immutable market bundle missing; dispatching existing publisher."
-            gh workflow run publish-market-bundle.yml --ref main \
-              -f target_date="$MARKET_SESSION_DATE"
+            ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+            COMPLETE=true
+            for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+              if ! grep -Fxq "$REQUIRED" <<<"$ASSETS"; then
+                COMPLETE=false
+                echo "Exact immutable market bundle is incomplete: missing $REQUIRED"
+              fi
+            done
           fi
+          if [ "$COMPLETE" = "true" ]; then
+            echo "Complete immutable market bundle already exists: $TAG"
+            exit 0
+          fi
+
+          ACTIVE="$(
+            gh run list \
+              --workflow publish-market-bundle.yml \
+              --limit 20 \
+              --json status \
+              --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length'
+          )"
+          if [ "$ACTIVE" -gt 0 ]; then
+            echo "Market-bundle publisher is already active; not dispatching a duplicate."
+            exit 0
+          fi
+
+          echo "Complete immutable market bundle missing; dispatching existing publisher."
+          gh workflow run publish-market-bundle.yml --ref main \
+            -f target_date="$MARKET_SESSION_DATE"
 
       - name: Dispatch exact pre-open public raw capture once
         if: steps.pair.outputs.should_run == 'true'
@@ -116,8 +140,19 @@ jobs:
         run: |
           set -euo pipefail
           RAW_TAG="prospective-context-raw-preopen-v2-${MARKET_SESSION_DATE}-for-${DECISION_DATE}"
+          COMPLETE=false
           if gh release view "$RAW_TAG" >/dev/null 2>&1; then
-            echo "Exact immutable public raw release already exists: $RAW_TAG"
+            ASSETS="$(gh release view "$RAW_TAG" --json assets --jq '.assets[].name')"
+            COMPLETE=true
+            for REQUIRED in "$RAW_TAG.tar.gz" "$RAW_TAG.sha256" "$RAW_TAG.manifest.json"; do
+              if ! grep -Fxq "$REQUIRED" <<<"$ASSETS"; then
+                COMPLETE=false
+                echo "Exact immutable public raw release is incomplete: missing $REQUIRED"
+              fi
+            done
+          fi
+          if [ "$COMPLETE" = "true" ]; then
+            echo "Complete immutable public raw release already exists: $RAW_TAG"
             exit 0
           fi
 
