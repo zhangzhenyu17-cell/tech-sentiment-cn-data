@@ -218,3 +218,98 @@ Durable repair:
 This is an execution-orchestration correction only. It does not change scope,
 window, parser, PIT semantics, provider concurrency, evidence qualification,
 outcome access, Production, sizing, or trading authority.
+
+## Data-governance lesson addendum — successful run 35847821341 and semantic audit
+
+Run `35847821341` completed successfully at the workflow level and produced a
+structurally coherent aggregate artifact: exact scope coverage, complete required
+provenance, no hard-failure rows and an explicit
+`OUTCOME_BLIND_RAW_PIT_COVERAGE_AUDIT_COMPLETE_NOT_QUALIFIED` state.
+
+That success was **not** sufficient to establish raw-fact semantic correctness.
+A post-run artifact review found values whose shapes were inconsistent with the
+intended amount-column semantics, including note-like small integers / years and
+extreme concatenated numeric tokens. The root cause was not a qualification-rule
+failure. It was an upstream parser semantic risk: Chinese financial statements
+may place an `附注` column before the current-period amount, and PDF text-layer
+extraction may also collapse adjacent current/prior amount cells into one token.
+
+The durable governance rule is therefore:
+
+> **A green materialization plus structurally valid provenance is necessary but
+> not sufficient for qualification intake. The exact aggregate artifact must
+> receive an outcome-blind semantic review before any downstream qualification
+> gate is allowed to consume it.**
+
+### Required post-materialization semantic review
+
+For public raw-data qualification pipelines, perform this review after aggregate
+construction and before private qualification intake:
+
+1. **Structural integrity** — exact scope, provenance, source identity, parser
+   version, uniqueness, hard-failure state and revision diagnostics.
+2. **Field-shape diagnostics** — inspect distributions, repeated tiny integers,
+   year-like values, impossible token shapes, sign patterns and extreme tails as
+   *diagnostic triggers*.
+3. **Source-layout trace** — when a suspicious shape is found, trace it back to
+   the immutable official document/text layout and determine whether the parser
+   can prove the intended column position.
+4. **Parser contract decision** — if the layout is not provable, fail closed and
+   leave the fact missing. Do not invent an issuer-specific correction.
+5. **Regression coverage** — encode both the positive layout and the ambiguous
+   negative layout in parser tests before rerunning history.
+6. **Semantic-generation reset** — parser behavior/version changes invalidate
+   parsed-document facts from the old parser generation.
+7. **Layered cache reuse** — preserve independent query/index caches when their
+   source, window and identity contracts did not change. A parser repair should
+   not force unrelated historical provider-query recomputation.
+8. **New-SHA validation** — validate the repaired parser on a new run bound to
+   the repaired SHA; never treat rerunning an old attempt as validation of new
+   code.
+
+### Diagnostic values are not repair thresholds
+
+Suspicious values may reveal a parser defect, but they must not become hidden
+financial heuristics. In particular:
+
+- do not reject or rewrite a value merely because it is unusually large/small;
+- do not add issuer-specific hard-coded values;
+- do not infer the correct amount from cross-period magnitude;
+- do not treat a year-like or note-like token as wrong without first proving the
+  table-column semantics;
+- do use these patterns to select documents for source-layout inspection and to
+  design structural regression tests.
+
+The repair must be expressed in layout/column semantics. For the observed case,
+the safe contract is structural: prove the row owns the target label, prove the
+local explicit unit, prove the amount-column shape, and otherwise return missing.
+
+### Semantic identity and cache invalidation
+
+Parser semantics are part of the materialized fact identity. When parser behavior
+changes materially:
+
+- increment/freeze a new parser version;
+- include that parser version in immutable parsed-document checkpoint identity;
+- reject old parsed facts under the new parser generation;
+- keep query/index checkpoint identities independent so safe source-query work can
+  still be reused;
+- expose resumed vs executed query/document counts so reuse is auditable rather
+  than assumed.
+
+This is the preferred balance between correctness and compute efficiency:
+**invalidate exactly the layer whose semantics changed, and no broader layer.**
+
+### Qualification boundary remains unchanged
+
+This lesson does not authorize a Fundamental qualification promotion. The rerun
+remains public-data engineering and outcome blind. A corrected aggregate must
+still pass the existing private intake, revision-order, field-mapping, coverage
+and provenance requirements before any qualification state can change.
+
+The key distinction is now explicit:
+
+`workflow success -> structural artifact acceptance -> semantic artifact review -> private outcome-blind qualification intake`
+
+No earlier state may be collapsed into a later one merely because the GitHub run
+is green.
