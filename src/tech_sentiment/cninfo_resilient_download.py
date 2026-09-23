@@ -3,6 +3,7 @@ from __future__ import annotations
 from hashlib import sha256
 import re
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 
 import requests
 from requests.exceptions import ChunkedEncodingError
@@ -25,9 +26,10 @@ _CONTENT_RANGE_RE = re.compile(
     r"^bytes (?P<start>\d+)-(?P<end>\d+)/(?P<total>\d+)$",
     flags=re.IGNORECASE,
 )
-_RANGE_CHUNK_SIZE = 256 * 1024
-_MAX_RANGE_REQUESTS = 8
+_RANGE_STREAM_CHUNK_SIZE = 64 * 1024
+_RANGE_SLICE_SIZE = 512 * 1024
 _MAX_DOCUMENT_BYTES = 128 * 1024 * 1024
+_MAX_RANGE_REQUESTS = (_MAX_DOCUMENT_BYTES // _RANGE_SLICE_SIZE) + 16
 _BROWSER_EXHAUSTED_MESSAGE = (
     "CNINFO browser HTTPS transport exhausted without official PDF bytes"
 )
@@ -69,19 +71,41 @@ def _parse_positive_content_length(value: object) -> int | None:
     return parsed
 
 
+def _parse_content_range(value: object) -> tuple[int, int, int]:
+    text = str(value or "").strip()
+    match = _CONTENT_RANGE_RE.fullmatch(text)
+    if match is None:
+        raise ValueError("CNINFO range response lacks a valid Content-Range")
+    return (
+        int(match.group("start")),
+        int(match.group("end")),
+        int(match.group("total")),
+    )
+
+
+def _stable_header_value(headers: object, name: str) -> str | None:
+    if not hasattr(headers, "get"):
+        return None
+    value = str(headers.get(name) or "").strip()
+    return value or None
+
+
 def _download_cninfo_candidate_with_range_resume(
     canonical_url: str,
     candidate_url: str,
     *,
     timeout: float,
 ) -> tuple[bytes, str]:
-    """Reconstruct one exact CNINFO entity with strict HTTP byte ranges.
+    """Reconstruct one exact CNINFO entity using bounded closed byte ranges.
 
-    Recovery never mixes candidates. A candidate starts from byte zero and, if
-    the HTTP entity stream is truncated, subsequent requests must return 206
-    with a Content-Range starting at the exact number of bytes already kept.
-    Same-provider retrieval, stable validators/redirect target, bounded size,
-    and a stable total length are enforced before assembled bytes are accepted.
+    Every request starts at the exact number of bytes already retained and asks
+    for a closed, bounded interval. This deliberately avoids repeating the
+    multi-megabyte open-ended entity streams that were truncated on hosted
+    runners. Recovery never mixes candidates. Every 206 response must be
+    contiguous, stay inside the requested interval, report a stable total
+    entity length, and remain on the same CNINFO provider/retrieval target.
+    ETag and Last-Modified are checked for stability whenever the server emits
+    them. No alternate document/source is searched or substituted.
     """
 
     base_headers = {
@@ -94,17 +118,27 @@ def _download_cninfo_candidate_with_range_resume(
     assembled = bytearray()
     expected_total: int | None = None
     stable_retrieval_url: str | None = None
-    validator: str | None = None
+    stable_etag: str | None = None
+    stable_last_modified: str | None = None
     last_transient: BaseException | None = None
     session = requests.Session()
     try:
         for _attempt in range(_MAX_RANGE_REQUESTS):
             offset = len(assembled)
+            if expected_total is not None and offset == expected_total:
+                assert stable_retrieval_url is not None
+                return bytes(assembled), stable_retrieval_url
+            if expected_total is not None and offset > expected_total:
+                raise ValueError(
+                    "CNINFO range recovery assembled bytes beyond declared total"
+                )
+
+            requested_end = offset + _RANGE_SLICE_SIZE - 1
+            if expected_total is not None:
+                requested_end = min(requested_end, expected_total - 1)
+
             headers = dict(base_headers)
-            if offset:
-                headers["Range"] = f"bytes={offset}-"
-                if validator:
-                    headers["If-Range"] = validator
+            headers["Range"] = f"bytes={offset}-{requested_end}"
 
             response = None
             try:
@@ -128,84 +162,95 @@ def _download_cninfo_candidate_with_range_resume(
                     stable_retrieval_url = retrieval_url
                 elif retrieval_url != stable_retrieval_url:
                     raise ValueError(
-                        "CNINFO range resume retrieval URL changed between byte ranges"
+                        "CNINFO range recovery retrieval URL changed between slices"
                     )
 
                 response_headers = getattr(response, "headers", {}) or {}
-                response_validator = str(
-                    response_headers.get("ETag")
-                    or response_headers.get("Last-Modified")
-                    or ""
-                ).strip()
-                if validator and response_validator and response_validator != validator:
+                response_etag = _stable_header_value(response_headers, "ETag")
+                response_last_modified = _stable_header_value(
+                    response_headers, "Last-Modified"
+                )
+                if stable_etag and response_etag and response_etag != stable_etag:
                     raise ValueError(
-                        "CNINFO range resume entity validator changed between byte ranges"
+                        "CNINFO range recovery ETag changed between slices"
                     )
-                if validator is None and response_validator:
-                    validator = response_validator
+                if (
+                    stable_last_modified
+                    and response_last_modified
+                    and response_last_modified != stable_last_modified
+                ):
+                    raise ValueError(
+                        "CNINFO range recovery Last-Modified changed between slices"
+                    )
+                if stable_etag is None and response_etag:
+                    stable_etag = response_etag
+                if stable_last_modified is None and response_last_modified:
+                    stable_last_modified = response_last_modified
 
-                if offset:
-                    if status != 206:
+                declared_slice_length: int | None = None
+                if status == 206:
+                    start, end, total = _parse_content_range(
+                        response_headers.get("Content-Range")
+                    )
+                    if start != offset or end < start:
                         raise ValueError(
-                            "CNINFO range resume server ignored Range after partial transfer"
+                            "CNINFO range recovery Content-Range does not match requested offset"
                         )
-                    content_range = str(
-                        response_headers.get("Content-Range") or ""
-                    ).strip()
-                    match = _CONTENT_RANGE_RE.fullmatch(content_range)
-                    if match is None:
+                    if end > requested_end:
                         raise ValueError(
-                            "CNINFO range resume response lacks a valid Content-Range"
+                            "CNINFO range recovery response exceeded requested closed slice"
                         )
-                    start = int(match.group("start"))
-                    end = int(match.group("end"))
-                    total = int(match.group("total"))
-                    if start != offset or end < start or total <= end:
+                    if total <= end:
                         raise ValueError(
-                            "CNINFO range resume Content-Range does not match requested offset"
+                            "CNINFO range recovery Content-Range has invalid total"
                         )
                     if expected_total is None:
                         expected_total = total
                     elif total != expected_total:
                         raise ValueError(
-                            "CNINFO range resume total length changed between requests"
+                            "CNINFO range recovery total length changed between slices"
                         )
-                    remaining_length = _parse_positive_content_length(
+                    if expected_total > _MAX_DOCUMENT_BYTES:
+                        raise ValueError(
+                            "CNINFO document exceeds bounded range-recovery size"
+                        )
+                    declared_slice_length = end - start + 1
+                    content_length = _parse_positive_content_length(
                         response_headers.get("Content-Length")
                     )
                     if (
-                        remaining_length is not None
-                        and remaining_length != end - start + 1
+                        content_length is not None
+                        and content_length != declared_slice_length
                     ):
                         raise ValueError(
-                            "CNINFO range resume Content-Length disagrees with Content-Range"
+                            "CNINFO range recovery Content-Length disagrees with Content-Range"
+                        )
+                elif status == 200:
+                    if offset:
+                        raise ValueError(
+                            "CNINFO range recovery server ignored Range after partial transfer"
+                        )
+                    expected_total = _parse_positive_content_length(
+                        response_headers.get("Content-Length")
+                    )
+                    if (
+                        expected_total is not None
+                        and expected_total > _MAX_DOCUMENT_BYTES
+                    ):
+                        raise ValueError(
+                            "CNINFO document exceeds bounded range-recovery size"
                         )
                 else:
-                    if status == 206:
-                        content_range = str(
-                            response_headers.get("Content-Range") or ""
-                        ).strip()
-                        match = _CONTENT_RANGE_RE.fullmatch(content_range)
-                        if match is None or int(match.group("start")) != 0:
-                            raise ValueError(
-                                "CNINFO initial partial response has invalid Content-Range"
-                            )
-                        expected_total = int(match.group("total"))
-                    elif status == 200:
-                        expected_total = _parse_positive_content_length(
-                            response_headers.get("Content-Length")
-                        )
-                    else:  # raise_for_status should have rejected ordinary errors.
-                        raise ValueError(
-                            f"CNINFO range resume received unexpected HTTP status {status}"
-                        )
-
-                if expected_total is not None and expected_total > _MAX_DOCUMENT_BYTES:
-                    raise ValueError("CNINFO document exceeds bounded range-recovery size")
+                    raise ValueError(
+                        f"CNINFO range recovery received unexpected HTTP status {status}"
+                    )
 
                 bytes_before = len(assembled)
+                stream_failed = False
                 try:
-                    for chunk in response.iter_content(chunk_size=_RANGE_CHUNK_SIZE):
+                    for chunk in response.iter_content(
+                        chunk_size=_RANGE_STREAM_CHUNK_SIZE
+                    ):
                         if not chunk:
                             continue
                         assembled.extend(chunk)
@@ -215,7 +260,7 @@ def _download_cninfo_candidate_with_range_resume(
                             )
                         if expected_total is not None and len(assembled) > expected_total:
                             raise ValueError(
-                                "CNINFO range resume received bytes beyond declared total"
+                                "CNINFO range recovery received bytes beyond declared total"
                             )
                 except Exception as stream_exc:
                     if not (
@@ -224,31 +269,52 @@ def _download_cninfo_candidate_with_range_resume(
                     ):
                         raise
                     last_transient = stream_exc
-                    # A zero-progress retry is allowed, but all retries remain bounded.
-                    continue
+                    stream_failed = True
 
+                received = len(assembled) - bytes_before
+                if declared_slice_length is not None:
+                    if received > declared_slice_length:
+                        raise ValueError(
+                            "CNINFO range recovery received bytes beyond declared slice"
+                        )
+                    if received < declared_slice_length:
+                        last_transient = last_transient or ChunkedEncodingError(
+                            "CNINFO closed byte-range slice ended early"
+                        )
+                        continue
+
+                if stream_failed:
+                    continue
                 if not assembled:
                     raise ValueError("official filing attachment is empty")
-                if expected_total is not None and len(assembled) < expected_total:
-                    last_transient = ChunkedEncodingError(
-                        "CNINFO stream ended before the declared entity length"
-                    )
-                    if len(assembled) == bytes_before and offset:
-                        continue
+                if expected_total is None:
+                    assert stable_retrieval_url is not None
+                    return bytes(assembled), stable_retrieval_url
+                if len(assembled) == expected_total:
+                    assert stable_retrieval_url is not None
+                    return bytes(assembled), stable_retrieval_url
+                if len(assembled) < expected_total:
                     continue
-                if expected_total is not None and len(assembled) != expected_total:
-                    raise ValueError(
-                        "CNINFO range resume assembled length disagrees with declared total"
-                    )
-                assert stable_retrieval_url is not None
-                return bytes(assembled), stable_retrieval_url
+                raise ValueError(
+                    "CNINFO range recovery assembled length disagrees with declared total"
+                )
             finally:
                 if response is not None:
                     response.close()
     finally:
         session.close()
 
-    raise RuntimeError("CNINFO exact byte-range recovery exhausted") from last_transient
+    raise RuntimeError(
+        "CNINFO exact closed byte-range recovery exhausted"
+    ) from last_transient
+
+
+def _candidate_error_summary(candidate_url: str, exc: BaseException) -> str:
+    host = urlparse(candidate_url).hostname or "unknown-host"
+    detail = " ".join(str(exc).split())
+    if len(detail) > 240:
+        detail = detail[:237] + "..."
+    return f"{host}: {type(exc).__name__}: {detail}"
 
 
 def _download_cninfo_with_range_resume(
@@ -257,9 +323,10 @@ def _download_cninfo_with_range_resume(
     *,
     timeout: float,
 ) -> tuple[bytes, str]:
-    """Try strict range reconstruction independently on existing CNINFO URLs."""
+    """Try strict closed-range reconstruction independently on CNINFO URLs."""
 
     last_error: BaseException | None = None
+    errors: list[str] = []
     for candidate_url in (canonical_url, fallback_url):
         try:
             return _download_cninfo_candidate_with_range_resume(
@@ -269,8 +336,11 @@ def _download_cninfo_with_range_resume(
             )
         except Exception as exc:
             last_error = exc
+            errors.append(_candidate_error_summary(candidate_url, exc))
+    diagnostic = " | ".join(errors)
     raise RuntimeError(
-        "CNINFO same-provider byte-range recovery exhausted without official PDF bytes"
+        "CNINFO same-provider closed byte-range recovery exhausted without "
+        f"official PDF bytes; {diagnostic}"
     ) from last_error
 
 
@@ -284,9 +354,9 @@ def download_cninfo_document_resilient(
     The canonical immutable attachment remains authoritative. This adapter is
     entered only when the existing official downloader exhausts a transport
     failure already classified as transient. Recovery then uses only existing
-    same-provider HTTPS session/browser paths and, if those exhaust, strict byte
-    ranges against those exact same URLs. No source search, document
-    substitution, HTTP downgrade, or evidence-rule change is allowed.
+    same-provider HTTPS session/browser paths and, if those exhaust, strict
+    closed byte ranges against those exact same URLs. No source search,
+    document substitution, HTTP downgrade, or evidence-rule change is allowed.
     """
 
     try:
@@ -321,7 +391,7 @@ def download_cninfo_document_resilient(
                 fallback_url,
                 timeout=timeout,
             )
-            transport_method = "cninfo_same_provider_range_resume"
+            transport_method = "cninfo_same_provider_closed_range"
 
     _validate_same_provider_retrieval(url, retrieval_url)
     if not content:
