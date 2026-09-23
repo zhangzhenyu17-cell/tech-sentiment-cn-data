@@ -1,19 +1,25 @@
 from __future__ import annotations
 
-from typing import Mapping
+import re
+from typing import Iterable, Mapping
 
 import pandas as pd
 
 from .official_filing_facts import (
     FILING_FACT_COLUMNS,
-    _first_amount_value_after_label,
+    _AMOUNT_UNIT_SCALE,
+    _NUMERIC_TOKEN_RE,
     _has_explicit_unit_declaration,
+    _logical_row_window,
+    _nearest_explicit_unit,
     _normalize_text_lines,
+    _parse_numeric_token,
+    _wrapped_label_match,
     filing_period_end_from_title,
 )
 
 
-EXTENDED_FILING_PARSER_VERSION = "official-filing-extended-pit-primitives-v1"
+EXTENDED_FILING_PARSER_VERSION = "official-filing-extended-pit-primitives-v2-column-safe"
 
 # These are direct statement line-items only.  They are intentionally not mapped
 # to a private model axis and do not create a synthetic aggregate such as DEBT.
@@ -36,13 +42,100 @@ EXTENDED_AMOUNT_FACT_LABELS: Mapping[str, tuple[str, ...]] = {
 }
 
 
+def _nearby_header_has_note_column(
+    lines: list[str],
+    index: int,
+    *,
+    lookback: int = 16,
+) -> bool:
+    """Return whether the bounded table-header region explicitly declares 附注.
+
+    This is deliberately structural rather than value based.  A false positive
+    only causes the extended parser to fail closed for the row; it never changes
+    an extracted amount.
+    """
+
+    left = max(0, index - lookback)
+    return any("附注" in line for line in lines[left : index + 1])
+
+
+def _direct_amount_value_after_label(
+    lines: list[str],
+    labels: Iterable[str],
+) -> float | None:
+    """Extract a direct amount only when the numeric column position is provable.
+
+    The generic filing parser historically accepts the first numeric token after
+    a label.  That is unsafe for extended raw primitives because many Chinese
+    statement tables insert an explicit ``附注`` column before the current-period
+    amount.  In that layout a row such as ``货币资金 七、1 12,345 11,111`` would
+    otherwise emit ``1`` as the monetary-funds value.
+
+    Rules here are intentionally conservative:
+    * the label must be reconstructed before the first numeric cell;
+    * a local explicit CNY amount unit must be present;
+    * without an explicit nearby ``附注`` header, at most two numeric amount
+      cells are accepted and the first is the current-period value;
+    * with an explicit ``附注`` header, exactly a syntactic note-reference token
+      plus at least two amount cells must be present; the first amount after the
+      note reference is used;
+    * layouts that cannot prove the amount-column position remain missing.
+
+    No financial magnitude threshold, imputation, model mapping, or cross-row
+    inference is used.
+    """
+
+    for index in range(len(lines)):
+        logical_row = _logical_row_window(lines, index)
+        label_match = _wrapped_label_match(logical_row, labels)
+        if label_match is None:
+            # Do not use fragmented-label recovery here.  If a numeric cell
+            # interrupts the visible label, the column position is ambiguous.
+            continue
+
+        unit = _nearest_explicit_unit(lines, index)
+        scale = _AMOUNT_UNIT_SCALE.get(str(unit or ""))
+        if scale is None:
+            continue
+
+        suffix = logical_row[label_match.end() :]
+        tokens = list(_NUMERIC_TOKEN_RE.finditer(suffix))
+        if not tokens:
+            continue
+
+        if _nearby_header_has_note_column(lines, index):
+            # A proven note-column layout is safe only when the row itself has a
+            # compact note-reference token followed by two statement amounts.
+            # Blank-note rows are intentionally left missing because two numeric
+            # cells alone cannot distinguish current/prior amounts from
+            # note/current amounts after PDF layout collapse.
+            if len(tokens) != 3:
+                continue
+            note_token = tokens[0].group(0).strip()
+            if re.fullmatch(r"\d{1,4}", note_token) is None:
+                continue
+            chosen = tokens[1].group(0)
+        else:
+            if len(tokens) > 2:
+                continue
+            chosen = tokens[0].group(0)
+
+        try:
+            value = _parse_numeric_token(chosen)
+        except ValueError:
+            continue
+        if pd.notna(value):
+            return float(value) * scale
+    return None
+
+
 def extract_extended_filing_facts(text: str) -> dict[str, float]:
     """Extract direct CNY statement primitives without semantic aggregation.
 
-    Every value must be supported by the same bounded, explicit table-unit
-    contract used by the canonical official filing parser.  Missing fields stay
-    missing.  Debt components remain separate raw facts; this function never
-    manufactures a model-facing DEBT value.
+    Every value must be supported by a bounded, explicit table-unit contract and
+    an unambiguous numeric-column position. Missing fields stay missing. Debt
+    components remain separate raw facts; this function never manufactures a
+    model-facing DEBT value.
     """
 
     lines = _normalize_text_lines(text)
@@ -53,7 +146,7 @@ def extract_extended_filing_facts(text: str) -> dict[str, float]:
 
     facts: dict[str, float] = {}
     for fact_type, labels in EXTENDED_AMOUNT_FACT_LABELS.items():
-        value = _first_amount_value_after_label(lines, labels)
+        value = _direct_amount_value_after_label(lines, labels)
         if value is not None:
             facts[fact_type] = float(value)
 
