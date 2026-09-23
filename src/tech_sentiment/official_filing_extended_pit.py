@@ -21,7 +21,7 @@ from .official_filing_facts import (
 
 EXTENDED_FILING_PARSER_VERSION = "official-filing-extended-pit-primitives-v2-column-safe"
 
-# These are direct statement line-items only.  They are intentionally not mapped
+# These are direct statement line-items only. They are intentionally not mapped
 # to a private model axis and do not create a synthetic aggregate such as DEBT.
 EXTENDED_AMOUNT_FACT_LABELS: Mapping[str, tuple[str, ...]] = {
     "MONETARY_FUNDS": ("货币资金",),
@@ -86,7 +86,9 @@ def _direct_amount_value_after_label(
     otherwise emit ``1`` as the monetary-funds value.
 
     Rules here are intentionally conservative:
-    * the label must be reconstructed before the first numeric cell;
+    * the label must start on the current physical PDF-text line; continuation of
+      that same label may wrap onto following physical lines before the first
+      numeric cell, but a preceding header line may never absorb a later row;
     * a local explicit CNY amount unit must be present;
     * without an explicit nearby ``附注`` header, at most two numeric amount
       cells are accepted and the first is the current-period value;
@@ -105,6 +107,12 @@ def _direct_amount_value_after_label(
         if label_match is None:
             # Do not use fragmented-label recovery here. If a numeric cell
             # interrupts the visible label, the column position is ambiguous.
+            continue
+        # `_logical_row_window` may join forward over a header line that itself
+        # contains no number. Require the target label to begin on the current
+        # physical line so a header such as `项目 附注 期末余额 期初余额` cannot
+        # absorb the next line `货币资金 ...` and bypass note-column semantics.
+        if label_match.start() >= len(lines[index]):
             continue
 
         unit = _nearest_explicit_unit(lines, index)
