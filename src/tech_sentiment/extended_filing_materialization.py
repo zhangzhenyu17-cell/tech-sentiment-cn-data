@@ -66,6 +66,7 @@ def _extended_document_identity(
 
 
 _SOFT_DATA_INSUFFICIENCY_MARKERS = (
+    "official filing has no extractable text layer",
     "extended filing text does not contain an explicit table unit declaration",
     "official filing has no extended PIT primitives with locally proven CNY units",
 )
