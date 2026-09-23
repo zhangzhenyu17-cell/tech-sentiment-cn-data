@@ -3,7 +3,8 @@ name: prospective-public-daily-orchestrator-v1
 on:
   workflow_dispatch:
   schedule:
-    - cron: "55 15-17 * * *"
+    - cron: "45 15 * * *"
+    - cron: "15,45 16-20 * * *"
 
 permissions:
   actions: write

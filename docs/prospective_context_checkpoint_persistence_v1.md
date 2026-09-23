@@ -122,7 +122,7 @@ The capital freshness preflight also distinguishes:
 Neither class permits stale carry-forward, alternate dates, interpolation,
 forward-fill, historical replay, or evidence promotion. If
 `NOT_YET_PUBLISHED` still exhausts after 23:45, the correct action is a later
-manual retry before 05:30, not a fallback to older data.
+retry before 05:30, not a fallback to older data.
 
 ## Daily automation wrapper
 
@@ -131,7 +131,7 @@ The frozen `prospective-context-raw-preopen-v2` workflow remains a manual
 `.github/workflows/prospective-public-daily-orchestrator-v1.yml`, is explicitly
 allowlisted under `reference/prospective_daily_automation_v1.json`.
 
-Its bounded retry schedule is `55 15-17 * * *` UTC (approximately 23:55, 00:55, and 01:55 Asia/Shanghai). Exact releases and active-run checks make later attempts idempotent no-ops after success. It:
+Its bounded retry schedule starts at the earliest operationally mature **23:45 Asia/Shanghai** window and then retries every 30 minutes through **04:45 Asia/Shanghai** (`45 15 * * *` plus `15,45 16-20 * * *` UTC). Exact releases and active-run checks make every later attempt an idempotent no-op once the exact bundle/raw capture succeeds. This preserves an early normal path while retaining multiple recovery opportunities before the fixed 05:30 data-freeze boundary. It:
 
 1. resolves the exact A-share trading-day pair from the live trading calendar;
 2. preserves the active session-close → next-trading-day 05:30 window across intervening weekends or exchange holidays, and no-ops only when the current time is outside that exact trading-calendar window;
@@ -146,7 +146,9 @@ Its bounded retry schedule is `55 15-17 * * *` UTC (approximately 23:55, 00:55, 
 The wrapper does not materialize model outputs or evidence. It cannot substitute
 rolling latest, stale rows, prior dates, interpolation, historical replay, or
 backfill. Provider publication readiness, PIT validation, and the 05:30 freeze
-remain enforced by the target workflow itself. This also prevents a delayed 23:55 scheduler invocation that crosses midnight into a weekend/holiday from silently dropping the prior trading session.
+remain enforced by the target workflow itself. A delayed scheduler invocation
+therefore cannot silently extend the evidence window past 05:30 or substitute a
+prior-session row.
 
 ## Failure behavior
 
@@ -155,7 +157,7 @@ Normal capture failure:
 - the capture step fails closed;
 - the subsequent `always()` checkpoint packaging step runs;
 - completed permanent-eligible work is published to the date registry;
-- the next retry restores it and executes only missing work.
+- the next retry restores it and executes only missing units.
 
 Hard runner termination / platform kill:
 
