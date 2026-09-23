@@ -1,15 +1,20 @@
 from datetime import datetime
+from pathlib import Path
+from runpy import run_path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
 
-from scripts.build_prospective_context_raw_preopen_v2 import (
-    _require_capture_completed_before_freeze,
-)
 from tech_sentiment.prospective_preopen_timing_v2 import (
     validate_preopen_capture_window,
 )
+
+
+ROOT = Path(__file__).resolve().parents[1]
+_require_capture_completed_before_freeze = run_path(
+    str(ROOT / "scripts/build_prospective_context_raw_preopen_v2.py")
+)["_require_capture_completed_before_freeze"]
 
 
 class _CalendarClient:
@@ -112,8 +117,7 @@ def test_capture_completion_guard_rejects_outside_operational_window() -> None:
 
 
 def test_preopen_workflow_is_manual_only_and_freeze_hardened() -> None:
-    from pathlib import Path
-    root = Path(__file__).resolve().parents[1]
+    root = ROOT
     text = (
         root / ".github/workflows/prospective-context-raw-preopen-v2.yml"
     ).read_text(encoding="utf-8")
@@ -146,9 +150,8 @@ def test_preopen_workflow_is_manual_only_and_freeze_hardened() -> None:
 
 def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     import json
-    from pathlib import Path
 
-    root = Path(__file__).resolve().parents[1]
+    root = ROOT
     manifest = json.loads(
         (root / "reference/prospective_daily_automation_v1.json").read_text(
             encoding="utf-8"
