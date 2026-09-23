@@ -104,6 +104,22 @@ def test_extended_pit_legitimate_wrapped_label_still_parses() -> None:
     assert facts["CAPEX_CASH_PAID"] == pytest.approx(12_340_000.0)
 
 
+def test_extended_pit_single_collapsed_numeric_token_fails_closed() -> None:
+    text = """
+    2025年半年度报告
+    合并资产负债表 单位：人民币元
+    货币资金 55581004502569534000000
+
+    合并利润表 单位：人民币元
+    研发费用 888 777
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert "MONETARY_FUNDS" not in facts
+    assert facts["R_AND_D_EXPENSE"] == pytest.approx(888.0)
+
+
 def test_extended_pit_more_than_two_unproven_numeric_cells_fails_closed() -> None:
     text = """
     2025年半年度报告
