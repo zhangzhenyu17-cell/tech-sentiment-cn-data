@@ -111,11 +111,13 @@ def _direct_amount_value_after_label(
     * the target label must begin on the current physical PDF line, while a
       non-numeric wrapped-label prefix may continue onto later physical lines;
     * a local explicit CNY amount unit must be present;
-    * without an explicit nearby ``附注`` header, at most two numeric amount
-      cells are accepted and the first is the current-period value;
+    * without an explicit nearby ``附注`` header, exactly two numeric amount
+      cells must be visible and the first is the current-period value;
     * with an explicit ``附注`` header, exactly a syntactic note-reference token
       plus two amount cells must be present; the first amount after the note
       reference is used;
+    * one-token rows are rejected because adjacent current/prior amount cells can
+      collapse into one numeric token in PDF text extraction;
     * layouts that cannot prove the amount-column position remain missing.
 
     No financial magnitude threshold, imputation, model mapping, or cross-row
@@ -157,7 +159,7 @@ def _direct_amount_value_after_label(
                 continue
             chosen = tokens[1].group(0)
         else:
-            if len(tokens) > 2:
+            if len(tokens) != 2:
                 continue
             chosen = tokens[0].group(0)
 
