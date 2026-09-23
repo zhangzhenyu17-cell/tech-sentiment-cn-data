@@ -8,13 +8,18 @@
       "triggers": [
         "schedule"
       ],
-      "cron_utc": "55 15-17 * * *",
-      "intended_time_asia_shanghai": [
-        "23:55",
-        "00:55",
-        "01:55"
+      "cron_utc": [
+        "45 15 * * *",
+        "15,45 16,17 * * *"
       ],
-      "necessity": "Dispatch exact public bundle/raw capture with bounded idempotent retries before the private 02:10 handoff."
+      "intended_time_asia_shanghai": [
+        "23:45",
+        "00:15",
+        "00:45",
+        "01:15",
+        "01:45"
+      ],
+      "necessity": "Start at the earliest operationally mature 23:45 window and retry idempotently every 30 minutes through 01:45 so exact public bundle/raw inputs are available as early as possible without weakening provider-readiness or freeze guards."
     }
   },
   "target_workflows": [
