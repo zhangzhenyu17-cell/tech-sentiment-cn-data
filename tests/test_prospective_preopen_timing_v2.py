@@ -179,7 +179,7 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert "target_date:" in publisher
     assert "EXACT_BUNDLE_TARGET_MUST_BE_LATEST_CLOSED_A_SHARE_SESSION" in publisher
     assert "REQUESTED_EXACT_TARGET_DATE" in publisher
-    assert "Publish, heal, or exact-verify immutable dated public bundle" in publisher
+    assert "Publish or exact-verify immutable dated public bundle" in publisher
     assert "IMMUTABLE_DATED_BUNDLE_INCOMPLETE_AFTER_HEAL" in publisher
     assert "Healed missing immutable asset" in publisher
     assert "session_close = datetime.combine" in text
