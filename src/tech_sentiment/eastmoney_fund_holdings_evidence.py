@@ -15,6 +15,8 @@ from urllib.request import Request, urlopen
 EASTMONEY_FUND_HOLDINGS_URL = "https://fundf10.eastmoney.com/FundArchivesDatas.aspx"
 EASTMONEY_FUND_PAGE = "https://fundf10.eastmoney.com/ccmx_{code}.html"
 TRACKING_ETF_931152 = "159992"
+WEIGHTED_CANDIDATE_QUALIFICATION_STATE = "CANDIDATE_ONLY_PUBLICATION_DATE_UNVERIFIED"
+WEIGHTED_CANDIDATE_BLOCKER = "PUBLICATION_DATE_NOT_ESTABLISHED"
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,37 @@ class FundHoldingBatch:
     response_sha256: str
     evidence_kind: str
     full_report_candidate_set: bool
+
+
+@dataclass(frozen=True)
+class FundHoldingWeightCandidate:
+    symbol: str
+    weight_fraction: float
+    raw_weight_text: str
+
+
+@dataclass(frozen=True)
+class FundHoldingWeightedBatch:
+    """Candidate-only fund disclosure weights for later look-through qualification.
+
+    This object deliberately does not carry a publication date and can never be
+    PIT-qualified by this parser alone.  Report date is not publication date.
+    """
+
+    fund_code: str
+    report_date: str
+    quarter: int
+    heading: str
+    symbol_count: int
+    positions: tuple[FundHoldingWeightCandidate, ...]
+    weighted_symbol_count: int
+    all_symbol_weights_parsed: bool
+    source_url: str
+    response_sha256: str
+    evidence_kind: str
+    full_report_candidate_set: bool
+    qualification_state: str = WEIGHTED_CANDIDATE_QUALIFICATION_STATE
+    pit_qualified: bool = False
 
 
 class _FundBoxParser(HTMLParser):
@@ -166,15 +199,54 @@ def _report_date(year: int, quarter: int) -> str:
     return f"{year:04d}-{month_day[quarter]}"
 
 
+def _symbol_from_row(row: Iterable[str]) -> str | None:
+    for cell in list(row)[:4]:
+        match = re.search(r"(?<!\d)(\d{6})(?!\d)", cell)
+        if match:
+            return match.group(1)
+    return None
+
+
 def _symbols_from_rows(rows: Iterable[list[str]]) -> tuple[str, ...]:
-    symbols: set[str] = set()
-    for row in rows:
-        for cell in row[:4]:
-            match = re.search(r"(?<!\d)(\d{6})(?!\d)", cell)
-            if match:
-                symbols.add(match.group(1))
-                break
+    symbols = {symbol for row in rows if (symbol := _symbol_from_row(row)) is not None}
     return tuple(sorted(symbols))
+
+
+def _weight_candidate_from_row(row: list[str]) -> FundHoldingWeightCandidate | None:
+    symbol = _symbol_from_row(row)
+    if symbol is None:
+        return None
+
+    percent_values: list[tuple[str, float]] = []
+    for cell in row:
+        compact = _clean_text(cell).replace(" ", "")
+        match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)%", compact)
+        if not match:
+            continue
+        percent = float(match.group(1))
+        if 0.0 < percent <= 100.0:
+            percent_values.append((compact, percent / 100.0))
+
+    # A row with zero or multiple percentage cells is ambiguous.  Keep the
+    # symbol in the candidate set but do not manufacture a portfolio weight.
+    if len(percent_values) != 1:
+        return None
+    raw_weight_text, weight_fraction = percent_values[0]
+    return FundHoldingWeightCandidate(
+        symbol=symbol,
+        weight_fraction=weight_fraction,
+        raw_weight_text=raw_weight_text,
+    )
+
+
+def _evidence_kind(*, quarter: int, symbol_count: int, minimum_full_report_symbols: int) -> tuple[str, bool]:
+    full_report_candidate_set = quarter in {2, 4} and symbol_count >= minimum_full_report_symbols
+    evidence_kind = (
+        "eastmoney_tiantian_full_fund_holdings_candidate_set"
+        if full_report_candidate_set
+        else "eastmoney_tiantian_partial_holdings_crosscheck_only"
+    )
+    return evidence_kind, full_report_candidate_set
 
 
 def parse_holdings_html(
@@ -206,13 +278,10 @@ def parse_holdings_html(
             continue
         year, quarter = parsed
         symbols = _symbols_from_rows(rows)
-        full_report_candidate_set = (
-            quarter in {2, 4} and len(symbols) >= minimum_full_report_symbols
-        )
-        evidence_kind = (
-            "eastmoney_tiantian_full_fund_holdings_candidate_set"
-            if full_report_candidate_set
-            else "eastmoney_tiantian_partial_holdings_crosscheck_only"
+        evidence_kind, full_report_candidate_set = _evidence_kind(
+            quarter=quarter,
+            symbol_count=len(symbols),
+            minimum_full_report_symbols=minimum_full_report_symbols,
         )
         out.append(
             FundHoldingBatch(
@@ -228,6 +297,93 @@ def parse_holdings_html(
             )
         )
     return sorted(out, key=lambda item: item.report_date)
+
+
+def parse_weighted_holdings_candidates(
+    html: str,
+    *,
+    fund_code: str,
+    source_url: str,
+    response_sha256: str,
+    minimum_full_report_symbols: int = 11,
+) -> list[FundHoldingWeightedBatch]:
+    """Parse weight-bearing candidate rows without granting PIT qualification.
+
+    EastMoney's table can expose a percentage that is useful for portfolio
+    look-through candidate collection.  The parser accepts a weight only when a
+    stock row has exactly one unambiguous percentage cell.  Report date is kept
+    separate from publication date; because this endpoint does not establish
+    the latter, every returned batch remains candidate-only.
+    """
+
+    if minimum_full_report_symbols < 11:
+        raise ValueError("minimum_full_report_symbols must be >= 11")
+    parser = _FundBoxParser()
+    parser.feed(html)
+    out: list[FundHoldingWeightedBatch] = []
+    for heading, rows in parser.boxes:
+        parsed = _quarter_from_heading(heading)
+        if parsed is None:
+            continue
+        year, quarter = parsed
+        symbols = _symbols_from_rows(rows)
+        candidates = [candidate for row in rows if (candidate := _weight_candidate_from_row(row)) is not None]
+        seen: set[str] = set()
+        for candidate in candidates:
+            if candidate.symbol in seen:
+                raise ValueError("duplicate weighted symbol in one fund disclosure")
+            seen.add(candidate.symbol)
+        positions = tuple(sorted(candidates, key=lambda item: item.symbol))
+        evidence_kind, full_report_candidate_set = _evidence_kind(
+            quarter=quarter,
+            symbol_count=len(symbols),
+            minimum_full_report_symbols=minimum_full_report_symbols,
+        )
+        out.append(
+            FundHoldingWeightedBatch(
+                fund_code=fund_code,
+                report_date=_report_date(year, quarter),
+                quarter=quarter,
+                heading=heading,
+                symbol_count=len(symbols),
+                positions=positions,
+                weighted_symbol_count=len(positions),
+                all_symbol_weights_parsed=bool(symbols) and len(positions) == len(symbols),
+                source_url=source_url,
+                response_sha256=response_sha256,
+                evidence_kind=evidence_kind,
+                full_report_candidate_set=full_report_candidate_set,
+            )
+        )
+    return sorted(out, key=lambda item: item.report_date)
+
+
+def lookthrough_candidate_rows(batch: FundHoldingWeightedBatch) -> list[dict[str, object]]:
+    """Export non-qualified rows for a downstream private provenance gate.
+
+    The authoritative field name ``weight_within_parent`` is intentionally not
+    emitted.  A private gate must verify publication timing and explicitly
+    promote a candidate value before Portfolio Look-through V1 can consume it.
+    """
+
+    return [
+        {
+            "fund_code": batch.fund_code,
+            "security_id": f"CN:{position.symbol}",
+            "weight_within_parent_candidate": position.weight_fraction,
+            "raw_weight_text": position.raw_weight_text,
+            "report_date": batch.report_date,
+            "source_kind": batch.evidence_kind,
+            "source_reference": batch.source_url,
+            "response_sha256": batch.response_sha256,
+            "full_report_candidate_set": batch.full_report_candidate_set,
+            "source_published_on": None,
+            "pit_qualified": False,
+            "qualification_state": batch.qualification_state,
+            "qualification_blocker": WEIGHTED_CANDIDATE_BLOCKER,
+        }
+        for position in batch.positions
+    ]
 
 
 def holdings_url(fund_code: str, year: int, *, topline: int = 100) -> str:
