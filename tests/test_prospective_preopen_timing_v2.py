@@ -72,7 +72,7 @@ def test_preopen_window_rejects_capture_before_session_close() -> None:
         )
 
 
-def test_preopen_workflow_is_manual_only() -> None:
+def test_preopen_workflow_is_manual_only_and_freeze_hardened() -> None:
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     text = (
@@ -92,6 +92,18 @@ def test_preopen_workflow_is_manual_only() -> None:
     assert '"pandas==3.0.5"' in text
     assert '"pytest==8.4.2"' in text
     assert "python -m pip check" in text
+    assert "Publish, heal, or exact-verify immutable pre-open public raw capture" in text
+    assert "IMMUTABLE_PREOPEN_PUBLIC_RAW_CAPTURE_INCOMPLETE_AFTER_HEAL" in text
+
+    builder = (root / "scripts/build_prospective_context_raw_preopen_v2.py").read_text(
+        encoding="utf-8"
+    )
+    assert "_require_capture_completed_before_freeze" in builder
+    assert "PREOPEN_CAPTURE_COMPLETED_AFTER_0530_FREEZE" in builder
+    assert "PREOPEN_CAPTURE_COMPLETED_OUTSIDE_DECISION_DATE" in builder
+    assert builder.index("_require_capture_completed_before_freeze(args.decision_date)") < builder.index(
+        "manifest = package_preopen_capture"
+    )
 
 
 def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
@@ -110,7 +122,7 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert entry["triggers"] == ["schedule"]
     assert entry["cron_utc"] == [
         "45 15 * * *",
-        "15,45 16-20 * * *",
+        "15,45 16-19 * * *",
     ]
     assert entry["intended_time_asia_shanghai"] == [
         "23:45",
@@ -122,8 +134,6 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
         "02:45",
         "03:15",
         "03:45",
-        "04:15",
-        "04:45",
     ]
     assert manifest["authorization_scope"] == "FROZEN_PROSPECTIVE_DAILY_OPERATIONS_ONLY"
 
@@ -148,13 +158,16 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
         root / ".github/workflows/prospective-public-daily-orchestrator-v1.yml"
     ).read_text(encoding="utf-8")
     assert 'cron: "45 15 * * *"' in text
-    assert 'cron: "15,45 16-20 * * *"' in text
+    assert 'cron: "15,45 16-19 * * *"' in text
     assert "workflow_dispatch:" in text
     assert "actions: write" in text
     assert "publish-market-bundle.yml" in text
     assert "prospective-context-raw-preopen-v2.yml" in text
     assert "market-bundle-$MARKET_SESSION_DATE" in text
-    assert 'gh release view "$RAW_TAG"' in text
+    assert "Complete immutable market bundle" in text
+    assert "Complete immutable public raw release" in text
+    assert '"$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"' in text
+    assert '"$RAW_TAG.tar.gz" "$RAW_TAG.sha256" "$RAW_TAG.manifest.json"' in text
     assert "--ref main" in text
     assert "akshare==1.18.94" in text
     assert "pandas==3.0.5" in text
@@ -166,6 +179,9 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert "target_date:" in publisher
     assert "EXACT_BUNDLE_TARGET_MUST_BE_LATEST_CLOSED_A_SHARE_SESSION" in publisher
     assert "REQUESTED_EXACT_TARGET_DATE" in publisher
+    assert "Publish, heal, or exact-verify immutable dated public bundle" in publisher
+    assert "IMMUTABLE_DATED_BUNDLE_INCOMPLETE_AFTER_HEAL" in publisher
+    assert "Healed missing immutable asset" in publisher
     assert "session_close = datetime.combine" in text
     assert "freeze_deadline = datetime.combine" in text
     assert "ACTIVE_SESSION_TO_DECISION_PREOPEN_WINDOW" in text
