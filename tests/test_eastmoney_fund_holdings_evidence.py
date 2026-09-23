@@ -4,10 +4,13 @@ from hashlib import sha256
 from urllib.error import URLError
 
 from tech_sentiment.eastmoney_fund_holdings_evidence import (
+    WEIGHTED_CANDIDATE_BLOCKER,
     fetch_holdings_year,
     holdings_url,
+    lookthrough_candidate_rows,
     parse_eastmoney_envelope,
     parse_holdings_html,
+    parse_weighted_holdings_candidates,
 )
 
 
@@ -91,6 +94,57 @@ def test_less_than_eleven_symbols_never_becomes_full_report_candidate_set() -> N
         response_sha256="abc",
     )[0]
     assert batch.full_report_candidate_set is False
+
+
+def test_weighted_candidates_parse_unambiguous_percent_without_granting_pit() -> None:
+    html = (
+        '<div class="box"><h4>2023年2季度股票投资明细</h4>'
+        '<table><tbody>'
+        '<tr><td>1</td><td><a>600276</a></td><td>恒瑞医药</td><td>7.25%</td></tr>'
+        '<tr><td>2</td><td><a>688012</a></td><td>中微公司</td><td>3.50%</td></tr>'
+        '</tbody></table></div>'
+    )
+    batch = parse_weighted_holdings_candidates(
+        html,
+        fund_code="159992",
+        source_url="https://example.test/holdings",
+        response_sha256="abc",
+    )[0]
+
+    assert batch.symbol_count == 2
+    assert batch.weighted_symbol_count == 2
+    assert batch.all_symbol_weights_parsed is True
+    assert batch.pit_qualified is False
+    assert [item.symbol for item in batch.positions] == ["600276", "688012"]
+    assert [item.weight_fraction for item in batch.positions] == [0.0725, 0.035]
+
+    rows = lookthrough_candidate_rows(batch)
+    assert rows[0]["security_id"] == "CN:600276"
+    assert rows[0]["weight_within_parent_candidate"] == 0.0725
+    assert "weight_within_parent" not in rows[0]
+    assert rows[0]["source_published_on"] is None
+    assert rows[0]["pit_qualified"] is False
+    assert rows[0]["qualification_blocker"] == WEIGHTED_CANDIDATE_BLOCKER
+
+
+def test_ambiguous_percentage_row_keeps_symbol_but_does_not_invent_weight() -> None:
+    html = (
+        '<div class="box"><h4>2023年1季度股票投资明细</h4>'
+        '<table><tbody>'
+        '<tr><td>1</td><td><a>600276</a></td><td>恒瑞医药</td><td>7.25%</td><td>2.10%</td></tr>'
+        '</tbody></table></div>'
+    )
+    batch = parse_weighted_holdings_candidates(
+        html,
+        fund_code="159992",
+        source_url="https://example.test/holdings",
+        response_sha256="abc",
+    )[0]
+
+    assert batch.symbol_count == 1
+    assert batch.weighted_symbol_count == 0
+    assert batch.all_symbol_weights_parsed is False
+    assert lookthrough_candidate_rows(batch) == []
 
 
 def test_fetch_holdings_year_retries_transient_transport_failures() -> None:
