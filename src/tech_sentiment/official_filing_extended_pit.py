@@ -41,22 +41,36 @@ EXTENDED_AMOUNT_FACT_LABELS: Mapping[str, tuple[str, ...]] = {
     "CURRENT_PORTION_NON_CURRENT_LIABILITIES": ("一年内到期的非流动负债",),
 }
 
+_STATEMENT_BOUNDARY_MARKERS = (
+    "资产负债表",
+    "利润表",
+    "现金流量表",
+    "所有者权益变动表",
+)
+
 
 def _nearby_header_has_note_column(
     lines: list[str],
     index: int,
     *,
-    lookback: int = 16,
+    lookback: int = 24,
 ) -> bool:
-    """Return whether the bounded table-header region explicitly declares 附注.
+    """Return whether the current statement header explicitly declares 附注.
 
-    This is deliberately structural rather than value based.  A false positive
-    only causes the extended parser to fail closed for the row; it never changes
-    an extracted amount.
+    The search is bounded to the nearest financial-statement boundary so an
+    ``附注`` header in a preceding balance sheet cannot contaminate a following
+    income statement or cash-flow statement. A false positive only causes the
+    extended parser to fail closed for the row; it never changes an extracted
+    amount.
     """
 
     left = max(0, index - lookback)
-    return any("附注" in line for line in lines[left : index + 1])
+    statement_left = left
+    for position in range(index, left - 1, -1):
+        if any(marker in lines[position] for marker in _STATEMENT_BOUNDARY_MARKERS):
+            statement_left = position
+            break
+    return any("附注" in line for line in lines[statement_left : index + 1])
 
 
 def _direct_amount_value_after_label(
@@ -66,9 +80,9 @@ def _direct_amount_value_after_label(
     """Extract a direct amount only when the numeric column position is provable.
 
     The generic filing parser historically accepts the first numeric token after
-    a label.  That is unsafe for extended raw primitives because many Chinese
+    a label. That is unsafe for extended raw primitives because many Chinese
     statement tables insert an explicit ``附注`` column before the current-period
-    amount.  In that layout a row such as ``货币资金 七、1 12,345 11,111`` would
+    amount. In that layout a row such as ``货币资金 七、1 12,345 11,111`` would
     otherwise emit ``1`` as the monetary-funds value.
 
     Rules here are intentionally conservative:
@@ -77,8 +91,8 @@ def _direct_amount_value_after_label(
     * without an explicit nearby ``附注`` header, at most two numeric amount
       cells are accepted and the first is the current-period value;
     * with an explicit ``附注`` header, exactly a syntactic note-reference token
-      plus at least two amount cells must be present; the first amount after the
-      note reference is used;
+      plus two amount cells must be present; the first amount after the note
+      reference is used;
     * layouts that cannot prove the amount-column position remain missing.
 
     No financial magnitude threshold, imputation, model mapping, or cross-row
@@ -89,7 +103,7 @@ def _direct_amount_value_after_label(
         logical_row = _logical_row_window(lines, index)
         label_match = _wrapped_label_match(logical_row, labels)
         if label_match is None:
-            # Do not use fragmented-label recovery here.  If a numeric cell
+            # Do not use fragmented-label recovery here. If a numeric cell
             # interrupts the visible label, the column position is ambiguous.
             continue
 
