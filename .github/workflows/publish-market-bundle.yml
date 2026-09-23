@@ -98,7 +98,7 @@ jobs:
             for REQUIRED in "${TAG}.tar.gz" "${TAG}.sha256" "${TAG}.manifest.json"; do
               if ! grep -Fxq "${REQUIRED}" <<<"${ASSETS}"; then
                 COMPLETE=false
-                echo "Existing immutable release is incomplete; preserving fail-closed publication path: missing ${REQUIRED}"
+                echo "Existing immutable release is incomplete; recovery required: missing ${REQUIRED}"
               fi
             done
             if [ "${COMPLETE}" = "true" ]; then
@@ -195,28 +195,38 @@ jobs:
           CHECKSUM="dist/${BASE}.sha256"
           MANIFEST="dist/${BASE}.manifest.json"
 
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            mkdir -p existing
-            gh release download "${TAG}" \
-              --pattern "${BASE}.sha256" \
-              --pattern "${BASE}.manifest.json" \
-              --dir existing
-            cmp --silent "${CHECKSUM}" "existing/${BASE}.sha256" || {
-              echo "IMMUTABLE_DATED_BUNDLE_CONFLICT: checksum drift for ${TAG}" >&2
-              exit 1
-            }
-            cmp --silent "${MANIFEST}" "existing/${BASE}.manifest.json" || {
-              echo "IMMUTABLE_DATED_BUNDLE_CONFLICT: manifest drift for ${TAG}" >&2
-              exit 1
-            }
-            echo "Immutable dated release already exists with exact identity: ${TAG}"
-          else
+          if ! gh release view "${TAG}" >/dev/null 2>&1; then
             gh release create "${TAG}" \
               --target "$GITHUB_SHA" \
               --title "Immutable public market bundle ${DATE}" \
               --notes "Immutable dated public market-data inputs for PIT/provenance replay. No private model, signal, portfolio, or evidence qualification is included."
-            gh release upload "${TAG}" "${ARCHIVE}" "${CHECKSUM}" "${MANIFEST}"
           fi
+
+          mkdir -p existing
+          ASSETS="$(gh release view "${TAG}" --json assets --jq '.assets[].name')"
+          for LOCAL in "${ARCHIVE}" "${CHECKSUM}" "${MANIFEST}"; do
+            NAME="$(basename "${LOCAL}")"
+            if grep -Fxq "${NAME}" <<<"${ASSETS}"; then
+              gh release download "${TAG}" --pattern "${NAME}" --dir existing
+              cmp --silent "${LOCAL}" "existing/${NAME}" || {
+                echo "IMMUTABLE_DATED_BUNDLE_CONFLICT: byte drift for ${TAG}/${NAME}" >&2
+                exit 1
+              }
+              echo "Verified existing immutable asset: ${NAME}"
+            else
+              gh release upload "${TAG}" "${LOCAL}"
+              echo "Healed missing immutable asset: ${NAME}"
+            fi
+          done
+
+          FINAL_ASSETS="$(gh release view "${TAG}" --json assets --jq '.assets[].name')"
+          for REQUIRED in "${BASE}.tar.gz" "${BASE}.sha256" "${BASE}.manifest.json"; do
+            grep -Fxq "${REQUIRED}" <<<"${FINAL_ASSETS}" || {
+              echo "IMMUTABLE_DATED_BUNDLE_INCOMPLETE_AFTER_HEAL: missing ${REQUIRED}" >&2
+              exit 1
+            }
+          done
+          echo "Immutable dated release is complete and exact: ${TAG}"
 
       - name: Non-trading target-date receipt
         if: steps.immutable_reuse.outputs.reuse != 'true' && steps.dated.outputs.publish != 'true'

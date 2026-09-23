@@ -59,7 +59,10 @@ def test_reuse_guard_does_not_weaken_immutable_identity_checks() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     dated = _step_block(text, "Publish or exact-verify immutable dated public bundle")
 
-    assert 'cmp --silent "${CHECKSUM}" "existing/${BASE}.sha256"' in dated
-    assert 'cmp --silent "${MANIFEST}" "existing/${BASE}.manifest.json"' in dated
-    assert "IMMUTABLE_DATED_BUNDLE_CONFLICT: checksum drift" in dated
-    assert "IMMUTABLE_DATED_BUNDLE_CONFLICT: manifest drift" in dated
+    assert 'for LOCAL in "${ARCHIVE}" "${CHECKSUM}" "${MANIFEST}"; do' in dated
+    assert 'NAME="$(basename "${LOCAL}")"' in dated
+    assert 'cmp --silent "${LOCAL}" "existing/${NAME}"' in dated
+    assert "IMMUTABLE_DATED_BUNDLE_CONFLICT: byte drift for ${TAG}/${NAME}" in dated
+    for required in ("${BASE}.tar.gz", "${BASE}.sha256", "${BASE}.manifest.json"):
+        assert required in dated
+    assert "IMMUTABLE_DATED_BUNDLE_INCOMPLETE_AFTER_HEAL" in dated

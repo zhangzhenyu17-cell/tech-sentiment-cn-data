@@ -10,7 +10,7 @@
       ],
       "cron_utc": [
         "45 15 * * *",
-        "15,45 16-20 * * *"
+        "15,45 16-19 * * *"
       ],
       "intended_time_asia_shanghai": [
         "23:45",
@@ -21,11 +21,9 @@
         "02:15",
         "02:45",
         "03:15",
-        "03:45",
-        "04:15",
-        "04:45"
+        "03:45"
       ],
-      "necessity": "Start at the earliest operationally mature 23:45 window and retry idempotently every 30 minutes through 04:45, preserving a final pre-freeze recovery opportunity while exact-release and active-run guards make later attempts no-op after success."
+      "necessity": "Start at the earliest operationally mature 23:45 window and retry idempotently every 30 minutes through 03:45. The target raw workflow has a 90-minute job bound and now also rejects capture completion after the fixed 05:30 freeze; stopping automatic launches at 03:45 preserves launch margin while complete-asset and active-run guards make later attempts no-op after success."
     }
   },
   "target_workflows": [
