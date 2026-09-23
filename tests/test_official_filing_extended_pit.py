@@ -5,6 +5,7 @@ import pytest
 
 from tech_sentiment.official_filing_extended_pit import (
     EXTENDED_FILING_PARSER_VERSION,
+    _physical_line_starts_label,
     build_extended_filing_fact_rows,
     extract_extended_filing_facts,
 )
@@ -81,6 +82,26 @@ def test_extended_pit_blank_note_column_fails_closed_instead_of_guessing() -> No
 
     assert "MONETARY_FUNDS" not in facts
     assert facts["R_AND_D_EXPENSE"] == pytest.approx(8_880_000.0)
+
+
+def test_extended_pit_header_cannot_own_following_physical_row_label() -> None:
+    labels = ("货币资金",)
+
+    assert _physical_line_starts_label("项目 附注 期末余额 期初余额", labels) is False
+    assert _physical_line_starts_label("货币资金 12,345 11,111", labels) is True
+
+
+def test_extended_pit_legitimate_wrapped_label_still_parses() -> None:
+    text = """
+    2025年半年度报告
+    合并现金流量表 单位：人民币万元
+    购建固定资产、无形资产和其他长期资产
+    支付的现金 1,234 1,100
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert facts["CAPEX_CASH_PAID"] == pytest.approx(12_340_000.0)
 
 
 def test_extended_pit_more_than_two_unproven_numeric_cells_fails_closed() -> None:
