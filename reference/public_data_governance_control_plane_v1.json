@@ -1,0 +1,209 @@
+{
+  "schema_version": "public-data-governance-control-plane-v1",
+  "contract_id": "PUBLIC_DATA_GOVERNANCE_CONTROL_PLANE_V1",
+  "status": "ENGINEERING_GOVERNANCE_GUARD_NOT_EVIDENCE_AUTHORITY",
+  "effective_date": "2026-09-23",
+  "purpose": "Provide one fail-closed repository-native control plane for public data contracts, lineage, quality gates, semantic review, quarantine, cache invalidation and private-intake boundaries without changing evidence eligibility, PIT/no-lookahead semantics, model behavior, production authority or trading authority.",
+  "authority": {
+    "may_promote_evidence": false,
+    "may_change_evidence_eligibility": false,
+    "may_change_pit_no_lookahead_semantics": false,
+    "may_change_model_factor_threshold_signal": false,
+    "may_change_production": false,
+    "may_authorize_trading": false,
+    "public_workflow_success_grants_private_qualification": false,
+    "semantic_review_grants_private_qualification": false,
+    "quarantine_release_grants_private_qualification": false
+  },
+  "design_sources": {
+    "openlineage": {
+      "repository": "OpenLineage/OpenLineage",
+      "adopted_concepts": [
+        "separate job identity from run identity",
+        "treat produced data as named datasets",
+        "attach extensible metadata facets instead of overloading one status field"
+      ],
+      "runtime_dependency_added": false
+    },
+    "odcs": {
+      "repository": "bitol-io/open-data-contract-standard",
+      "adopted_concepts": [
+        "producer-consumer data contract",
+        "explicit schema and quality expectations",
+        "service and authoritative-definition metadata where applicable"
+      ],
+      "runtime_dependency_added": false
+    },
+    "gx_core": {
+      "repository": "fivetran/great_expectations",
+      "adopted_concepts": [
+        "express data quality as executable expectations",
+        "retain validation results as institutional knowledge"
+      ],
+      "runtime_dependency_added": false
+    }
+  },
+  "registry_coverage": {
+    "mode": "INITIAL_CRITICAL_AND_SHARED_RAILS",
+    "future_new_public_data_products_must_register": true,
+    "legacy_unregistered_products_are_not_reclassified_or_promoted_by_this_contract": true,
+    "registration_does_not_change_existing_evidence_status": true
+  },
+  "lifecycle": {
+    "ordered_gates": [
+      "REPOSITORY_CONTRACT",
+      "DATA_CONTRACT",
+      "LINEAGE_PROVENANCE",
+      "STRUCTURAL_QUALITY",
+      "PIT_NO_LOOKAHEAD",
+      "SEMANTIC_ARTIFACT_REVIEW",
+      "QUARANTINE_CHECK",
+      "PUBLIC_HANDOFF_READY"
+    ],
+    "rules": {
+      "workflow_success_is_only_execution_status": true,
+      "structural_acceptance_does_not_imply_semantic_correctness": true,
+      "semantic_review_is_outcome_blind": true,
+      "semantic_review_precedes_private_intake": true,
+      "active_quarantine_blocks_downstream_consumption": true,
+      "public_handoff_ready_does_not_grant_private_qualification": true,
+      "unknown_or_ambiguous_state_fails_closed": true
+    }
+  },
+  "lineage_model": {
+    "job_identity_required": true,
+    "run_identity_required": true,
+    "dataset_identity_required": true,
+    "source_commit_required": true,
+    "producer_version_required_when_semantics_are_parser_or_builder_dependent": true,
+    "facets": [
+      "SOURCE_IDENTITY",
+      "TEMPORAL_PIT",
+      "SCHEMA_CONTRACT",
+      "QUALITY_RESULT",
+      "SEMANTIC_REVIEW",
+      "CACHE_IDENTITY",
+      "AUTHORITY_BOUNDARY"
+    ]
+  },
+  "quality_policy": {
+    "structural_checks": [
+      "schema shape",
+      "required provenance",
+      "scope accounting",
+      "identity uniqueness",
+      "artifact digest when available"
+    ],
+    "semantic_checks": [
+      "representative real-layout regression",
+      "field meaning matches declared contract",
+      "unit interpretation is locally proven",
+      "revision semantics remain PIT-safe",
+      "diagnostic anomalies investigated before qualification intake"
+    ],
+    "diagnostic_anomaly_policy": {
+      "anomalies_may_trigger_investigation": true,
+      "anomalies_may_directly_rewrite_values": false,
+      "magnitude_thresholds_may_grant_validity": false,
+      "issuer_specific_value_hardcoding_allowed": false
+    }
+  },
+  "semantic_change_policy": {
+    "TRANSPORT_ONLY": {
+      "default_invalidation": [],
+      "requires_identity_reproof": true
+    },
+    "QUERY_OR_INDEX_SEMANTIC_CHANGE": {
+      "default_invalidation": [
+        "QUERY_INDEX_CACHE",
+        "DOWNSTREAM_DERIVED_DATASETS"
+      ]
+    },
+    "PARSER_SEMANTIC_CHANGE": {
+      "default_invalidation": [
+        "PARSED_DOCUMENT_FACTS",
+        "DOWNSTREAM_DERIVED_DATASETS"
+      ],
+      "query_index_cache_reusable_if_query_identity_unchanged": true,
+      "parsed_document_cache_reusable_across_parser_semantic_versions": false
+    },
+    "DATA_CONTRACT_CHANGE": {
+      "default_invalidation": [
+        "CONTRACT_INCOMPATIBLE_DATASETS",
+        "CONTRACT_INCOMPATIBLE_DERIVED_OUTPUTS"
+      ],
+      "compatibility_must_be_explicit": true
+    },
+    "SOURCE_IDENTITY_CHANGE": {
+      "default_invalidation": [
+        "AFFECTED_SOURCE_CACHE",
+        "AFFECTED_DATASETS",
+        "AFFECTED_DERIVED_OUTPUTS"
+      ]
+    },
+    "PIT_OR_EVIDENCE_SEMANTIC_CHANGE": {
+      "automatic_engineering_change_allowed": false,
+      "explicit_human_authorization_required": true
+    }
+  },
+  "quarantine": {
+    "ledger_path": "reference/public_data_quarantine_ledger_v1.json",
+    "active_entry_blocks_public_handoff_ready": true,
+    "active_entry_blocks_private_qualification_intake": true,
+    "artifact_deletion_is_not_required_for_quarantine": true,
+    "release_requires_replacement_or_reproof": true,
+    "release_requires_documented_semantic_review": true,
+    "release_does_not_grant_private_qualification": true
+  },
+  "registered_products": [
+    {
+      "product_id": "FUNDAMENTAL_EXTENDED_PIT_HISTORICAL_COVERAGE",
+      "contract_path": "docs/fundamental_extended_pit_historical_coverage_run_plan_2026-09-22.md",
+      "producer_path": ".github/workflows/fundamental-extended-pit-coverage.yml",
+      "logical_dataset": "fundamental-extended-pit-coverage-audit",
+      "private_consumer_boundary": "private outcome-blind qualification review",
+      "registration_state": "SEMANTIC_REMEDIATION_PENDING_REPLACEMENT_ARTIFACT",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
+    },
+    {
+      "product_id": "V4A_CAPITAL_PIT_PUBLIC_HANDOFF",
+      "contract_path": "reference/v4a_private_qualification_handoff_v2.json",
+      "producer_path": ".github/workflows/qualify-capital-inputs.yml",
+      "logical_dataset": "v4a capital PIT public materialization handoff",
+      "private_consumer_boundary": "V4A_PRIVATE_QUALIFICATION_HANDOFF_V2",
+      "registration_state": "EXISTING_RAIL_REGISTERED_NO_RECLASSIFICATION",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
+    },
+    {
+      "product_id": "PROSPECTIVE_CONTEXT_RAW_PREOPEN_V2",
+      "contract_path": "reference/prospective_context_raw_preopen_v2.json",
+      "producer_path": ".github/workflows/prospective-context-raw-preopen-v2.yml",
+      "logical_dataset": "prospective-context public raw preopen package",
+      "private_consumer_boundary": "existing prospective private intake contract only",
+      "registration_state": "EXISTING_RAIL_REGISTERED_NO_RECLASSIFICATION",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
+    },
+    {
+      "product_id": "IPO_AFTERMARKET_PUBLIC_V1",
+      "contract_path": "reference/ipo_aftermarket_public_v1.json",
+      "producer_path": ".github/workflows/ipo-aftermarket-public-v1.yml",
+      "logical_dataset": "ipo aftermarket public v1 materialization",
+      "private_consumer_boundary": "existing private consumer contract only",
+      "registration_state": "EXISTING_RAIL_REGISTERED_NO_RECLASSIFICATION",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
+    }
+  ],
+  "ci_enforcement": {
+    "existing_workflow_only": true,
+    "new_workflow_added": false,
+    "audit_entrypoint": "scripts/audit_public_tree.py",
+    "pytest_contract": "tests/test_public_data_governance_control_plane.py",
+    "fail_closed_on_missing_registered_path": true,
+    "fail_closed_on_authority_escalation": true,
+    "fail_closed_on_quarantine_bypass": true
+  }
+}
