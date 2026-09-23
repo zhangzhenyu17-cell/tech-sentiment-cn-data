@@ -10,16 +10,22 @@
       ],
       "cron_utc": [
         "45 15 * * *",
-        "15,45 16,17 * * *"
+        "15,45 16-20 * * *"
       ],
       "intended_time_asia_shanghai": [
         "23:45",
         "00:15",
         "00:45",
         "01:15",
-        "01:45"
+        "01:45",
+        "02:15",
+        "02:45",
+        "03:15",
+        "03:45",
+        "04:15",
+        "04:45"
       ],
-      "necessity": "Start at the earliest operationally mature 23:45 window and retry idempotently every 30 minutes through 01:45 so exact public bundle/raw inputs are available as early as possible without weakening provider-readiness or freeze guards."
+      "necessity": "Start at the earliest operationally mature 23:45 window and retry idempotently every 30 minutes through 04:45, preserving a final pre-freeze recovery opportunity while exact-release and active-run guards make later attempts no-op after success."
     }
   },
   "target_workflows": [
