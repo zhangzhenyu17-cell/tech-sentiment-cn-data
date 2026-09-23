@@ -12,17 +12,42 @@ from tech_sentiment.prospective_context_raw_preopen_v2 import (
 )
 
 
-def _require_capture_completed_before_freeze(decision_date: str) -> None:
-    now = datetime.now(ZoneInfo("Asia/Shanghai"))
-    if now.date().isoformat() != decision_date:
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def _require_capture_completed_before_freeze(
+    market_session_date: str,
+    decision_date: str,
+    *,
+    completed_at: datetime | None = None,
+) -> None:
+    now = completed_at or datetime.now(SHANGHAI)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=SHANGHAI)
+    else:
+        now = now.astimezone(SHANGHAI)
+
+    session_date = datetime.strptime(market_session_date, "%Y-%m-%d").date()
+    decision = datetime.strptime(decision_date, "%Y-%m-%d").date()
+    operational_start = datetime.combine(session_date, time(23, 45), tzinfo=SHANGHAI)
+    freeze = datetime.combine(decision, time(5, 30), tzinfo=SHANGHAI)
+
+    if freeze < operational_start:
         raise RuntimeError(
-            "PREOPEN_CAPTURE_COMPLETED_OUTSIDE_DECISION_DATE: "
-            f"decision_date={decision_date} completed_at={now.isoformat()}"
+            "PREOPEN_CAPTURE_INVALID_OPERATIONAL_WINDOW: "
+            f"session={market_session_date} decision={decision_date}"
         )
-    if now.timetz().replace(tzinfo=None) > time(5, 30):
+    if now < operational_start:
+        raise RuntimeError(
+            "PREOPEN_CAPTURE_COMPLETED_BEFORE_2345_OPERATIONAL_WINDOW: "
+            f"session={market_session_date} decision={decision_date} "
+            f"completed_at={now.isoformat()}"
+        )
+    if now > freeze:
         raise RuntimeError(
             "PREOPEN_CAPTURE_COMPLETED_AFTER_0530_FREEZE: "
-            f"decision_date={decision_date} completed_at={now.isoformat()}"
+            f"session={market_session_date} decision={decision_date} "
+            f"completed_at={now.isoformat()}"
         )
 
 
@@ -75,7 +100,10 @@ def main() -> int:
         output_root=args.capture_root.resolve(),
         checkpoint_dir=args.checkpoint_dir.resolve(),
     )
-    _require_capture_completed_before_freeze(args.decision_date)
+    _require_capture_completed_before_freeze(
+        args.market_session_date,
+        args.decision_date,
+    )
     manifest = package_preopen_capture(
         result.output_root,
         output_dir=args.package_dir.resolve(),
