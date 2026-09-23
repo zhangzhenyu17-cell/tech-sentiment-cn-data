@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from tech_sentiment.extended_filing_materialization import (
-    materialize_extended_filing_facts,
+from tech_sentiment.cninfo_resilient_download import (
+    download_cninfo_document_resilient,
 )
+import tech_sentiment.extended_filing_materialization as extended_materialization
 
 
 def _symbols(path: Path) -> list[str]:
@@ -70,7 +71,16 @@ def main() -> int:
     parser.add_argument("--fail-on-hard-errors", action="store_true")
     args = parser.parse_args()
 
-    result = materialize_extended_filing_facts(
+    # Extended PIT runs already use the canonical official downloader. Install a
+    # transport-only compatibility adapter for this historical backfill entrypoint
+    # so bounded transient failures can continue through the existing same-provider
+    # CNINFO HTTPS session/browser transports. Evidence identity and parser rules
+    # remain unchanged.
+    extended_materialization.download_official_document = (
+        download_cninfo_document_resilient
+    )
+
+    result = extended_materialization.materialize_extended_filing_facts(
         _symbols(args.symbols_csv),
         target_start_date=args.target_start_date,
         end_date=args.end_date,
