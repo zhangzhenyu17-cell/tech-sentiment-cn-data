@@ -131,17 +131,14 @@ The frozen `prospective-context-raw-preopen-v2` workflow remains a manual
 `.github/workflows/prospective-public-daily-orchestrator-v1.yml`, is explicitly
 allowlisted under `reference/prospective_daily_automation_v1.json`.
 
-Its bounded retry schedule starts at the earliest operationally mature **23:45 Asia/Shanghai** window and then retries every 30 minutes through **04:45 Asia/Shanghai** (`45 15 * * *` plus `15,45 16-20 * * *` UTC). Exact releases and active-run checks make every later attempt an idempotent no-op once the exact bundle/raw capture succeeds. This preserves an early normal path while retaining multiple recovery opportunities before the fixed 05:30 data-freeze boundary. It:
+Its bounded retry schedule starts at the earliest operationally mature **23:45 Asia/Shanghai** window and then retries every 30 minutes through **03:45 Asia/Shanghai** (`45 15 * * *` plus `15,45 16-19 * * *` UTC). Exact-release completeness checks and active-run checks make every later attempt an idempotent no-op once the exact bundle/raw capture succeeds. The 03:45 last automatic dispatch leaves nominal room inside the raw workflow's 90-minute job bound, while the target builder independently enforces that materialization must actually complete no later than the fixed 05:30 data-freeze boundary. It:
 
 1. resolves the exact A-share trading-day pair from the live trading calendar;
 2. preserves the active session-close → next-trading-day 05:30 window across intervening weekends or exchange holidays, and no-ops only when the current time is outside that exact trading-calendar window;
-3. requests the existing `publish-market-bundle.yml` only when the exact
-   `market-bundle-T` immutable release is missing, passing T through the publisher's
-   guarded `target_date` input; that input accepts only the latest already-closed
-   A-share trading session, so it cannot become an arbitrary historical backfill path;
-4. dispatches the existing pre-open public raw workflow only when the exact
-   `prospective-context-raw-preopen-v2-T-for-T+1` release is absent and no
-   capture is already active.
+3. treats `market-bundle-T` as ready only when the immutable release contains the exact archive / sha256 / manifest three-asset set; if the release is missing or partial, it requests the existing `publish-market-bundle.yml` with guarded `target_date=T` so the publisher can create or heal the exact release without arbitrary historical backfill;
+4. treats `prospective-context-raw-preopen-v2-T-for-T+1` as ready only when its archive / sha256 / manifest three-asset set is complete; otherwise, and only when no raw capture is already active, it dispatches the existing manual pre-open raw workflow;
+5. the raw builder checks the operational completion window again after materialization: completion before T 23:45 or after decision-day 05:30 fails closed before the formal immutable raw package is published;
+6. partial immutable market-bundle or raw releases are healed only by uploading missing assets after every already-present asset is verified byte-identical; any existing byte drift fails closed.
 
 The wrapper does not materialize model outputs or evidence. It cannot substitute
 rolling latest, stale rows, prior dates, interpolation, historical replay, or
