@@ -137,13 +137,14 @@ def _first_amount_value_in_statement_scope(
 def extract_extended_filing_facts(text: str) -> dict[str, float]:
     """Extract direct CNY statement primitives without semantic aggregation.
 
-    Every value must be supported by the same explicit table-unit contract used
-    by the canonical official filing parser. The primary extractor retains its
-    conservative short-range unit lookup. If a direct line-item is farther down
-    a financial statement, a deterministic fallback may reuse only that same
-    statement block's explicit header unit. Missing fields stay missing. Debt
-    components remain separate raw facts; this function never manufactures a
-    model-facing DEBT value.
+    Every value must be supported by an explicit table-unit contract. For facts
+    with a known financial-statement home, the parser first selects within that
+    statement block so a later parent-company table cannot outrank the earlier
+    consolidated statement merely because its row is closer to a unit header.
+    The legacy short-range extractor remains only as a compatibility fallback
+    for historical layouts without recognizable statement boundaries. Missing
+    fields stay missing. Debt components remain separate raw facts; this
+    function never manufactures a model-facing DEBT value.
     """
 
     lines = _normalize_text_lines(text)
@@ -154,14 +155,14 @@ def extract_extended_filing_facts(text: str) -> dict[str, float]:
 
     facts: dict[str, float] = {}
     for fact_type, labels in EXTENDED_AMOUNT_FACT_LABELS.items():
-        value = _first_amount_value_after_label(lines, labels)
+        statement_token = _FACT_STATEMENT_TOKEN[fact_type]
+        value = _first_amount_value_in_statement_scope(
+            lines,
+            labels,
+            statement_token=statement_token,
+        )
         if value is None:
-            statement_token = _FACT_STATEMENT_TOKEN[fact_type]
-            value = _first_amount_value_in_statement_scope(
-                lines,
-                labels,
-                statement_token=statement_token,
-            )
+            value = _first_amount_value_after_label(lines, labels)
         if value is not None:
             facts[fact_type] = float(value)
 
