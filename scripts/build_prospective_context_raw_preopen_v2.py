@@ -1,13 +1,29 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, time
 import json
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from tech_sentiment.prospective_context_raw_preopen_v2 import (
     materialize_preopen_public_raw_capture,
     package_preopen_capture,
 )
+
+
+def _require_capture_completed_before_freeze(decision_date: str) -> None:
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    if now.date().isoformat() != decision_date:
+        raise RuntimeError(
+            "PREOPEN_CAPTURE_COMPLETED_OUTSIDE_DECISION_DATE: "
+            f"decision_date={decision_date} completed_at={now.isoformat()}"
+        )
+    if now.timetz().replace(tzinfo=None) > time(5, 30):
+        raise RuntimeError(
+            "PREOPEN_CAPTURE_COMPLETED_AFTER_0530_FREEZE: "
+            f"decision_date={decision_date} completed_at={now.isoformat()}"
+        )
 
 
 def main() -> int:
@@ -59,6 +75,7 @@ def main() -> int:
         output_root=args.capture_root.resolve(),
         checkpoint_dir=args.checkpoint_dir.resolve(),
     )
+    _require_capture_completed_before_freeze(args.decision_date)
     manifest = package_preopen_capture(
         result.output_root,
         output_dir=args.package_dir.resolve(),
