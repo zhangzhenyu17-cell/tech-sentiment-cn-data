@@ -182,7 +182,7 @@ jobs:
             dist/market_bundle_manifest.json \
             --clobber
 
-      - name: Publish, heal, or exact-verify immutable dated public bundle
+      - name: Publish or exact-verify immutable dated public bundle
         if: steps.immutable_reuse.outputs.reuse != 'true' && steps.dated.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
