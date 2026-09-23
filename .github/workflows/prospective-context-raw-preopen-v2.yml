@@ -58,8 +58,6 @@ jobs:
       - name: Install public data environment
         run: |
           python -m pip install --upgrade pip
-          # Pin the provider adapter used by the frozen pre-open rail so a
-          # future AKShare release cannot silently alter endpoint behavior.
           python -m pip install "akshare==1.18.94" "pandas==3.0.5" "pytest==8.4.2"
           python -m pip install -e ".[data,dev]"
           python -m pip check
@@ -182,7 +180,7 @@ jobs:
               handle.write(f"tag={payload['release_tag']}\n")
           PY
 
-      - name: Publish or exact-verify immutable pre-open public raw capture
+      - name: Publish, heal, or exact-verify immutable pre-open public raw capture
         if: ${{ steps.capture.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -193,27 +191,39 @@ jobs:
           ARCHIVE="$ROOT/$TAG.tar.gz"
           CHECKSUM="$ROOT/$TAG.sha256"
           MANIFEST="$ROOT/$TAG.manifest.json"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            mkdir -p existing
-            gh release download "$TAG" \
-              --pattern "$TAG.sha256" \
-              --pattern "$TAG.manifest.json" \
-              --dir existing
-            cmp --silent "$CHECKSUM" "existing/$TAG.sha256" || {
-              echo "IMMUTABLE_PREOPEN_PUBLIC_RAW_CAPTURE_CONFLICT: checksum drift" >&2
-              exit 1
-            }
-            cmp --silent "$MANIFEST" "existing/$TAG.manifest.json" || {
-              echo "IMMUTABLE_PREOPEN_PUBLIC_RAW_CAPTURE_CONFLICT: manifest drift" >&2
-              exit 1
-            }
-          else
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "Prospective pre-open public raw Context ${{ inputs.market_session_date }} -> ${{ inputs.decision_date }}" \
               --notes "Public-only previous-session raw inputs, frozen no later than 05:30 Asia/Shanghai for next-trading-day pre-open decision. No historical backfill or evidence qualification is granted here."
-            gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" "$MANIFEST"
           fi
+
+          mkdir -p existing
+          ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          for LOCAL in "$ARCHIVE" "$CHECKSUM" "$MANIFEST"; do
+            NAME="$(basename "$LOCAL")"
+            if grep -Fxq "$NAME" <<<"$ASSETS"; then
+              gh release download "$TAG" --pattern "$NAME" --dir existing
+              cmp --silent "$LOCAL" "existing/$NAME" || {
+                echo "IMMUTABLE_PREOPEN_PUBLIC_RAW_CAPTURE_CONFLICT: byte drift for $TAG/$NAME" >&2
+                exit 1
+              }
+              echo "Verified existing immutable asset: $NAME"
+            else
+              gh release upload "$TAG" "$LOCAL"
+              echo "Healed missing immutable asset: $NAME"
+            fi
+          done
+
+          FINAL_ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+          for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+            grep -Fxq "$REQUIRED" <<<"$FINAL_ASSETS" || {
+              echo "IMMUTABLE_PREOPEN_PUBLIC_RAW_CAPTURE_INCOMPLETE_AFTER_HEAL: missing $REQUIRED" >&2
+              exit 1
+            }
+          done
+          echo "Immutable pre-open public raw release is complete and exact: $TAG"
 
       - name: Upload contemporaneous pre-open raw capture artifact
         if: ${{ steps.capture.outcome == 'success' }}
