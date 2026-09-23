@@ -1,0 +1,60 @@
+{
+  "schema_version": "public-data-quarantine-ledger-v1",
+  "ledger_id": "PUBLIC_DATA_QUARANTINE_LEDGER_V1",
+  "status": "ACTIVE_ENGINEERING_QUARANTINE_GUARD_NOT_EVIDENCE_AUTHORITY",
+  "effective_date": "2026-09-23",
+  "purpose": "Record public artifacts whose structural execution may have succeeded but whose semantic correctness is not established, so they cannot silently enter downstream consumption or private qualification intake.",
+  "authority": {
+    "may_promote_evidence": false,
+    "may_change_evidence_eligibility": false,
+    "may_change_pit_no_lookahead_semantics": false,
+    "may_change_production": false,
+    "may_authorize_trading": false
+  },
+  "rules": {
+    "active_entry_blocks_downstream_consumption": true,
+    "active_entry_blocks_private_qualification_intake": true,
+    "workflow_success_does_not_override_quarantine": true,
+    "artifact_retention_is_allowed_for_forensics": true,
+    "release_requires_semantic_reproof_or_replacement": true,
+    "release_requires_documented_review": true,
+    "release_does_not_grant_private_qualification": true
+  },
+  "entries": [
+    {
+      "quarantine_id": "FUND_EXT_PIT_V1_RUN_35847821341_SEMANTIC_RISK",
+      "product_id": "FUNDAMENTAL_EXTENDED_PIT_HISTORICAL_COVERAGE",
+      "state": "ACTIVE",
+      "reason_class": "SEMANTIC_CORRECTNESS_NOT_ESTABLISHED",
+      "reason_summary": "The successful v1 aggregate was structurally complete but outcome-blind artifact review identified parser layouts capable of treating note references, year-like tokens, or concatenated adjacent amounts as statement values. The artifact remains useful for forensic comparison but must not enter qualification intake.",
+      "observed_on": "2026-09-23",
+      "source_workflow": "Fundamental Extended PIT Historical Coverage",
+      "source_run_id": 35847821341,
+      "source_head_branch": "v4a/fundamental-resume-295710",
+      "source_head_sha": "9f71cd2d42735911fff26294a350f8ee4635084c",
+      "artifact_name": "fundamental-extended-pit-coverage-audit",
+      "artifact_id": 10744657001,
+      "artifact_digest": "sha256:4082a76bcd6567d3e27f07950842f3bc951efc80df834ccb8a4de951164d3069",
+      "artifact_parser_generation": "official-filing-extended-pit-primitives-v1",
+      "downstream_consumption_allowed": false,
+      "private_qualification_intake_allowed": false,
+      "may_promote_evidence": false,
+      "may_change_production": false,
+      "may_authorize_trading": false,
+      "forensic_retention_allowed": true,
+      "cache_reuse": {
+        "query_index_cache_reusable_if_identity_unchanged": true,
+        "parsed_document_facts_reusable": false,
+        "reason": "Parser semantic identity changed; safe upstream query/index identity may remain reusable while v1 parsed facts are invalidated."
+      },
+      "release_condition": {
+        "replacement_parser_generation": "official-filing-extended-pit-primitives-v2-column-safe",
+        "new_run_on_new_source_sha_required": true,
+        "structural_artifact_acceptance_required": true,
+        "outcome_blind_semantic_artifact_review_required": true,
+        "private_qualification_is_separate_after_release": true
+      },
+      "resolved": false
+    }
+  ]
+}
