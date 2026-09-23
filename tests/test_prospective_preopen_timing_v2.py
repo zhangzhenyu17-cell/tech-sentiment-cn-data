@@ -4,6 +4,9 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
+from scripts.build_prospective_context_raw_preopen_v2 import (
+    _require_capture_completed_before_freeze,
+)
 from tech_sentiment.prospective_preopen_timing_v2 import (
     validate_preopen_capture_window,
 )
@@ -72,6 +75,42 @@ def test_preopen_window_rejects_capture_before_session_close() -> None:
         )
 
 
+def test_capture_completion_guard_accepts_full_cross_date_window() -> None:
+    _require_capture_completed_before_freeze(
+        "2026-09-23",
+        "2026-09-24",
+        completed_at=_dt("2026-09-23T23:50:00"),
+    )
+    _require_capture_completed_before_freeze(
+        "2026-09-23",
+        "2026-09-24",
+        completed_at=_dt("2026-09-24T05:30:00"),
+    )
+
+
+def test_capture_completion_guard_accepts_intervening_nontrading_days() -> None:
+    _require_capture_completed_before_freeze(
+        "2026-09-25",
+        "2026-09-28",
+        completed_at=_dt("2026-09-26T01:00:00"),
+    )
+
+
+def test_capture_completion_guard_rejects_outside_operational_window() -> None:
+    with pytest.raises(RuntimeError, match="BEFORE_2345_OPERATIONAL_WINDOW"):
+        _require_capture_completed_before_freeze(
+            "2026-09-23",
+            "2026-09-24",
+            completed_at=_dt("2026-09-23T23:44:59"),
+        )
+    with pytest.raises(RuntimeError, match="AFTER_0530_FREEZE"):
+        _require_capture_completed_before_freeze(
+            "2026-09-23",
+            "2026-09-24",
+            completed_at=_dt("2026-09-24T05:30:01"),
+        )
+
+
 def test_preopen_workflow_is_manual_only_and_freeze_hardened() -> None:
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
@@ -100,10 +139,9 @@ def test_preopen_workflow_is_manual_only_and_freeze_hardened() -> None:
     )
     assert "_require_capture_completed_before_freeze" in builder
     assert "PREOPEN_CAPTURE_COMPLETED_AFTER_0530_FREEZE" in builder
-    assert "PREOPEN_CAPTURE_COMPLETED_OUTSIDE_DECISION_DATE" in builder
-    assert builder.index("_require_capture_completed_before_freeze(args.decision_date)") < builder.index(
-        "manifest = package_preopen_capture"
-    )
+    assert "PREOPEN_CAPTURE_COMPLETED_BEFORE_2345_OPERATIONAL_WINDOW" in builder
+    call = "    _require_capture_completed_before_freeze(\n        args.market_session_date,"
+    assert builder.index(call) < builder.index("manifest = package_preopen_capture")
 
 
 def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
