@@ -3,6 +3,8 @@ from __future__ import annotations
 from hashlib import sha256
 from urllib.error import HTTPError
 
+from requests.exceptions import ChunkedEncodingError
+
 from .bounded_retry import is_transient_network_error
 from .official_filing_facts import (
     DownloadedOfficialDocument,
@@ -15,6 +17,23 @@ from .official_filing_facts import (
     _validate_same_provider_retrieval,
     download_official_document,
 )
+
+
+def _session_failure_allows_browser_fallback(exc: BaseException) -> bool:
+    """Return True only for safe CNINFO session-transport recovery cases.
+
+    requests wraps an incomplete HTTP entity body as ChunkedEncodingError even
+    when the underlying cause is http.client.IncompleteRead.  That is the same
+    transport-truncation class that already permits recovery after urllib
+    exhaustion, so the existing same-provider browser transport may be tried.
+    Semantic/content-validation errors remain fail-closed.
+    """
+
+    return (
+        isinstance(exc, ChunkedEncodingError)
+        or (isinstance(exc, HTTPError) and exc.code == 403)
+        or is_transient_network_error(exc)
+    )
 
 
 def download_cninfo_document_resilient(
@@ -46,8 +65,7 @@ def download_cninfo_document_resilient(
             timeout=timeout,
         )
     except Exception as session_exc:
-        session_is_403 = isinstance(session_exc, HTTPError) and session_exc.code == 403
-        if not session_is_403 and not is_transient_network_error(session_exc):
+        if not _session_failure_allows_browser_fallback(session_exc):
             raise
         content, retrieval_url = _download_cninfo_with_browser_transport(
             url,
