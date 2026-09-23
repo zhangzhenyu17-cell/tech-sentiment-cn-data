@@ -73,6 +73,28 @@ def _nearby_header_has_note_column(
     return any("附注" in line for line in lines[statement_left : index + 1])
 
 
+def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
+    """Require the target row label to begin on the current physical PDF line.
+
+    ``_logical_row_window`` joins forward so a visually wrapped label can be
+    reconstructed. Without this guard, starting from an unrelated table-header
+    line can also absorb the following row and create a synthetic match. The
+    current physical line must therefore already begin the target label, or a
+    non-numeric prefix of a wrapped target label. This keeps legitimate wrapped
+    labels while preventing a preceding header/row from owning the match.
+    """
+
+    compact = re.sub(r"\s+", "", str(line))
+    first_numeric = _NUMERIC_TOKEN_RE.search(compact)
+    prefix = compact[: first_numeric.start()] if first_numeric else compact
+    if not prefix:
+        return False
+    return any(
+        str(label).startswith(prefix) or prefix.startswith(str(label))
+        for label in labels
+    )
+
+
 def _direct_amount_value_after_label(
     lines: list[str],
     labels: Iterable[str],
@@ -86,9 +108,8 @@ def _direct_amount_value_after_label(
     otherwise emit ``1`` as the monetary-funds value.
 
     Rules here are intentionally conservative:
-    * the label must start on the current physical PDF-text line; continuation of
-      that same label may wrap onto following physical lines before the first
-      numeric cell, but a preceding header line may never absorb a later row;
+    * the target label must begin on the current physical PDF line, while a
+      non-numeric wrapped-label prefix may continue onto later physical lines;
     * a local explicit CNY amount unit must be present;
     * without an explicit nearby ``附注`` header, at most two numeric amount
       cells are accepted and the first is the current-period value;
@@ -101,18 +122,16 @@ def _direct_amount_value_after_label(
     inference is used.
     """
 
+    label_options = tuple(str(label) for label in labels)
     for index in range(len(lines)):
+        if not _physical_line_starts_label(lines[index], label_options):
+            continue
+
         logical_row = _logical_row_window(lines, index)
-        label_match = _wrapped_label_match(logical_row, labels)
+        label_match = _wrapped_label_match(logical_row, label_options)
         if label_match is None:
             # Do not use fragmented-label recovery here. If a numeric cell
             # interrupts the visible label, the column position is ambiguous.
-            continue
-        # `_logical_row_window` may join forward over a header line that itself
-        # contains no number. Require the target label to begin on the current
-        # physical line so a header such as `项目 附注 期末余额 期初余额` cannot
-        # absorb the next line `货币资金 ...` and bypass note-column semantics.
-        if label_match.start() >= len(lines[index]):
             continue
 
         unit = _nearest_explicit_unit(lines, index)
