@@ -521,7 +521,7 @@ def test_canonical_capture_stamp_excludes_volatile_wall_clock() -> None:
     assert stamped["historical_replay_allowed"].tolist() == [False]
     assert "forward_captured_at_utc" not in stamped.columns
 
-def test_public_capture_workflow_is_manual_only() -> None:
+def test_public_v1_capture_workflow_is_manual_fail_closed_tombstone() -> None:
     text = (
         ROOT / ".github/workflows/prospective-context-raw-v1.yml"
     ).read_text(encoding="utf-8")
@@ -530,14 +530,7 @@ def test_public_capture_workflow_is_manual_only() -> None:
     assert "\n  push:" not in text
     assert "\n  pull_request:" not in text
     assert "\n  workflow_run:" not in text
-    assert "contents: write" in text
-    assert "Resolve exact durable checkpoint identities" in text
-    assert "Restore exact immutable completed work units" in text
-    assert "Package every completed reusable checkpoint" in text
-    assert "Publish immutable completed work units" in text
-    assert "prospective-context-checkpoints-${{ inputs.operation_date }}" in text
-    assert "prospective_context_checkpoint_bundle.py expected" in text
-    assert "prospective_context_checkpoint_bundle.py restore" in text
-    assert "prospective_context_checkpoint_bundle.py package" in text
-    assert "always() && steps.capture.outcome != 'skipped'" in text
-    assert "steps.capture.outcome == 'success'" in text
+    assert "contents: write" not in text
+    assert "LEGACY_PROSPECTIVE_RAIL_SUPERSEDED_BY_TIMING_V2" in text
+    assert "build_prospective_context_raw_v1.py" not in text
+    assert "timeout-minutes: 2" in text
