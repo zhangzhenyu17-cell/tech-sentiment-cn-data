@@ -1,21 +1,27 @@
 from __future__ import annotations
 
+import re
 from typing import Iterable, Mapping
 
 import pandas as pd
 
 from .official_filing_facts import (
     FILING_FACT_COLUMNS,
+    _AMOUNT_UNIT_SCALE,
+    _NUMERIC_TOKEN_RE,
     _explicit_unit_from_text,
-    _first_amount_value_after_label,
     _has_explicit_unit_declaration,
+    _logical_row_window,
+    _nearest_explicit_unit,
     _normalize_text_lines,
+    _parse_numeric_token,
+    _wrapped_label_match,
     filing_period_end_from_title,
 )
 
 
 EXTENDED_FILING_PARSER_VERSION = (
-    "official-filing-extended-pit-primitives-v3-historical-capex-labels"
+    "official-filing-extended-pit-primitives-v4-statement-unit-column-safe-historical-labels"
 )
 
 # These are direct statement line-items only. They are intentionally not mapped
@@ -82,12 +88,7 @@ def _explicit_statement_unit(
     max_header_lines: int = 12,
     max_unit_lines: int = 5,
 ) -> str | None:
-    """Return an explicit unit declared in the header of one statement block.
-
-    This is a bounded source-metadata lookup, not unit inference. The search is
-    limited to the current financial-statement block and its leading header
-    region so a unit from a previous or different statement can never leak in.
-    """
+    """Return an explicit unit declared in the header of one statement block."""
 
     header_end = min(end, start + max_header_lines)
     for position in range(start, header_end):
@@ -101,52 +102,172 @@ def _explicit_statement_unit(
     return None
 
 
-def _first_amount_value_in_statement_scope(
+def _statement_header_has_note_column(
+    lines: list[str],
+    *,
+    start: int,
+    end: int,
+    max_header_lines: int = 12,
+) -> bool:
+    """Read an explicit 附注 column declaration only from the statement header."""
+
+    header_end = min(end, start + max_header_lines)
+    return any("附注" in line for line in lines[start:header_end])
+
+
+def _nearby_header_has_note_column(
+    lines: list[str],
+    index: int,
+    *,
+    lookback: int = 24,
+) -> bool:
+    """Return whether the current statement header explicitly declares 附注."""
+
+    left = max(0, index - lookback)
+    statement_left = left
+    for position in range(index, left - 1, -1):
+        if any(
+            marker in lines[position]
+            for marker in _FINANCIAL_STATEMENT_TOKENS
+        ):
+            statement_left = position
+            break
+    return any("附注" in line for line in lines[statement_left : index + 1])
+
+
+_ROW_ORDINAL_PREFIX_RE = re.compile(
+    r"^(?:[一二三四五六七八九十百]+[、.．]|[（(][一二三四五六七八九十百]+[）)])"
+)
+
+
+def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
+    """Require the target label to own the current physical PDF line.
+
+    A narrowly defined Chinese accounting row ordinal such as 六、 may
+    precede the label. Arbitrary textual prefixes are never stripped.
+    """
+
+    compact = re.sub(r"\s+", "", str(line))
+    compact = _ROW_ORDINAL_PREFIX_RE.sub("", compact, count=1)
+    first_numeric = _NUMERIC_TOKEN_RE.search(compact)
+    prefix = compact[: first_numeric.start()] if first_numeric else compact
+    if not prefix:
+        return False
+    return any(
+        str(label).startswith(prefix) or prefix.startswith(str(label))
+        for label in labels
+    )
+
+def _direct_amount_value_after_label(
+    lines: list[str],
+    labels: Iterable[str],
+    *,
+    unit_override: str | None = None,
+    note_column_override: bool | None = None,
+) -> float | None:
+    """Extract a direct amount only when the numeric column position is provable.
+
+    The target row must own its label. A source-declared amount unit must be
+    available either locally or from the exact statement header. Rows without an
+    explicit note column must expose exactly current/prior amount cells. Rows
+    with an explicit note column must expose exactly note/current/prior numeric
+    cells, and the note token must be a compact integer reference. Ambiguous
+    layouts remain missing.
+    """
+
+    label_options = tuple(str(label) for label in labels)
+    for index in range(len(lines)):
+        if not _physical_line_starts_label(lines[index], label_options):
+            continue
+
+        logical_row = _logical_row_window(lines, index)
+        label_match = _wrapped_label_match(logical_row, label_options)
+        if label_match is None:
+            continue
+
+        unit = (
+            unit_override
+            if unit_override is not None
+            else _nearest_explicit_unit(lines, index)
+        )
+        scale = _AMOUNT_UNIT_SCALE.get(str(unit or ""))
+        if scale is None:
+            continue
+
+        suffix = logical_row[label_match.end() :]
+        tokens = list(_NUMERIC_TOKEN_RE.finditer(suffix))
+        if not tokens:
+            continue
+
+        has_note_column = (
+            note_column_override
+            if note_column_override is not None
+            else _nearby_header_has_note_column(lines, index)
+        )
+        if has_note_column:
+            if len(tokens) != 3:
+                continue
+            note_token = tokens[0].group(0).strip()
+            if re.fullmatch(r"\d{1,4}", note_token) is None:
+                continue
+            chosen = tokens[1].group(0)
+        else:
+            if len(tokens) != 2:
+                continue
+            chosen = tokens[0].group(0)
+
+        try:
+            value = _parse_numeric_token(chosen)
+        except ValueError:
+            continue
+        if pd.notna(value):
+            return float(value) * scale
+    return None
+
+
+def _direct_amount_value_in_statement_scope(
     lines: list[str],
     labels: Iterable[str],
     *,
     statement_token: str,
 ) -> float | None:
-    """Recover a direct line-item using only its statement's explicit unit.
-
-    The legacy amount helper intentionally uses a short backward unit window.
-    Long cash-flow and balance-sheet tables can place a valid row dozens of text
-    lines after the explicit ``单位`` header. For those cases we identify an
-    exact statement block, require its own explicit unit, and present that unit
-    beside a short row-local window to the existing value parser. No unit is
-    guessed, no document ordering is inferred, and no private model aggregate is
-    created.
-    """
+    """Use statement header metadata without weakening row/column safety."""
 
     boundaries = _statement_boundaries(lines)
     for offset, (start, token) in enumerate(boundaries):
         if token != statement_token:
             continue
-        end = boundaries[offset + 1][0] if offset + 1 < len(boundaries) else len(lines)
+        end = (
+            boundaries[offset + 1][0]
+            if offset + 1 < len(boundaries)
+            else len(lines)
+        )
         unit = _explicit_statement_unit(lines, start=start, end=end)
         if unit is None:
             continue
-        synthetic_unit_line = f"单位：人民币{unit}"
-        for index in range(start, end):
-            row_end = min(end, index + 6)
-            scoped_lines = [synthetic_unit_line, *lines[index:row_end]]
-            value = _first_amount_value_after_label(scoped_lines, labels)
-            if value is not None:
-                return float(value)
+        has_note_column = _statement_header_has_note_column(
+            lines,
+            start=start,
+            end=end,
+        )
+        value = _direct_amount_value_after_label(
+            lines[start:end],
+            labels,
+            unit_override=unit,
+            note_column_override=has_note_column,
+        )
+        if value is not None:
+            return float(value)
     return None
 
 
 def extract_extended_filing_facts(text: str) -> dict[str, float]:
     """Extract direct CNY statement primitives without semantic aggregation.
 
-    Every value must be supported by an explicit table-unit contract. For facts
-    with a known financial-statement home, the parser first selects within that
-    statement block so a later parent-company table cannot outrank the earlier
-    consolidated statement merely because its row is closer to a unit header.
-    The legacy short-range extractor remains only as a compatibility fallback
-    for historical layouts without recognizable statement boundaries. Missing
-    fields stay missing. Debt components remain separate raw facts; this
-    function never manufactures a model-facing DEBT value.
+    Statement-scoped header metadata may extend an explicit unit to long tables,
+    but numeric-column ownership remains fail-closed. Missing fields stay
+    missing. Debt components remain separate raw facts; this function never
+    manufactures a model-facing DEBT value.
     """
 
     lines = _normalize_text_lines(text)
@@ -157,14 +278,13 @@ def extract_extended_filing_facts(text: str) -> dict[str, float]:
 
     facts: dict[str, float] = {}
     for fact_type, labels in EXTENDED_AMOUNT_FACT_LABELS.items():
-        statement_token = _FACT_STATEMENT_TOKEN[fact_type]
-        value = _first_amount_value_in_statement_scope(
+        value = _direct_amount_value_in_statement_scope(
             lines,
             labels,
-            statement_token=statement_token,
+            statement_token=_FACT_STATEMENT_TOKEN[fact_type],
         )
         if value is None:
-            value = _first_amount_value_after_label(lines, labels)
+            value = _direct_amount_value_after_label(lines, labels)
         if value is not None:
             facts[fact_type] = float(value)
 
