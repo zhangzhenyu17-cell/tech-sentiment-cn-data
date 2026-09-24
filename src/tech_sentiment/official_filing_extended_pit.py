@@ -9,6 +9,7 @@ from .official_filing_facts import (
     FILING_FACT_COLUMNS,
     _AMOUNT_UNIT_SCALE,
     _NUMERIC_TOKEN_RE,
+    _explicit_unit_from_text,
     _has_explicit_unit_declaration,
     _logical_row_window,
     _nearest_explicit_unit,
@@ -19,7 +20,9 @@ from .official_filing_facts import (
 )
 
 
-EXTENDED_FILING_PARSER_VERSION = "official-filing-extended-pit-primitives-v2-column-safe"
+EXTENDED_FILING_PARSER_VERSION = (
+    "official-filing-extended-pit-primitives-v4-statement-unit-column-safe-historical-labels"
+)
 
 # These are direct statement line-items only. They are intentionally not mapped
 # to a private model axis and do not create a synthetic aggregate such as DEBT.
@@ -32,6 +35,8 @@ EXTENDED_AMOUNT_FACT_LABELS: Mapping[str, tuple[str, ...]] = {
     "CAPEX_CASH_PAID": (
         "购建固定资产、无形资产和其他长期资产支付的现金",
         "购建固定资产无形资产和其他长期资产支付的现金",
+        "购建固定资产、无形资产和其他长期资产所支付的现金",
+        "购建固定资产无形资产和其他长期资产所支付的现金",
     ),
     "R_AND_D_EXPENSE": ("研发费用",),
     "SHORT_TERM_BORROWINGS": ("短期借款",),
@@ -41,12 +46,73 @@ EXTENDED_AMOUNT_FACT_LABELS: Mapping[str, tuple[str, ...]] = {
     "CURRENT_PORTION_NON_CURRENT_LIABILITIES": ("一年内到期的非流动负债",),
 }
 
-_STATEMENT_BOUNDARY_MARKERS = (
+_FACT_STATEMENT_TOKEN: Mapping[str, str] = {
+    "MONETARY_FUNDS": "资产负债表",
+    "SHORT_TERM_BORROWINGS": "资产负债表",
+    "CURRENT_PORTION_NON_CURRENT_LIABILITIES": "资产负债表",
+    "LONG_TERM_BORROWINGS": "资产负债表",
+    "BONDS_PAYABLE": "资产负债表",
+    "LEASE_LIABILITIES": "资产负债表",
+    "R_AND_D_EXPENSE": "利润表",
+    "CAPEX_CASH_PAID": "现金流量表",
+    "CASH_AND_CASH_EQUIVALENTS_END": "现金流量表",
+}
+_FINANCIAL_STATEMENT_TOKENS = (
     "资产负债表",
     "利润表",
     "现金流量表",
     "所有者权益变动表",
 )
+
+
+def _compact_line(value: object) -> str:
+    return "".join(str(value).split())
+
+
+def _statement_boundaries(lines: list[str]) -> list[tuple[int, str]]:
+    boundaries: list[tuple[int, str]] = []
+    for index, line in enumerate(lines):
+        compact = _compact_line(line)
+        for token in _FINANCIAL_STATEMENT_TOKENS:
+            if token in compact:
+                boundaries.append((index, token))
+                break
+    return boundaries
+
+
+def _explicit_statement_unit(
+    lines: list[str],
+    *,
+    start: int,
+    end: int,
+    max_header_lines: int = 12,
+    max_unit_lines: int = 5,
+) -> str | None:
+    """Return an explicit unit declared in the header of one statement block."""
+
+    header_end = min(end, start + max_header_lines)
+    for position in range(start, header_end):
+        for span in range(1, max_unit_lines + 1):
+            candidate_end = position + span
+            if candidate_end > header_end:
+                break
+            unit = _explicit_unit_from_text(" ".join(lines[position:candidate_end]))
+            if unit is not None:
+                return unit
+    return None
+
+
+def _statement_header_has_note_column(
+    lines: list[str],
+    *,
+    start: int,
+    end: int,
+    max_header_lines: int = 12,
+) -> bool:
+    """Read an explicit 附注 column declaration only from the statement header."""
+
+    header_end = min(end, start + max_header_lines)
+    return any("附注" in line for line in lines[start:header_end])
 
 
 def _nearby_header_has_note_column(
@@ -55,36 +121,34 @@ def _nearby_header_has_note_column(
     *,
     lookback: int = 24,
 ) -> bool:
-    """Return whether the current statement header explicitly declares 附注.
-
-    The search is bounded to the nearest financial-statement boundary so an
-    ``附注`` header in a preceding balance sheet cannot contaminate a following
-    income statement or cash-flow statement. A false positive only causes the
-    extended parser to fail closed for the row; it never changes an extracted
-    amount.
-    """
+    """Return whether the current statement header explicitly declares 附注."""
 
     left = max(0, index - lookback)
     statement_left = left
     for position in range(index, left - 1, -1):
-        if any(marker in lines[position] for marker in _STATEMENT_BOUNDARY_MARKERS):
+        if any(
+            marker in lines[position]
+            for marker in _FINANCIAL_STATEMENT_TOKENS
+        ):
             statement_left = position
             break
     return any("附注" in line for line in lines[statement_left : index + 1])
 
 
-def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
-    """Require the target row label to begin on the current physical PDF line.
+_ROW_ORDINAL_PREFIX_RE = re.compile(
+    r"^(?:[一二三四五六七八九十百]+[、.．]|[（(][一二三四五六七八九十百]+[）)])"
+)
 
-    ``_logical_row_window`` joins forward so a visually wrapped label can be
-    reconstructed. Without this guard, starting from an unrelated table-header
-    line can also absorb the following row and create a synthetic match. The
-    current physical line must therefore already begin the target label, or a
-    non-numeric prefix of a wrapped target label. This keeps legitimate wrapped
-    labels while preventing a preceding header/row from owning the match.
+
+def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
+    """Require the target label to own the current physical PDF line.
+
+    A narrowly defined Chinese accounting row ordinal such as 六、 may
+    precede the label. Arbitrary textual prefixes are never stripped.
     """
 
     compact = re.sub(r"\s+", "", str(line))
+    compact = _ROW_ORDINAL_PREFIX_RE.sub("", compact, count=1)
     first_numeric = _NUMERIC_TOKEN_RE.search(compact)
     prefix = compact[: first_numeric.start()] if first_numeric else compact
     if not prefix:
@@ -94,34 +158,21 @@ def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
         for label in labels
     )
 
-
 def _direct_amount_value_after_label(
     lines: list[str],
     labels: Iterable[str],
+    *,
+    unit_override: str | None = None,
+    note_column_override: bool | None = None,
 ) -> float | None:
     """Extract a direct amount only when the numeric column position is provable.
 
-    The generic filing parser historically accepts the first numeric token after
-    a label. That is unsafe for extended raw primitives because many Chinese
-    statement tables insert an explicit ``附注`` column before the current-period
-    amount. In that layout a row such as ``货币资金 七、1 12,345 11,111`` would
-    otherwise emit ``1`` as the monetary-funds value.
-
-    Rules here are intentionally conservative:
-    * the target label must begin on the current physical PDF line, while a
-      non-numeric wrapped-label prefix may continue onto later physical lines;
-    * a local explicit CNY amount unit must be present;
-    * without an explicit nearby ``附注`` header, exactly two numeric amount
-      cells must be visible and the first is the current-period value;
-    * with an explicit ``附注`` header, exactly a syntactic note-reference token
-      plus two amount cells must be present; the first amount after the note
-      reference is used;
-    * one-token rows are rejected because adjacent current/prior amount cells can
-      collapse into one numeric token in PDF text extraction;
-    * layouts that cannot prove the amount-column position remain missing.
-
-    No financial magnitude threshold, imputation, model mapping, or cross-row
-    inference is used.
+    The target row must own its label. A source-declared amount unit must be
+    available either locally or from the exact statement header. Rows without an
+    explicit note column must expose exactly current/prior amount cells. Rows
+    with an explicit note column must expose exactly note/current/prior numeric
+    cells, and the note token must be a compact integer reference. Ambiguous
+    layouts remain missing.
     """
 
     label_options = tuple(str(label) for label in labels)
@@ -132,11 +183,13 @@ def _direct_amount_value_after_label(
         logical_row = _logical_row_window(lines, index)
         label_match = _wrapped_label_match(logical_row, label_options)
         if label_match is None:
-            # Do not use fragmented-label recovery here. If a numeric cell
-            # interrupts the visible label, the column position is ambiguous.
             continue
 
-        unit = _nearest_explicit_unit(lines, index)
+        unit = (
+            unit_override
+            if unit_override is not None
+            else _nearest_explicit_unit(lines, index)
+        )
         scale = _AMOUNT_UNIT_SCALE.get(str(unit or ""))
         if scale is None:
             continue
@@ -146,12 +199,12 @@ def _direct_amount_value_after_label(
         if not tokens:
             continue
 
-        if _nearby_header_has_note_column(lines, index):
-            # A proven note-column layout is safe only when the row itself has a
-            # compact note-reference token followed by two statement amounts.
-            # Blank-note rows are intentionally left missing because two numeric
-            # cells alone cannot distinguish current/prior amounts from
-            # note/current amounts after PDF layout collapse.
+        has_note_column = (
+            note_column_override
+            if note_column_override is not None
+            else _nearby_header_has_note_column(lines, index)
+        )
+        if has_note_column:
             if len(tokens) != 3:
                 continue
             note_token = tokens[0].group(0).strip()
@@ -172,13 +225,49 @@ def _direct_amount_value_after_label(
     return None
 
 
+def _direct_amount_value_in_statement_scope(
+    lines: list[str],
+    labels: Iterable[str],
+    *,
+    statement_token: str,
+) -> float | None:
+    """Use statement header metadata without weakening row/column safety."""
+
+    boundaries = _statement_boundaries(lines)
+    for offset, (start, token) in enumerate(boundaries):
+        if token != statement_token:
+            continue
+        end = (
+            boundaries[offset + 1][0]
+            if offset + 1 < len(boundaries)
+            else len(lines)
+        )
+        unit = _explicit_statement_unit(lines, start=start, end=end)
+        if unit is None:
+            continue
+        has_note_column = _statement_header_has_note_column(
+            lines,
+            start=start,
+            end=end,
+        )
+        value = _direct_amount_value_after_label(
+            lines[start:end],
+            labels,
+            unit_override=unit,
+            note_column_override=has_note_column,
+        )
+        if value is not None:
+            return float(value)
+    return None
+
+
 def extract_extended_filing_facts(text: str) -> dict[str, float]:
     """Extract direct CNY statement primitives without semantic aggregation.
 
-    Every value must be supported by a bounded, explicit table-unit contract and
-    an unambiguous numeric-column position. Missing fields stay missing. Debt
-    components remain separate raw facts; this function never manufactures a
-    model-facing DEBT value.
+    Statement-scoped header metadata may extend an explicit unit to long tables,
+    but numeric-column ownership remains fail-closed. Missing fields stay
+    missing. Debt components remain separate raw facts; this function never
+    manufactures a model-facing DEBT value.
     """
 
     lines = _normalize_text_lines(text)
@@ -189,7 +278,13 @@ def extract_extended_filing_facts(text: str) -> dict[str, float]:
 
     facts: dict[str, float] = {}
     for fact_type, labels in EXTENDED_AMOUNT_FACT_LABELS.items():
-        value = _direct_amount_value_after_label(lines, labels)
+        value = _direct_amount_value_in_statement_scope(
+            lines,
+            labels,
+            statement_token=_FACT_STATEMENT_TOKEN[fact_type],
+        )
+        if value is None:
+            value = _direct_amount_value_after_label(lines, labels)
         if value is not None:
             facts[fact_type] = float(value)
 
