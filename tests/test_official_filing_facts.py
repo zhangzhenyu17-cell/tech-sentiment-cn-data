@@ -283,6 +283,18 @@ def test_standard_filing_facts_require_proven_yuan_units_and_do_not_fill():
 
 
 
+def test_listed_company_parent_net_assets_is_equivalent_parent_equity() -> None:
+    text = """
+    主要会计数据
+    单位：元 币种：人民币
+    归属于上市公司股东的净资产 3,301,735,141.13 2,195,062,669.30
+    """
+
+    facts = extract_standard_filing_facts(text)
+
+    assert facts["EQUITY_PARENT"] == pytest.approx(3_301_735_141.13)
+
+
 def test_explicit_yuan_unit_tolerates_pdf_layout_whitespace_and_line_wrap():
     text = """
     主要会计数据
