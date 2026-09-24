@@ -26,7 +26,7 @@ from .pit_public_materialization import (
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
 LEGACY_FILING_PARSER_VERSION = "official-filing-facts-v8-unicode-multiengine-safe-units-revision-time"
-FILING_PARSER_VERSION = "official-filing-facts-v9-explicit-unit-scaling-layout-labels"
+FILING_PARSER_VERSION = "official-filing-facts-v10-parent-net-assets-label"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -70,6 +70,7 @@ _FACT_LABELS: dict[str, tuple[str, ...]] = {
     "TOTAL_ASSETS": ("总资产",),
     "EQUITY_PARENT": (
         "归属于上市公司股东的所有者权益",
+        "归属于上市公司股东的净资产",
         "归属于母公司所有者权益",
     ),
     "BASIC_EPS": ("基本每股收益",),
