@@ -2,7 +2,9 @@
 
 ## Purpose
 
-This engineering layer makes the manual `prospective-context-raw-v1` workflow restartable:
+This document preserves the historical V1 checkpoint design and the checkpoint infrastructure now reused by the active pre-open V2 capture. The executable `prospective-context-raw-v1` workflow itself is retired as a fail-closed historical identity; the active capture is `prospective-context-raw-preopen-v2`.
+
+The reusable engineering rule remains:
 
 > completed compatible work is restored first; only missing work is recomputed.
 
@@ -194,3 +196,16 @@ The checkpoint contract explicitly sets:
 
 - `formal_evidence_handoff = false`;
 - `qualification_granted_by_checkpoint = false`.
+
+
+## Prospective control-plane convergence — 2026-09-25
+
+The public Prospective workflow control plane is now locked by `reference/prospective_control_plane_v2.json` and `tests/test_prospective_control_plane_v2.py`.
+
+The only active public Prospective chain is:
+
+`prospective-public-daily-orchestrator-v1 -> prospective-context-raw-preopen-v2`.
+
+`prospective-context-raw-v1` remains present only as a historical workflow identity and immediately fails closed on dispatch. It no longer has `contents: write` permission and cannot publish same-day V1 captures. The V2 leaf remains manual-only and is dispatched only through the allowlisted wrapper or an explicit operator action.
+
+The wrapper cadence and retry density do not widen the evidence window: the active V2 builder still enforces the fixed T+1 05:30 Asia/Shanghai freeze. The control-plane registry has no model, evidence-qualification, Production or trading authority.
