@@ -52,6 +52,20 @@ def test_workflow_has_three_layer_preflight_and_recovery_controls() -> None:
     assert "fundamental-extended-pit-coverage-audit" in text
 
 
+def test_workflow_pins_this_authorized_rematerialization_to_exact_code_commit() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    exact = "291cc4ba02857a1c6b0202015d962aaedc955c59"
+
+    assert f'default: "{exact}"' in text
+    assert f'AUTHORIZED_MATERIALIZATION_REF: "{exact}"' in text
+    assert "MATERIALIZATION_SOURCE_COMMIT: $" + "{{ inputs.materialization_ref }}" in text
+    assert text.count("ref: $" + "{{ inputs.materialization_ref }}") == 3
+    assert "Require exact authorized materialization commit" in text
+    assert 'test "$(git rev-parse HEAD)" = "$AUTHORIZED_MATERIALIZATION_REF"' in text
+    assert text.count('--source-commit "$MATERIALIZATION_SOURCE_COMMIT"') == 3
+    assert "$GITHUB_SHA" not in text
+
+
 def test_workflow_freezes_existing_v4a_window_and_scope() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     plan = RUN_PLAN.read_text(encoding="utf-8")
