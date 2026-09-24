@@ -1,0 +1,92 @@
+{
+  "schema_version": "prospective-control-plane-v2",
+  "status": "ACTIVE_SINGLE_TIMING_V2_RAIL",
+  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "authoritative_for": [
+    "PROSPECTIVE_WORKFLOW_IDENTITY",
+    "PROSPECTIVE_TRIGGER_CLASS",
+    "PROSPECTIVE_LIFECYCLE_CLASS"
+  ],
+  "not_authoritative_for": [
+    "MODEL_FORMULA",
+    "MODEL_THRESHOLD",
+    "UNIVERSE",
+    "EVIDENCE_QUALIFICATION",
+    "PRODUCTION_PERMISSION",
+    "PORTFOLIO_POLICY",
+    "TRADING_AUTHORITY"
+  ],
+  "active_chain": [
+    "prospective-public-daily-orchestrator-v1.yml",
+    "prospective-context-raw-preopen-v2.yml"
+  ],
+  "shared_upstream_dependency": {
+    "workflow": "publish-market-bundle.yml",
+    "purpose": "EXACT_IMMUTABLE_PUBLIC_MARKET_BUNDLE",
+    "may_promote_prospective_evidence": false
+  },
+  "legacy_fail_closed": [
+    "prospective-context-raw-v1.yml"
+  ],
+  "timing_contract": {
+    "market_session": "T",
+    "decision_date": "IMMEDIATE_NEXT_A_SHARE_TRADING_DAY_T_PLUS_1",
+    "earliest_operational_probe_asia_shanghai": "23:45",
+    "data_freeze_deadline_asia_shanghai": "05:30",
+    "evidence_window_extended_by_retry_cadence": false
+  },
+  "workflows": [
+    {
+      "file": "prospective-public-daily-orchestrator-v1.yml",
+      "triggers": [
+        "workflow_dispatch",
+        "schedule"
+      ],
+      "crons": [
+        "0 20 * * *",
+        "0,15,30,45 16-19 * * *",
+        "45 15 * * *"
+      ],
+      "permissions": [
+        "actions: write",
+        "contents: read"
+      ],
+      "lifecycle_class": "ACTIVE_AUTOMATED_ORCHESTRATOR"
+    },
+    {
+      "file": "prospective-context-raw-preopen-v2.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: write"
+      ],
+      "lifecycle_class": "ACTIVE_DISPATCHED_LEAF"
+    },
+    {
+      "file": "prospective-context-raw-v1.yml",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "crons": [],
+      "permissions": [
+        "contents: read"
+      ],
+      "lifecycle_class": "LEGACY_FAIL_CLOSED"
+    }
+  ],
+  "invariants": {
+    "only_orchestrator_may_have_automatic_trigger": true,
+    "v1_operational_reactivation_allowed": false,
+    "active_capture_automatic_trigger_allowed": false,
+    "historical_backfill_allowed": false,
+    "forward_outcome_read_allowed": false,
+    "model_change_allowed": false,
+    "threshold_change_allowed": false,
+    "universe_change_allowed": false,
+    "evidence_qualification_change_allowed": false,
+    "production_change_allowed": false,
+    "trading_authority_change_allowed": false
+  }
+}
