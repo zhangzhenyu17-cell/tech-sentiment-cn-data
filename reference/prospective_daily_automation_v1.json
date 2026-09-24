@@ -10,20 +10,30 @@
       ],
       "cron_utc": [
         "45 15 * * *",
-        "15,45 16-19 * * *"
+        "0,15,30,45 16-19 * * *",
+        "0 20 * * *"
       ],
       "intended_time_asia_shanghai": [
         "23:45",
+        "00:00",
         "00:15",
+        "00:30",
         "00:45",
+        "01:00",
         "01:15",
+        "01:30",
         "01:45",
+        "02:00",
         "02:15",
+        "02:30",
         "02:45",
+        "03:00",
         "03:15",
-        "03:45"
+        "03:30",
+        "03:45",
+        "04:00"
       ],
-      "necessity": "Start at the earliest operationally mature 23:45 window and retry idempotently every 30 minutes through 03:45. The target raw workflow has a 90-minute job bound and now also rejects capture completion after the fixed 05:30 freeze; stopping automatic launches at 03:45 preserves launch margin while complete-asset and active-run guards make later attempts no-op after success."
+      "necessity": "Start at the earliest operationally mature 23:45 window and retry idempotently every 15 minutes through a final 04:00 opportunity. First-night evidence showed GitHub scheduled Actions can arrive with hour-scale delay; denser lightweight wrapper triggers increase the chance that at least one dispatch is delivered early enough while complete-asset and active-run guards make repeats no-op after success. The raw target keeps its independent 90-minute job bound and absolute 05:30 completion firewall, so this redundancy does not extend the evidence window."
     }
   },
   "target_workflows": [
@@ -42,6 +52,8 @@
     "evidence_qualification_changed": false,
     "trading_authority_changed": false,
     "non_trading_day_outside_active_window_noop": true,
-    "intervening_non_trading_days_preserve_active_window": true
+    "intervening_non_trading_days_preserve_active_window": true,
+    "scheduler_delay_redundancy_minutes": 15,
+    "last_wrapper_opportunity_asia_shanghai": "04:00"
   }
 }

@@ -163,18 +163,28 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert entry["triggers"] == ["schedule"]
     assert entry["cron_utc"] == [
         "45 15 * * *",
-        "15,45 16-19 * * *",
+        "0,15,30,45 16-19 * * *",
+        "0 20 * * *",
     ]
     assert entry["intended_time_asia_shanghai"] == [
         "23:45",
+        "00:00",
         "00:15",
+        "00:30",
         "00:45",
+        "01:00",
         "01:15",
+        "01:30",
         "01:45",
+        "02:00",
         "02:15",
+        "02:30",
         "02:45",
+        "03:00",
         "03:15",
+        "03:30",
         "03:45",
+        "04:00",
     ]
     assert manifest["authorization_scope"] == "FROZEN_PROSPECTIVE_DAILY_OPERATIONS_ONLY"
 
@@ -183,6 +193,8 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert safety["non_trading_day_outside_active_window_noop"] is True
     assert safety["intervening_non_trading_days_preserve_active_window"] is True
     assert safety["exact_dated_release_required"] is True
+    assert safety["scheduler_delay_redundancy_minutes"] == 15
+    assert safety["last_wrapper_opportunity_asia_shanghai"] == "04:00"
     for key in (
         "rolling_latest_substitution_allowed",
         "historical_backfill_allowed",
@@ -199,7 +211,8 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
         root / ".github/workflows/prospective-public-daily-orchestrator-v1.yml"
     ).read_text(encoding="utf-8")
     assert 'cron: "45 15 * * *"' in text
-    assert 'cron: "15,45 16-19 * * *"' in text
+    assert 'cron: "0,15,30,45 16-19 * * *"' in text
+    assert 'cron: "0 20 * * *"' in text
     assert "workflow_dispatch:" in text
     assert "actions: write" in text
     assert "publish-market-bundle.yml" in text
