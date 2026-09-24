@@ -15,7 +15,7 @@ from .official_filing_facts import (
 
 
 EXTENDED_FILING_PARSER_VERSION = (
-    "official-filing-extended-pit-primitives-v2-statement-unit-scope"
+    "official-filing-extended-pit-primitives-v3-historical-capex-labels"
 )
 
 # These are direct statement line-items only. They are intentionally not mapped
@@ -29,6 +29,8 @@ EXTENDED_AMOUNT_FACT_LABELS: Mapping[str, tuple[str, ...]] = {
     "CAPEX_CASH_PAID": (
         "购建固定资产、无形资产和其他长期资产支付的现金",
         "购建固定资产无形资产和其他长期资产支付的现金",
+        "购建固定资产、无形资产和其他长期资产所支付的现金",
+        "购建固定资产无形资产和其他长期资产所支付的现金",
     ),
     "R_AND_D_EXPENSE": ("研发费用",),
     "SHORT_TERM_BORROWINGS": ("短期借款",),
