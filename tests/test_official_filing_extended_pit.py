@@ -104,6 +104,18 @@ def test_extended_pit_legitimate_wrapped_label_still_parses() -> None:
     assert facts["CAPEX_CASH_PAID"] == pytest.approx(12_340_000.0)
 
 
+def test_extended_pit_historical_capex_suo_zhifu_label_parses_without_relaxing_columns() -> None:
+    text = """
+    2024年年度报告
+    合并现金流量表 单位：人民币元
+    购建固定资产、无形资产和其他长期资产所支付的现金 862,177,116.77 1,063,204,406.67
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert facts["CAPEX_CASH_PAID"] == pytest.approx(862_177_116.77)
+
+
 def test_extended_pit_single_collapsed_numeric_token_fails_closed() -> None:
     text = """
     2025年半年度报告
@@ -188,7 +200,7 @@ def test_build_extended_rows_preserves_document_provenance() -> None:
     }
     assert set(rows["unit"]) == {"CNY"}
     assert set(rows["parser_version"]) == {EXTENDED_FILING_PARSER_VERSION}
-    assert EXTENDED_FILING_PARSER_VERSION.endswith("v2-column-safe")
+    assert EXTENDED_FILING_PARSER_VERSION == "official-filing-extended-pit-primitives-v3-column-safe-historical-capex-labels"
     assert set(rows["document_id"]) == {"1210000000"}
     assert set(rows["document_sha256"]) == {"a" * 64}
     assert set(pd.to_datetime(rows["period_end"]).dt.strftime("%Y-%m-%d")) == {
