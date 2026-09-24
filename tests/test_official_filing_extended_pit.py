@@ -56,6 +56,20 @@ def test_extended_pit_primitives_fail_closed_without_explicit_table_unit() -> No
         )
 
 
+def test_historical_capex_label_with_suo_is_semantically_equivalent() -> None:
+    text = """
+    2024年年度报告
+    5、合并现金流量表
+    单位：元
+    项目 2024年度 2023年度
+    购建固定资产、无形资产和其他长期资产所支付的现金 862,177,116.77 1,063,204,406.67
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert facts["CAPEX_CASH_PAID"] == pytest.approx(862_177_116.77)
+
+
 def test_statement_scoped_unit_recovers_long_cashflow_table_rows() -> None:
     filler = "\n".join(
         f"现金流量项目{i} {i + 100}.00 {i + 90}.00" for i in range(45)
