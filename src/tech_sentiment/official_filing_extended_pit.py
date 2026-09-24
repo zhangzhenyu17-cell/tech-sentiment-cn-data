@@ -135,19 +135,7 @@ def _nearby_header_has_note_column(
     return any("附注" in line for line in lines[statement_left : index + 1])
 
 
-def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
-    """Require the target row label to begin on the current physical PDF line."""
-
-    compact = re.sub(r"\s+", "", str(line))
-    first_numeric = _NUMERIC_TOKEN_RE.search(compact)
-    prefix = compact[: first_numeric.start()] if first_numeric else compact
-    if not prefix:
-        return False
-    return any(
-        str(label).startswith(prefix) or prefix.startswith(str(label))
-        for label in labels
-    )
-
+_ROW_ORDINAL_PREFIX_RE = re.compile(\n    r"^(?:[一二三四五六七八九十百]+[、.．]|[（(][一二三四五六七八九十百]+[）)])"\n)\n\n\ndef _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:\n    """Require the target label to own the current physical PDF line.\n\n    A narrowly defined Chinese accounting row ordinal such as 六、 may\n    precede the label. Arbitrary textual prefixes are never stripped.\n    """\n\n    compact = re.sub(r"\\s+", "", str(line))\n    compact = _ROW_ORDINAL_PREFIX_RE.sub("", compact, count=1)\n    first_numeric = _NUMERIC_TOKEN_RE.search(compact)\n    prefix = compact[: first_numeric.start()] if first_numeric else compact\n    if not prefix:\n        return False\n    return any(\n        str(label).startswith(prefix) or prefix.startswith(str(label))\n        for label in labels\n    )\n
 
 def _direct_amount_value_after_label(
     lines: list[str],
