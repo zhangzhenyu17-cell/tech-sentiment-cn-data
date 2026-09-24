@@ -89,6 +89,8 @@ def test_extended_pit_header_cannot_own_following_physical_row_label() -> None:
     labels = ("货币资金",)
     assert _physical_line_starts_label("项目 附注 期末余额 期初余额", labels) is False
     assert _physical_line_starts_label("货币资金 12,345 11,111", labels) is True
+    assert _physical_line_starts_label("六、货币资金 12,345 11,111", labels) is True
+    assert _physical_line_starts_label("项目 六、货币资金 12,345 11,111", labels) is False
 
 
 def test_extended_pit_single_collapsed_numeric_token_fails_closed() -> None:
