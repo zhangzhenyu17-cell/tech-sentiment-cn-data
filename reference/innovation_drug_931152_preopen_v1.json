@@ -3,7 +3,6 @@
   "status": "FROZEN_PUBLIC_RAW_INPUT_SCOPE",
   "date": "2026-09-25",
   "index_code": "931152",
-  "first_prospective_market_session": "2026-09-25",
   "purpose": "Capture public-only current-session 931152 raw inputs for the already-frozen private Innovation Drug V1 outcome-blind prospective materializer.",
   "membership": {
     "expected_constituents": 50,
@@ -19,10 +18,12 @@
     "decision_date": "IMMEDIATE_NEXT_A_SHARE_TRADING_DAY_T_PLUS_1",
     "earliest_operational_capture_asia_shanghai": "23:45",
     "data_freeze_deadline_asia_shanghai": "05:30",
-    "first_eligible_execution_asia_shanghai": "09:30"
+    "first_eligible_execution_asia_shanghai": "09:30",
+    "trading_calendar_source": "akshare.tool_trade_date_hist_sina"
   },
   "public_files": [
     "membership_snapshot.csv",
+    "trading_calendar_dates.csv",
     "stock_prices_qfq.csv",
     "stock_download_errors.csv",
     "active_limit_rows.csv",
@@ -54,5 +55,7 @@
   "workflow": {
     "workflow_dispatch_only": true,
     "automatic_trigger_allowed": false
-  }
+  },
+  "prospective_freeze_date": "2026-09-25",
+  "first_prospective_market_session_rule": "FIRST_CONFIRMED_A_SHARE_TRADING_DAY_STRICTLY_AFTER_PROSPECTIVE_FREEZE_DATE"
 }
