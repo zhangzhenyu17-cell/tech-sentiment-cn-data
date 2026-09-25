@@ -55,7 +55,10 @@
     "date_only_disclosure_same_day_use_allowed": false,
     "forward_fill": false,
     "backfill": false,
-    "interpolation": false
+    "interpolation": false,
+    "historical_session_source": "SHARED_V4A_INDEX_PRICE_CALENDAR",
+    "successor_session_extension_source": "AKSHARE_TOOL_TRADE_DATE_HIST_SINA_AFTER_SHARED_MAX_ONLY",
+    "successor_extension_used_only_for_availability_alignment": true
   },
   "interpretation_boundary": {
     "event_identity_is_direction": false,

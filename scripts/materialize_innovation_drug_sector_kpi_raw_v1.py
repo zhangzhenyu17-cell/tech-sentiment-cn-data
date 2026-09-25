@@ -14,7 +14,7 @@ from tech_sentiment.innovation_drug_sector_kpi_raw_v1 import (
 from tech_sentiment.pit_public_materialization import materialize_cninfo_archive
 
 
-def _trade_dates(path: Path) -> pd.DatetimeIndex:
+def _trade_dates(path: Path, *, evidence_cutoff: str) -> tuple[pd.DatetimeIndex, dict[str, object]]:
     frame = pd.read_csv(path)
     for candidate in ("date", "trade_date", "calendar_date"):
         if candidate in frame.columns:
@@ -24,10 +24,40 @@ def _trade_dates(path: Path) -> pd.DatetimeIndex:
         if len(frame.columns) != 1:
             raise ValueError("trading calendar must expose date/trade_date/calendar_date")
         column = frame.columns[0]
-    dates = pd.to_datetime(frame[column], errors="raise")
-    if dates.empty:
+    shared = pd.DatetimeIndex(pd.to_datetime(frame[column], errors="raise")).normalize().sort_values().unique()
+    if not len(shared):
         raise ValueError("real trading calendar cannot be empty")
-    return pd.DatetimeIndex(dates).normalize().sort_values().unique()
+
+    cutoff = pd.Timestamp(evidence_cutoff).normalize()
+    effective = shared
+    successor_source = "NOT_NEEDED_SHARED_CALENDAR_ALREADY_HAS_POST_CUTOFF_SESSION"
+    if not (shared > cutoff).any():
+        import akshare as ak  # type: ignore
+
+        future = ak.tool_trade_date_hist_sina()
+        future_col = "trade_date" if "trade_date" in future.columns else future.columns[0]
+        future_dates = pd.DatetimeIndex(
+            pd.to_datetime(future[future_col], errors="raise")
+        ).normalize().sort_values().unique()
+        extension = future_dates[
+            (future_dates > shared.max())
+            & (future_dates <= cutoff + pd.Timedelta(days=21))
+        ]
+        if len(extension):
+            effective = pd.DatetimeIndex(sorted(set(shared).union(set(extension))))
+            successor_source = "AKSHARE_TOOL_TRADE_DATE_HIST_SINA_AFTER_SHARED_MAX_ONLY"
+
+    if not (effective > cutoff).any():
+        raise ValueError(
+            "trading calendar lacks a known successor session after evidence cutoff"
+        )
+    metadata = {
+        "shared_calendar_max_date": str(pd.Timestamp(shared.max()).date()),
+        "effective_calendar_max_date": str(pd.Timestamp(effective.max()).date()),
+        "successor_extension_source": successor_source,
+        "successor_extension_used_only_for_availability_alignment": True,
+    }
+    return effective, metadata
 
 
 def main() -> int:
@@ -53,7 +83,9 @@ def main() -> int:
     args = parser.parse_args()
 
     symbol = str(args.symbol).zfill(6)
-    trading_dates = _trade_dates(args.trading_calendar_csv)
+    trading_dates, calendar_metadata = _trade_dates(
+        args.trading_calendar_csv, evidence_cutoff=args.end_date
+    )
     cninfo = materialize_cninfo_archive(
         [symbol],
         start_date=args.start_date,
@@ -91,6 +123,7 @@ def main() -> int:
             "live_scraper_implemented": False,
             "official_snapshot_adapter_ready": True,
         },
+        "MARKET_SESSION_CALENDAR": calendar_metadata,
     }
     result = build_sector_kpi_raw_result(
         cninfo_events=cninfo_events,
