@@ -256,13 +256,62 @@ def test_build_extended_rows_preserves_document_provenance() -> None:
     assert set(rows["unit"]) == {"CNY"}
     assert set(rows["parser_version"]) == {EXTENDED_FILING_PARSER_VERSION}
     assert EXTENDED_FILING_PARSER_VERSION == (
-        "official-filing-extended-pit-primitives-v5-statement-row-ownership-safe"
+        "official-filing-extended-pit-primitives-v6-tail-fragment-row-ownership-safe"
     )
     assert set(rows["document_id"]) == {"1210000000"}
     assert set(rows["document_sha256"]) == {"a" * 64}
     assert set(pd.to_datetime(rows["period_end"]).dt.strftime("%Y-%m-%d")) == {
         "2025-06-30"
     }
+
+
+def test_tail_fragment_after_amount_cells_recovers_exact_capex_label() -> None:
+    text = """
+    2024年年度报告
+    合并现金流量表
+    单位：元
+    项目 2024年度 2023年度
+    购建固定资产、无形资产和其他长期资产支 742,704,796.20 1,206,047,111.01
+    付的现金
+    投资支付的现金 3,000,000.00 2,000,000.00
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert facts["CAPEX_CASH_PAID"] == pytest.approx(742_704_796.20)
+
+
+def test_tail_fragment_blank_note_with_two_amounts_is_provable() -> None:
+    text = """
+    2022年年度报告
+    合并现金流量表
+    单位：千元
+    项目 附注 2022年度 2021年度
+    购建固定资产、无形资产和其他长期资产支 42,205,585 28,361,900
+    付的现金
+    支付其他与投资活动有关的现金 79 335,985 850,202
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert facts["CAPEX_CASH_PAID"] == pytest.approx(42_205_585_000.0)
+
+
+def test_tail_fragment_note_id_plus_one_amount_remains_fail_closed() -> None:
+    text = """
+    2024年年度报告
+    合并现金流量表
+    单位：元
+    项目 附注 2024年度 2023年度
+    购建固定资产、无形资产和其他长期资产支 79 742,704,796.20
+    付的现金
+    期末现金及现金等价物余额 80 5,000 4,000
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert "CAPEX_CASH_PAID" not in facts
+    assert facts["CASH_AND_CASH_EQUIVALENTS_END"] == pytest.approx(5_000.0)
 
 
 def test_blank_statement_row_never_borrows_following_row_amounts() -> None:
