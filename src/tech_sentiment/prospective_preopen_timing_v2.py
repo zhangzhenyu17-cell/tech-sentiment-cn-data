@@ -26,6 +26,15 @@ def a_share_trading_dates(client: Any) -> pd.DatetimeIndex:
     )
 
 
+def first_a_share_trading_day_after(*, cutoff_date: str, client: Any) -> str:
+    cutoff = pd.Timestamp(cutoff_date).normalize()
+    dates = a_share_trading_dates(client)
+    later = dates[dates > cutoff]
+    if len(later) == 0:
+        raise ValueError("trading calendar has no A-share session after cutoff_date")
+    return later[0].strftime("%Y-%m-%d")
+
+
 def validate_preopen_capture_window(
     *,
     market_session_date: str,
