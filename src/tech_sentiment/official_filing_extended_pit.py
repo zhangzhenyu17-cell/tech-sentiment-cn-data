@@ -21,7 +21,7 @@ from .official_filing_facts import (
 
 
 EXTENDED_FILING_PARSER_VERSION = (
-    "official-filing-extended-pit-primitives-v4-statement-unit-column-safe-historical-labels"
+    "official-filing-extended-pit-primitives-v5-statement-row-ownership-safe"
 )
 
 # These are direct statement line-items only. They are intentionally not mapped
@@ -158,6 +158,35 @@ def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
         for label in labels
     )
 
+def _target_logical_row_window(
+    lines: list[str],
+    index: int,
+    labels: Iterable[str],
+    *,
+    max_lines: int = 6,
+) -> str:
+    """Rejoin only an incomplete wrapped target label, never a completed blank row.
+
+    Once an exact target label is already present in the accumulated physical
+    row and no numeric cell is present, the row is treated as blank. This
+    prevents a blank statement item such as 应付债券 from borrowing numeric
+    cells from the following 租赁负债 row.
+    """
+
+    label_options = tuple(str(label) for label in labels)
+    parts: list[str] = []
+    for position in range(index, min(len(lines), index + max_lines)):
+        if parts:
+            joined_before = " ".join(parts)
+            if _wrapped_label_match(joined_before, label_options) is not None:
+                break
+        parts.append(lines[position])
+        joined = " ".join(parts)
+        if _NUMERIC_TOKEN_RE.search(joined):
+            break
+    return " ".join(parts)
+
+
 def _direct_amount_value_after_label(
     lines: list[str],
     labels: Iterable[str],
@@ -180,7 +209,7 @@ def _direct_amount_value_after_label(
         if not _physical_line_starts_label(lines[index], label_options):
             continue
 
-        logical_row = _logical_row_window(lines, index)
+        logical_row = _target_logical_row_window(lines, index, label_options)
         label_match = _wrapped_label_match(logical_row, label_options)
         if label_match is None:
             continue
@@ -277,13 +306,19 @@ def extract_extended_filing_facts(text: str) -> dict[str, float]:
         )
 
     facts: dict[str, float] = {}
+    boundaries = _statement_boundaries(lines)
+    statement_tokens = {token for _, token in boundaries}
     for fact_type, labels in EXTENDED_AMOUNT_FACT_LABELS.items():
+        statement_token = _FACT_STATEMENT_TOKEN[fact_type]
         value = _direct_amount_value_in_statement_scope(
             lines,
             labels,
-            statement_token=_FACT_STATEMENT_TOKEN[fact_type],
+            statement_token=statement_token,
         )
-        if value is None:
+        # If the exact target statement is present, never fall back to notes,
+        # MD&A or risk tables elsewhere in the filing. A blank or ambiguous
+        # statement row remains missing.
+        if value is None and statement_token not in statement_tokens:
             value = _direct_amount_value_after_label(lines, labels)
         if value is not None:
             facts[fact_type] = float(value)
