@@ -16,6 +16,7 @@ def test_workflow_is_manual_only_and_exact_scope() -> None:
     for forbidden in ("schedule:", "workflow_run:", "pull_request:", "push:"):
         assert forbidden not in text
     assert "permissions:\n  contents: read" in text
+    assert 'python -m pip install -e ".[data,dev]"' in text
     assert 'SHARD_COUNT: "48"' in text
     assert "max-parallel: 4" in text
     assert "timeout-minutes: 360" in text
