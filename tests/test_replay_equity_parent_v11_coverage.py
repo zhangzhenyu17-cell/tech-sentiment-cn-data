@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+import importlib.util
+import sys
 
 import pandas as pd
 import pytest
 
-import scripts.replay_equity_parent_v11_coverage as replay
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts/replay_equity_parent_v11_coverage.py"
+SPEC = importlib.util.spec_from_file_location("replay_equity_parent_v11_coverage", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+replay = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = replay
+SPEC.loader.exec_module(replay)
 
 
 def test_assigned_documents_partition_exactly_once() -> None:
