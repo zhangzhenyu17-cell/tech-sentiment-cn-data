@@ -21,7 +21,7 @@ from .official_filing_facts import (
 
 
 EXTENDED_FILING_PARSER_VERSION = (
-    "official-filing-extended-pit-primitives-v7-wrapped-label-note-column-safe"
+    "official-filing-extended-pit-primitives-v8-statement-dash-cell-safe"
 )
 
 # These are direct statement line-items only. They are intentionally not mapped
@@ -141,6 +141,27 @@ _ROW_ORDINAL_PREFIX_RE = re.compile(
 _NOTE_COLUMN_TAIL_RE = re.compile(
     r"^(?P<label_prefix>.+?)(?P<note>[一二三四五六七八九十百]+、\d{1,4})$"
 )
+_STANDALONE_DASH_CELL_RE = re.compile(r"(?<!\S)-(?!\S)")
+
+
+def _ordered_numeric_or_dash_cells(text: str) -> list[tuple[int, str, str]]:
+    """Return ordered numeric/dash cells without assigning semantics to dash.
+
+    A standalone dash is only a column placeholder. It is never parsed as zero
+    and is never returned as a model/input value. This helper exists solely so
+    statement-scoped extraction can prove current/prior column ownership when
+    one amount cell is explicitly blank as a dash.
+    """
+
+    cells = [
+        (match.start(), "NUMERIC", match.group(0))
+        for match in _NUMERIC_TOKEN_RE.finditer(text)
+    ]
+    cells.extend(
+        (match.start(), "DASH", match.group(0))
+        for match in _STANDALONE_DASH_CELL_RE.finditer(text)
+    )
+    return sorted(cells, key=lambda item: item[0])
 
 
 def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
@@ -406,26 +427,72 @@ def _direct_amount_value_after_label(
 
         suffix = logical_row[label_match.end() :]
         tokens = list(_NUMERIC_TOKEN_RE.finditer(suffix))
-        if not tokens:
-            continue
+        statement_scoped = (
+            unit_override is not None and note_column_override is not None
+        )
+        cells = (
+            _ordered_numeric_or_dash_cells(suffix)
+            if statement_scoped
+            else []
+        )
 
         has_note_column = (
             note_column_override
             if note_column_override is not None
             else _nearby_header_has_note_column(lines, index)
         )
+        chosen: str | None = None
         if has_note_column:
-            if len(tokens) != 3:
+            if len(tokens) == 3:
+                note_token = tokens[0].group(0).strip()
+                if re.fullmatch(r"\d{1,4}", note_token) is None:
+                    continue
+                chosen = tokens[1].group(0)
+            elif (
+                statement_scoped
+                and any(kind == "DASH" for _, kind, _ in cells)
+            ):
+                if len(cells) == 3:
+                    _, note_kind, note_text = cells[0]
+                    if (
+                        note_kind != "NUMERIC"
+                        or re.fullmatch(r"\d{1,4}", note_text.strip()) is None
+                    ):
+                        continue
+                    amount_cells = cells[1:]
+                elif len(cells) == 2:
+                    _, first_kind, first_text = cells[0]
+                    if (
+                        first_kind != "NUMERIC"
+                        or re.fullmatch(r"\d{1,4}", first_text.strip())
+                    ):
+                        continue
+                    amount_cells = cells
+                else:
+                    continue
+                if (
+                    len(amount_cells) != 2
+                    or amount_cells[0][1] != "NUMERIC"
+                ):
+                    continue
+                chosen = amount_cells[0][2]
+            else:
                 continue
-            note_token = tokens[0].group(0).strip()
-            if re.fullmatch(r"\d{1,4}", note_token) is None:
-                continue
-            chosen = tokens[1].group(0)
         else:
-            if len(tokens) != 2:
+            if len(tokens) == 2:
+                chosen = tokens[0].group(0)
+            elif (
+                statement_scoped
+                and any(kind == "DASH" for _, kind, _ in cells)
+            ):
+                if len(cells) != 2 or cells[0][1] != "NUMERIC":
+                    continue
+                chosen = cells[0][2]
+            else:
                 continue
-            chosen = tokens[0].group(0)
 
+        if chosen is None:
+            continue
         try:
             value = _parse_numeric_token(chosen)
         except ValueError:

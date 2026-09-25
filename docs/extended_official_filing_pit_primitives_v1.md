@@ -4,7 +4,7 @@
 
 本层只从已经下载并通过官方来源身份约束的财报 PDF 文本层中提取直接、可核对的原始科目。它不包含私有模型、阈值、信号、持仓或研究结果，也不产生任何 Production / trading authority。
 
-当前 parser：`official-filing-extended-pit-primitives-v1`。
+当前 parser：`official-filing-extended-pit-primitives-v8-statement-dash-cell-safe`。v8 仅在已证明的财务报表 scope、显式金额单位和确定列结构下，把 standalone `-` 作为“该单元格无数值”的列占位符参与 current/prior 列定位；`-` 本身永远不会被转换为 0。若 current 单元格为明确数字且 prior 为 `-`，可提取 current 数值；若 current 为 `-`、整行空白或列归属无法证明，则继续 fail closed。
 
 ## 当前 raw primitives
 
@@ -47,7 +47,7 @@
 - 输出 raw facts / coverage / errors / summary；
 - 明确记录 `outcome_read=false` 与 `evidence_qualification_changed=false`。
 
-**当前只完成工程接线，尚未运行 frozen 192-entity 历史 materialization。** 真正执行该历史 coverage 计算属于后续单独授权事项。
+该 materializer 已可由既有 **manual-only** historical coverage workflow 在冻结公开 scope 上运行；公开 materialization / coverage 成功只产生 public raw-data artifact，不会自动授予任何私有 evidence qualification、模型权限或交易权限。后续 parser 版本升级如需反映到历史 artifact，必须通过单独的 manual materialization 运行并保留新的 parser/provenance identity。
 
 ## PIT / provenance
 
