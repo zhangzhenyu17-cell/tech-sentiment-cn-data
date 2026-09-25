@@ -14,6 +14,7 @@ env:
   PYTHON_VERSION: "3.11"
   SHARD_COUNT: "48"
   AUTHORIZED_PARSER_REF: "cec1194806ccf0c8bac043548985d58b88a0c8d9"
+  AUTHORIZED_PARSER_BLOB: "ede3f472d5c3c4bd8384ce8071988bd54a7687a1"
   SOURCE_RELEASE_TAG: "v4a-stage-bundles-v1"
   SOURCE_BUNDLE_ASSET: "v4a-fundamental-20220104-20260917-56e8c44ca678668bfc17"
   SOURCE_BUNDLE_SHA256: "c1df2ec495657f52cf34935feb5ab94c7159f43e4cbf6f24bb8fbcf43ffdb54e"
@@ -32,7 +33,7 @@ jobs:
         run: python -m pip install -e ".[data]"
       - name: Assert exact parser semantics and focused tests
         run: |
-          git diff --exit-code "$AUTHORIZED_PARSER_REF" -- src/tech_sentiment/official_filing_facts.py
+          test "$(git hash-object src/tech_sentiment/official_filing_facts.py)" = "$AUTHORIZED_PARSER_BLOB"
           python - <<'PY'
           from tech_sentiment.official_filing_facts import FILING_PARSER_VERSION
           expected = "official-filing-facts-v11-balance-sheet-parent-equity"
@@ -87,7 +88,7 @@ jobs:
         run: python -m pip install -e ".[data]"
       - name: Assert exact parser source
         run: |
-          git diff --exit-code "$AUTHORIZED_PARSER_REF" -- src/tech_sentiment/official_filing_facts.py
+          test "$(git hash-object src/tech_sentiment/official_filing_facts.py)" = "$AUTHORIZED_PARSER_BLOB"
       - name: Download exact frozen Fundamental bundle
         env:
           GH_TOKEN: ${{ github.token }}
