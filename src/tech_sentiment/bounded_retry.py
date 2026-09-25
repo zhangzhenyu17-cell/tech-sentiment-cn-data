@@ -44,6 +44,7 @@ def is_transient_network_error(exc: BaseException) -> bool:
         (
             requests.ConnectionError,
             requests.Timeout,
+            requests.exceptions.ChunkedEncodingError,
         ),
     ):
         return True
