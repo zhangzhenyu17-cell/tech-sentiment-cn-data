@@ -44,6 +44,16 @@ jobs:
             --source-commit "$GITHUB_SHA" --shard-index 0 --shard-count 1 \
             --checkpoint-dir .cache/innovation_drug_company_fundamental/base \
             --out-dir stage/base
+      - name: Materialize exact 600276 raw PIT valuation rail
+        run: |
+          python scripts/materialize_innovation_drug_company_valuation_v1.py \
+            --symbols-csv stage/scope/innovation_drug_company_fundamental_scope.csv \
+            --filing-facts-csv stage/base/versioned_filing_facts.csv \
+            --trading-calendar-csv stage/calendar/trading_calendar.csv \
+            --start-date "$TARGET_START_DATE" --end-date "$END_DATE" \
+            --source-commit "$GITHUB_SHA" \
+            --checkpoint-dir .cache/innovation_drug_company_fundamental/valuation \
+            --out-dir stage/valuation
       - name: Materialize extended raw PIT facts
         run: |
           python scripts/materialize_fundamental_extended_pit.py \
@@ -72,6 +82,16 @@ jobs:
           summary = json.loads(Path("stage/extended/extended_filing_summary.json").read_text())
           assert summary["outcome_read"] is False
           assert summary["evidence_qualification_changed"] is False
+          valuation = json.loads(Path("stage/valuation/innovation_drug_company_valuation_summary.json").read_text())
+          assert valuation["symbol"] == "600276"
+          assert valuation["history_percentile_computed"] is False
+          assert valuation["valuation_state_classified"] is False
+          assert valuation["private_thresholds_used"] is False
+          assert valuation["forward_prices_or_returns_used"] is False
+          assert valuation["outcome_read"] is False
+          assert valuation["evidence_qualification_changed"] is False
+          assert valuation["production_changed"] is False
+          assert valuation["trading_authority_changed"] is False
           PY
       - name: Upload immutable public raw PIT bundle
         uses: actions/upload-artifact@v4
@@ -82,5 +102,6 @@ jobs:
             stage/calendar/trading_calendar_manifest.json
             stage/base
             stage/extended
+            stage/valuation
           if-no-files-found: error
           retention-days: 90
