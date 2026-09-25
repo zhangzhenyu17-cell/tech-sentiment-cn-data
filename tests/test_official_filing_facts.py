@@ -1279,3 +1279,23 @@ def test_star_sse_host_is_same_provider_and_allowlisted():
     assert star is not None
     assert filing_module._canonical_host(star) == "star.sse.com.cn"
     filing_module._validate_same_provider_retrieval(original, star)
+
+
+def test_parent_equity_prefers_physical_balance_sheet_row_over_equity_change_table() -> None:
+    text = """
+    2024年年度报告
+    合并资产负债表
+    单位：元
+    项目 2024年12月31日 2023年12月31日
+    归属于母公司所有者权益合计 20,670,653,449.72 21,026,774,725.75
+
+    合并所有者权益变动表
+    单位：元
+    归属于母公司所有者权益 所有
+    项目 其他权益工具 少数 者权
+    一、 872, 11,7 869, 103, 436, 8,77
+    """
+
+    facts = extract_standard_filing_facts(text)
+
+    assert facts["EQUITY_PARENT"] == pytest.approx(20_670_653_449.72)

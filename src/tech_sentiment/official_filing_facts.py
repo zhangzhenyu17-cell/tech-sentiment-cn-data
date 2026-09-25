@@ -26,7 +26,7 @@ from .pit_public_materialization import (
 DERIVED_FUNDAMENTAL_SOURCE_ID = "DERIVED_PIT_FUNDAMENTAL_TRENDS"
 DERIVED_FUNDAMENTAL_PROVIDER = "DERIVED_VERSIONED_OFFICIAL_FILINGS"
 LEGACY_FILING_PARSER_VERSION = "official-filing-facts-v8-unicode-multiengine-safe-units-revision-time"
-FILING_PARSER_VERSION = "official-filing-facts-v10-parent-net-assets-label"
+FILING_PARSER_VERSION = "official-filing-facts-v11-balance-sheet-parent-equity"
 
 FILING_FACT_COLUMNS = (
     "entity_id",
@@ -1005,6 +1005,93 @@ def _fragmented_label_value(
             return float(value)
     return None
 
+_FINANCIAL_STATEMENT_TOKENS = (
+    "资产负债表",
+    "利润表",
+    "现金流量表",
+    "所有者权益变动表",
+)
+
+
+def _statement_boundaries(lines: list[str]) -> list[tuple[int, str]]:
+    boundaries: list[tuple[int, str]] = []
+    for index, line in enumerate(lines):
+        compact = _compact_row_text(line)
+        for token in _FINANCIAL_STATEMENT_TOKENS:
+            if token in compact:
+                boundaries.append((index, token))
+                break
+    return boundaries
+
+
+def _explicit_statement_unit(
+    lines: list[str],
+    *,
+    start: int,
+    end: int,
+    max_header_lines: int = 12,
+    max_unit_lines: int = 5,
+) -> str | None:
+    header_end = min(end, start + max_header_lines)
+    for position in range(start, header_end):
+        for span in range(1, max_unit_lines + 1):
+            candidate_end = position + span
+            if candidate_end > header_end:
+                break
+            unit = _explicit_unit_from_text(" ".join(lines[position:candidate_end]))
+            if unit is not None:
+                return unit
+    return None
+
+
+def _physical_line_starts_exact_label(line: str, labels: Iterable[str]) -> bool:
+    compact = _compact_row_text(line)
+    first_numeric = _NUMERIC_TOKEN_RE.search(compact)
+    prefix = compact[: first_numeric.start()] if first_numeric else compact
+    if not prefix:
+        return False
+    return any(prefix.startswith(str(label)) for label in labels)
+
+
+def _first_balance_sheet_parent_equity(
+    lines: list[str],
+    labels: Iterable[str],
+) -> float | None:
+    """Extract parent equity only from a physical balance-sheet row.
+
+    The first consolidated balance sheet with an explicit CNY amount unit is
+    preferred. The target physical row must itself own the label and expose
+    exactly current/prior numeric cells. This prevents fragmented equity-change
+    tables from being mistaken for parent equity.
+    """
+
+    boundaries = _statement_boundaries(lines)
+    for offset, (start, token) in enumerate(boundaries):
+        if token != "资产负债表":
+            continue
+        end = boundaries[offset + 1][0] if offset + 1 < len(boundaries) else len(lines)
+        unit = _explicit_statement_unit(lines, start=start, end=end)
+        scale = _AMOUNT_UNIT_SCALE.get(str(unit or ""))
+        if scale is None:
+            continue
+        for line in lines[start:end]:
+            if not _physical_line_starts_exact_label(line, labels):
+                continue
+            match = _wrapped_label_match(line, labels)
+            if match is None:
+                continue
+            tokens = list(_NUMERIC_TOKEN_RE.finditer(line[match.end():]))
+            if len(tokens) != 2:
+                continue
+            try:
+                value = _parse_numeric_token(tokens[0].group(0))
+            except ValueError:
+                continue
+            if pd.notna(value):
+                return float(value) * scale
+    return None
+
+
 def _first_amount_value_after_label(
     lines: list[str],
     labels: Iterable[str],
@@ -1100,11 +1187,14 @@ def extract_standard_filing_facts(text: str) -> dict[str, float]:
 
     facts: dict[str, float] = {}
     for fact_type, labels in _FACT_LABELS.items():
-        value = (
-            _first_basic_eps_value(lines, labels)
-            if fact_type == "BASIC_EPS"
-            else _first_amount_value_after_label(lines, labels)
-        )
+        if fact_type == "BASIC_EPS":
+            value = _first_basic_eps_value(lines, labels)
+        elif fact_type == "EQUITY_PARENT":
+            value = _first_balance_sheet_parent_equity(lines, labels)
+            if value is None:
+                value = _first_amount_value_after_label(lines, labels)
+        else:
+            value = _first_amount_value_after_label(lines, labels)
         if value is not None:
             facts[fact_type] = value
     if not facts:
