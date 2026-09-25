@@ -20,6 +20,7 @@ def test_workflow_is_manual_only_and_exact_scope() -> None:
     assert "max-parallel: 4" in text
     assert "timeout-minutes: 360" in text
     assert "cec1194806ccf0c8bac043548985d58b88a0c8d9" in text
+    assert "ede3f472d5c3c4bd8384ce8071988bd54a7687a1" in text
     assert "v4a-fundamental-20220104-20260917-56e8c44ca678668bfc17" in text
     assert "c1df2ec495657f52cf34935feb5ab94c7159f43e4cbf6f24bb8fbcf43ffdb54e" in text
     assert "fundamental-equity-parent-v11-coverage-audit" in text
