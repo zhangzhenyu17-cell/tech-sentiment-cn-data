@@ -48,6 +48,11 @@ def _cninfo_row(title: str, document_id: str = "1") -> dict[str, object]:
         ("恒瑞医药关于与某公司签署战略合作及许可协议的公告", "BD_LICENSE_OR_COLLABORATION"),
         ("关于终止临床试验的公告", "CLINICAL_TRIAL_TERMINATION"),
         ("2025年度利润分配方案及提请股东会授权董事会制定中期分红方案的公告", None),
+        ("四川百利天恒药业股份有限公司关于与中国银行股份有限公司四川省分行签订战略合作协议的公告", None),
+        ("山东步长制药股份有限公司关于控股子公司拟签署知识产权合作协议的公告", None),
+        ("关于与礼来公司签署研发合作协议的公告", "BD_COLLABORATION"),
+        ("关于独家商业化合作协议的公告", "BD_COLLABORATION"),
+        ("关于全球战略合作协议触发里程碑付款条件的公告", "BD_COLLABORATION"),
     ],
 )
 def test_title_taxonomy_is_domain_specific_and_non_directional(title: str, expected: str | None) -> None:
