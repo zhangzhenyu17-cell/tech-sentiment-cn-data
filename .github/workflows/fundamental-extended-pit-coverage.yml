@@ -7,7 +7,7 @@ on:
         description: "Exact authorized code commit for this historical rematerialization"
         required: true
         type: string
-        default: "291cc4ba02857a1c6b0202015d962aaedc955c59"
+        default: "cec1194806ccf0c8bac043548985d58b88a0c8d9"
 
 permissions:
   contents: read
@@ -22,7 +22,7 @@ env:
   RECOVERY_REF: "refs/heads/v4a/fundamental-resume-295710"
   LEGACY_QUERY_PRIMARY_COMMIT: "2ef3ee784c7e6ced5801cf35b6a5113a68e9ab6a"
   LEGACY_QUERY_SECONDARY_COMMIT: "29571066bbf69da5ba252982f71b592e07969314"
-  AUTHORIZED_MATERIALIZATION_REF: "291cc4ba02857a1c6b0202015d962aaedc955c59"
+  AUTHORIZED_MATERIALIZATION_REF: "cec1194806ccf0c8bac043548985d58b88a0c8d9"
   MATERIALIZATION_SOURCE_COMMIT: ${{ inputs.materialization_ref }}
 
 jobs:

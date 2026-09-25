@@ -54,7 +54,7 @@ def test_workflow_has_three_layer_preflight_and_recovery_controls() -> None:
 
 def test_workflow_pins_this_authorized_rematerialization_to_exact_code_commit() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
-    exact = "291cc4ba02857a1c6b0202015d962aaedc955c59"
+    exact = "cec1194806ccf0c8bac043548985d58b88a0c8d9"
 
     assert f'default: "{exact}"' in text
     assert f'AUTHORIZED_MATERIALIZATION_REF: "{exact}"' in text
