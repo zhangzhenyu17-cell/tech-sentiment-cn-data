@@ -10,6 +10,7 @@ import time
 
 import pandas as pd
 
+from .bounded_retry import is_transient_network_error
 from .pit_public_materialization import (
     REQUIRED_PIT_COLUMNS,
     _market_available_date,
@@ -541,8 +542,9 @@ def materialize_cninfo_market_keyword_archive(
                         end_date=end.strftime("%Y%m%d"),
                     )
                     break
-                except json.JSONDecodeError:
-                    if attempt + 1 >= fetch_attempts:
+                except Exception as exc:
+                    retryable = isinstance(exc, json.JSONDecodeError) or is_transient_network_error(exc)
+                    if not retryable or attempt + 1 >= fetch_attempts:
                         raise
                     delay = retry_backoff_seconds * (attempt + 1)
                     if delay:
