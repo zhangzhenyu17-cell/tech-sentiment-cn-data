@@ -1,0 +1,58 @@
+{
+  "contract_id": "innovation_drug_931152_preopen_v1",
+  "status": "FROZEN_PUBLIC_RAW_INPUT_SCOPE",
+  "date": "2026-09-25",
+  "index_code": "931152",
+  "first_prospective_market_session": "2026-09-25",
+  "purpose": "Capture public-only current-session 931152 raw inputs for the already-frozen private Innovation Drug V1 outcome-blind prospective materializer.",
+  "membership": {
+    "expected_constituents": 50,
+    "live_source_required": "CSI_OFFICIAL_LIVE_WITNESS",
+    "continuity_anchor_path": "data/reference/innovation_drug_931152_live_anchor_2026-09-11.csv",
+    "continuity_anchor_source_artifact_id": 10506915060,
+    "continuity_anchor_source_artifact_sha256": "1901c168222fb718277785b62815d1db03b5b4c016efeb91a6d9dbead60b11cd",
+    "exact_anchor_match_required": true,
+    "mismatch_policy": "FAIL_CLOSED_UNTIL_MEMBERSHIP_REQUALIFIED"
+  },
+  "timing": {
+    "market_session": "T",
+    "decision_date": "IMMEDIATE_NEXT_A_SHARE_TRADING_DAY_T_PLUS_1",
+    "earliest_operational_capture_asia_shanghai": "23:45",
+    "data_freeze_deadline_asia_shanghai": "05:30",
+    "first_eligible_execution_asia_shanghai": "09:30"
+  },
+  "public_files": [
+    "membership_snapshot.csv",
+    "stock_prices_qfq.csv",
+    "stock_download_errors.csv",
+    "active_limit_rows.csv",
+    "strict_daily_coverage.csv",
+    "index_931152_prices.csv",
+    "report.json"
+  ],
+  "stock_warmup": {
+    "calendar_days": 550,
+    "adjustment": "qfq",
+    "role": "PER_STOCK_ROLLING_INPUT_ONLY_NOT_HISTORICAL_SECTOR_EVENT_RECONSTRUCTION"
+  },
+  "quality": {
+    "current_session_stock_symbol_coverage": 1,
+    "minimum_current_session_limit_rule_coverage": 0.95,
+    "exact_current_session_official_index_row_required": true,
+    "download_error_rows_allowed": 0
+  },
+  "privacy_and_research_firewall": {
+    "private_model_semantics_allowed": false,
+    "private_thresholds_or_signals_allowed": false,
+    "portfolio_or_holdings_data_allowed": false,
+    "forward_outcomes_allowed": false,
+    "research_result_allowed": false,
+    "evidence_tier_allowed": false,
+    "historical_backfill_allowed": false,
+    "retroactive_evidence_qualification_allowed": false
+  },
+  "workflow": {
+    "workflow_dispatch_only": true,
+    "automatic_trigger_allowed": false
+  }
+}
