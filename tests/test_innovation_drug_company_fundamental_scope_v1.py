@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from scripts.build_innovation_drug_company_fundamental_scope_v1 import (
+from tech_sentiment.innovation_drug_fundamental_scope_v1 import (
     SCOPE_VERSION,
     build_scope,
 )
