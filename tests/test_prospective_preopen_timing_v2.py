@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from tech_sentiment.prospective_preopen_timing_v2 import (
+    first_a_share_trading_day_after,
     validate_preopen_capture_window,
 )
 
@@ -93,9 +94,23 @@ def test_capture_completion_guard_accepts_full_cross_date_window() -> None:
     )
 
 
+def test_first_trading_day_after_mid_autumn_freeze_is_calendar_derived() -> None:
+    client = _CalendarClient(["2026-09-24", "2026-09-28", "2026-09-29"])
+    assert first_a_share_trading_day_after(
+        cutoff_date="2026-09-25", client=client
+    ) == "2026-09-28"
+    with pytest.raises(ValueError, match="confirmed A-share trading day"):
+        validate_preopen_capture_window(
+            market_session_date="2026-09-25",
+            decision_date="2026-09-28",
+            captured_at=_dt("2026-09-26T01:00:00"),
+            client=client,
+        )
+
+
 def test_capture_completion_guard_accepts_intervening_nontrading_days() -> None:
     _require_capture_completed_before_freeze(
-        "2026-09-25",
+        "2026-09-24",
         "2026-09-28",
         completed_at=_dt("2026-09-26T01:00:00"),
     )
