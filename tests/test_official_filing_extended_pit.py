@@ -265,10 +265,54 @@ def test_build_extended_rows_preserves_document_provenance() -> None:
     assert set(rows["unit"]) == {"CNY"}
     assert set(rows["parser_version"]) == {EXTENDED_FILING_PARSER_VERSION}
     assert EXTENDED_FILING_PARSER_VERSION == (
-        "official-filing-extended-pit-primitives-v4-statement-unit-column-safe-historical-labels"
+        "official-filing-extended-pit-primitives-v5-statement-row-ownership-safe"
     )
     assert set(rows["document_id"]) == {"1210000000"}
     assert set(rows["document_sha256"]) == {"a" * 64}
     assert set(pd.to_datetime(rows["period_end"]).dt.strftime("%Y-%m-%d")) == {
         "2025-06-30"
     }
+
+
+def test_blank_statement_row_never_borrows_following_row_amounts() -> None:
+    text = """
+    2024年年度报告
+    合并资产负债表
+    单位：元
+    项目 期末余额 期初余额
+    应付债券
+    租赁负债 14,369,849.36 26,991,783.44
+
+    合并利润表
+    单位：元
+    研发费用 1 1
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert "BONDS_PAYABLE" not in facts
+    assert facts["LEASE_LIABILITIES"] == pytest.approx(14_369_849.36)
+
+
+def test_statement_presence_blocks_global_note_table_fallback() -> None:
+    text = """
+    2024年年度报告
+    合并资产负债表
+    单位：元
+    项目 期末余额 期初余额
+    应付债券
+    租赁负债 14,369,849.36 26,991,783.44
+
+    合并利润表
+    单位：元
+    研发费用 1 1
+
+    附注风险表
+    单位：元
+    应付债券 1,796,478,701.63 1,700,000,000.00
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert "BONDS_PAYABLE" not in facts
+    assert facts["LEASE_LIABILITIES"] == pytest.approx(14_369_849.36)
