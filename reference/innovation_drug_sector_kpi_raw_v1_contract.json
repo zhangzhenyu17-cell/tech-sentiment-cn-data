@@ -1,0 +1,90 @@
+{
+  "contract_id": "INNOVATION_DRUG_SECTOR_KPI_RAW_V1",
+  "date": "2026-09-26",
+  "status": "FROZEN_OUTCOME_BLIND_RAW_EVENT_CONTEXT_CONTRACT",
+  "scope": {
+    "domain_id": "INNOVATION_DRUG",
+    "exact_symbol": "600276",
+    "exact_entity_id": "600276.SH",
+    "sector_index": "931152",
+    "sector_aggregation_state": "NOT_COMPUTED_REQUIRES_POINT_IN_TIME_MEMBERSHIP",
+    "score_or_direction_state": "NOT_DEFINED"
+  },
+  "event_families": {
+    "CLINICAL_REGULATORY": [
+      "CLINICAL_TRIAL_AUTHORIZATION",
+      "CLINICAL_TRIAL_TERMINATION",
+      "BREAKTHROUGH_THERAPY_DESIGNATION",
+      "MARKETING_APPLICATION_ACCEPTED",
+      "MARKETING_APPLICATION_PRIORITY_REVIEW",
+      "MARKETING_APPROVAL",
+      "REGISTRATION_APPLICATION_WITHDRAWAL",
+      "CDE_BREAKTHROUGH_PROPOSED",
+      "CDE_BREAKTHROUGH_INCLUDED",
+      "CDE_PRIORITY_REVIEW_PROPOSED",
+      "CDE_PRIORITY_REVIEW_INCLUDED",
+      "CDE_IMPLIED_CLINICAL_TRIAL_PERMISSION",
+      "CDE_CONDITIONAL_APPROVAL"
+    ],
+    "BD_LICENSING": [
+      "BD_LICENSE_OR_COLLABORATION",
+      "BD_COLLABORATION"
+    ]
+  },
+  "source_contract": {
+    "CNINFO_ANNOUNCEMENT_ARCHIVE": {
+      "provider": "CNINFO",
+      "current_state": "ACTIVE_EXACT_ISSUER_PIT_ARCHIVE",
+      "taxonomy_basis": "ISSUER_TITLE_TAXONOMY_ONLY_NO_DIRECTION",
+      "fuzzy_entity_match_allowed": false
+    },
+    "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE": {
+      "provider": "NMPA_OR_CDE",
+      "current_state": "OFFICIAL_SNAPSHOT_ADAPTER_READY_NOT_MATERIALIZED",
+      "live_scraper_required": false,
+      "fuzzy_entity_match_allowed": false,
+      "accepted_entity_mapping_basis": [
+        "EXACT_APPLICANT_ALIAS_REGISTRY",
+        "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE"
+      ]
+    }
+  },
+  "time_semantics": {
+    "event_date": "OFFICIAL_PUBLICATION_DATE",
+    "evidence_available_date": "FIRST_CLOSE_BASED_REAL_TRADING_DATE_KNOWABLE",
+    "date_only_disclosure_same_day_use_allowed": false,
+    "forward_fill": false,
+    "backfill": false,
+    "interpolation": false
+  },
+  "interpretation_boundary": {
+    "event_identity_is_direction": false,
+    "supportive_or_adverse_state_defined": false,
+    "event_weight_defined": false,
+    "clinical_stage_weight_defined": false,
+    "bd_transaction_value_weight_defined": false,
+    "sector_score_defined": false,
+    "company_score_defined": false,
+    "current_membership_backfill_allowed": false
+  },
+  "authority": {
+    "historical_outcome_read": false,
+    "prospective_outcome_read": false,
+    "parameter_search": false,
+    "threshold_search": false,
+    "model_training": false,
+    "evidence_qualification_changed": false,
+    "production_permission": "NONE",
+    "trading_authority": false,
+    "automatic_execution": false,
+    "real_percentage_mapping": false
+  },
+  "workflow": {
+    "path": ".github/workflows/innovation-drug-sector-kpi-raw-v1.yml",
+    "workflow_dispatch_only": true,
+    "schedule": false,
+    "push": false,
+    "pull_request": false,
+    "workflow_run": false
+  }
+}
