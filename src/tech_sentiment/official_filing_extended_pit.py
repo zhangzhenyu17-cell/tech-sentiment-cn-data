@@ -21,7 +21,7 @@ from .official_filing_facts import (
 
 
 EXTENDED_FILING_PARSER_VERSION = (
-    "official-filing-extended-pit-primitives-v5-statement-row-ownership-safe"
+    "official-filing-extended-pit-primitives-v6-tail-fragment-row-ownership-safe"
 )
 
 # These are direct statement line-items only. They are intentionally not mapped
@@ -187,6 +187,82 @@ def _target_logical_row_window(
     return " ".join(parts)
 
 
+def _tail_fragment_amount_value(
+    lines: list[str],
+    index: int,
+    labels: Iterable[str],
+    *,
+    unit_override: str | None = None,
+    note_column_override: bool | None = None,
+    max_continuation_lines: int = 2,
+) -> float | None:
+    """Recover an exact target label whose text tail follows its amount cells.
+
+    Some PDF text layers emit a table row as a strict label prefix plus exactly
+    current/prior amounts, then place the final label glyphs on a following
+    text-only line. Complete labels, fuzzy continuations, and numeric
+    continuations are never accepted. In statements with an 附注 column, the
+    first numeric token must be amount-like rather than a 1-4 digit note id.
+    """
+
+    physical = str(lines[index])
+    tokens = list(_NUMERIC_TOKEN_RE.finditer(physical))
+    if len(tokens) != 2:
+        return None
+
+    has_note_column = (
+        note_column_override
+        if note_column_override is not None
+        else _nearby_header_has_note_column(lines, index)
+    )
+    if has_note_column and re.fullmatch(r"\d{1,4}", tokens[0].group(0).strip()):
+        return None
+
+    prefix = re.sub(r"\s+", "", physical[: tokens[0].start()])
+    prefix = _ROW_ORDINAL_PREFIX_RE.sub("", prefix, count=1)
+    if not prefix:
+        return None
+
+    candidates = [
+        str(label)
+        for label in labels
+        if str(label).startswith(prefix) and str(label) != prefix
+    ]
+    if not candidates:
+        return None
+
+    continuation = ""
+    for position in range(
+        index + 1,
+        min(len(lines), index + 1 + max_continuation_lines),
+    ):
+        compact = re.sub(r"\s+", "", str(lines[position]))
+        if not compact or _NUMERIC_TOKEN_RE.search(compact):
+            break
+        continuation += compact
+        exact = [label for label in candidates if prefix + continuation == label]
+        if len(exact) == 1:
+            unit = (
+                unit_override
+                if unit_override is not None
+                else _nearest_explicit_unit(lines, index)
+            )
+            scale = _AMOUNT_UNIT_SCALE.get(str(unit or ""))
+            if scale is None:
+                return None
+            try:
+                value = _parse_numeric_token(tokens[0].group(0))
+            except ValueError:
+                return None
+            if pd.notna(value):
+                return float(value) * scale
+            return None
+        if not any(label.startswith(prefix + continuation) for label in candidates):
+            break
+
+    return None
+
+
 def _direct_amount_value_after_label(
     lines: list[str],
     labels: Iterable[str],
@@ -212,6 +288,15 @@ def _direct_amount_value_after_label(
         logical_row = _target_logical_row_window(lines, index, label_options)
         label_match = _wrapped_label_match(logical_row, label_options)
         if label_match is None:
+            fragmented = _tail_fragment_amount_value(
+                lines,
+                index,
+                label_options,
+                unit_override=unit_override,
+                note_column_override=note_column_override,
+            )
+            if fragmented is not None:
+                return float(fragmented)
             continue
 
         unit = (
