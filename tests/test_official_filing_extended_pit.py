@@ -265,13 +265,51 @@ def test_build_extended_rows_preserves_document_provenance() -> None:
     assert set(rows["unit"]) == {"CNY"}
     assert set(rows["parser_version"]) == {EXTENDED_FILING_PARSER_VERSION}
     assert EXTENDED_FILING_PARSER_VERSION == (
-        "official-filing-extended-pit-primitives-v6-tail-fragment-row-ownership-safe"
+        "official-filing-extended-pit-primitives-v7-wrapped-label-note-column-safe"
     )
     assert set(rows["document_id"]) == {"1210000000"}
     assert set(rows["document_sha256"]) == {"a" * 64}
     assert set(pd.to_datetime(rows["period_end"]).dt.strftime("%Y-%m-%d")) == {
         "2025-06-30"
     }
+
+
+def test_wrapped_balance_sheet_label_split_around_note_column_is_recovered() -> None:
+    text = """
+    2026年半年度报告
+    合并资产负债表
+    单位：元 币种：人民币
+    项目 附注 2026年6月30日 2025年12月31日
+    其他应付款 七、41 945,907,235.87 1,339,530,717.71
+    一年内到期的非流动 七、43
+    负债 29,754,360.83 30,925,675.25
+    其他流动负债 七、44 5,880,520.51 3,544,471.67
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert facts["CURRENT_PORTION_NON_CURRENT_LIABILITIES"] == pytest.approx(
+        29_754_360.83
+    )
+
+
+def test_wrapped_balance_sheet_label_note_recovery_requires_explicit_note_column() -> None:
+    text = """
+    2026年半年度报告
+    合并资产负债表
+    单位：元 币种：人民币
+    项目 2026年6月30日 2025年12月31日
+    一年内到期的非流动 七、43
+    负债 29,754,360.83 30,925,675.25
+
+    合并利润表
+    单位：元
+    研发费用 1 1
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert "CURRENT_PORTION_NON_CURRENT_LIABILITIES" not in facts
 
 
 def test_tail_fragment_after_amount_cells_recovers_exact_capex_label() -> None:

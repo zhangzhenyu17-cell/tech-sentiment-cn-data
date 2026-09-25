@@ -21,7 +21,7 @@ from .official_filing_facts import (
 
 
 EXTENDED_FILING_PARSER_VERSION = (
-    "official-filing-extended-pit-primitives-v6-tail-fragment-row-ownership-safe"
+    "official-filing-extended-pit-primitives-v7-wrapped-label-note-column-safe"
 )
 
 # These are direct statement line-items only. They are intentionally not mapped
@@ -138,6 +138,9 @@ def _nearby_header_has_note_column(
 _ROW_ORDINAL_PREFIX_RE = re.compile(
     r"^(?:[一二三四五六七八九十百]+[、.．]|[（(][一二三四五六七八九十百]+[）)])"
 )
+_NOTE_COLUMN_TAIL_RE = re.compile(
+    r"^(?P<label_prefix>.+?)(?P<note>[一二三四五六七八九十百]+、\d{1,4})$"
+)
 
 
 def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
@@ -157,6 +160,90 @@ def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
         str(label).startswith(prefix) or prefix.startswith(str(label))
         for label in labels
     )
+
+def _wrapped_label_note_then_amount_value(
+    lines: list[str],
+    index: int,
+    labels: Iterable[str],
+    *,
+    unit_override: str | None = None,
+    note_column_override: bool | None = None,
+    max_continuation_lines: int = 2,
+) -> float | None:
+    """Recover a wrapped statement label split around an explicit note reference.
+
+    Some pypdf layout rows place an incomplete label plus the note reference on
+    one physical line, then emit the final label glyphs together with the
+    current/prior amount cells on the next line.  Recovery is allowed only when
+    the statement header explicitly declares an 附注 column, the first line
+    ends in a Chinese note reference such as 七、43, the label continuation is
+    exact, and the continuation row owns exactly current/prior amount cells.
+    """
+
+    if note_column_override is not True:
+        return None
+    compact = re.sub(r"\s+", "", str(lines[index]))
+    match = _NOTE_COLUMN_TAIL_RE.fullmatch(compact)
+    if match is None:
+        return None
+
+    prefix = match.group("label_prefix")
+    candidates = [
+        str(label)
+        for label in labels
+        if str(label).startswith(prefix) and str(label) != prefix
+    ]
+    if not candidates:
+        return None
+
+    continuation = ""
+    for position in range(
+        index + 1,
+        min(len(lines), index + 1 + max_continuation_lines),
+    ):
+        physical = str(lines[position])
+        tokens = list(_NUMERIC_TOKEN_RE.finditer(physical))
+        text_prefix = re.sub(
+            r"\s+", "", physical[: tokens[0].start()] if tokens else physical
+        )
+        if not text_prefix:
+            break
+        continuation += text_prefix
+        viable = [
+            label
+            for label in candidates
+            if label.startswith(prefix + continuation)
+        ]
+        if not viable:
+            break
+        exact = [
+            label
+            for label in viable
+            if label == prefix + continuation
+        ]
+        if exact:
+            if len(exact) != 1 or len(tokens) != 2:
+                return None
+            unit = (
+                unit_override
+                if unit_override is not None
+                else _nearest_explicit_unit(lines, index)
+            )
+            scale = _AMOUNT_UNIT_SCALE.get(str(unit or ""))
+            if scale is None:
+                return None
+            try:
+                value = _parse_numeric_token(tokens[0].group(0))
+            except ValueError:
+                return None
+            if pd.notna(value):
+                return float(value) * scale
+            return None
+        if tokens:
+            break
+
+    return None
+
 
 def _target_logical_row_window(
     lines: list[str],
@@ -283,6 +370,15 @@ def _direct_amount_value_after_label(
     label_options = tuple(str(label) for label in labels)
     for index in range(len(lines)):
         if not _physical_line_starts_label(lines[index], label_options):
+            wrapped_note_value = _wrapped_label_note_then_amount_value(
+                lines,
+                index,
+                label_options,
+                unit_override=unit_override,
+                note_column_override=note_column_override,
+            )
+            if wrapped_note_value is not None:
+                return float(wrapped_note_value)
             continue
 
         logical_row = _target_logical_row_window(lines, index, label_options)
