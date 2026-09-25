@@ -1,0 +1,76 @@
+{
+  "contract_id": "INNOVATION_DRUG_SECTOR_KPI_931152_RAW_V1",
+  "date": "2026-09-26",
+  "status": "FROZEN_OUTCOME_BLIND_PIT_MEMBER_FILTERED_RAW_EVENT_COVERAGE_CONTRACT",
+  "domain_id": "INNOVATION_DRUG",
+  "index_code": "931152",
+  "scope": {
+    "start_date": "2019-04-22",
+    "end_date": "2026-09-11",
+    "membership_contract": "SECTOR_931152_KPI_MEMBERSHIP_SCOPE_V1",
+    "membership_path": "data/reference/sector_931152_kpi_membership_scope_v1.csv",
+    "membership_interval_rows": 155,
+    "membership_unique_symbols": 86,
+    "current_constituent_backfill_allowed": false,
+    "post_2026_09_11_history_claimed": false
+  },
+  "retrieval": {
+    "provider": "CNINFO",
+    "source_identity": "CNINFO_ANNOUNCEMENT_ARCHIVE",
+    "mode": "MARKET_WIDE_FROZEN_KEYWORD_PULL_THEN_TITLE_TAXONOMY_THEN_PIT_MEMBERSHIP_FILTER",
+    "frozen_query_keywords": [
+      "终止临床",
+      "临床试验终止",
+      "临床失败",
+      "撤回药品注册申请",
+      "突破性治疗",
+      "上市许可申请",
+      "药品注册批准",
+      "获批上市",
+      "批准上市",
+      "临床试验批准",
+      "许可协议",
+      "授权协议",
+      "独家许可",
+      "许可及合作协议",
+      "合作协议"
+    ],
+    "query_keywords_are_semantic_classification": false,
+    "title_classifier_remains_semantic_gate": true,
+    "event_membership_date_semantics": "EVIDENCE_AVAILABLE_DATE",
+    "complete_query_set_required": true
+  },
+  "interpretation_boundary": {
+    "event_identity_is_direction": false,
+    "supportive_or_adverse_state_defined": false,
+    "event_weight_defined": false,
+    "clinical_stage_weight_defined": false,
+    "bd_transaction_value_weight_defined": false,
+    "sector_score_defined": false,
+    "company_score_defined": false,
+    "absence_of_event_may_imply_negative_or_positive_state": false,
+    "cde_nmpa_snapshot_materialized": false,
+    "formal_sector_kpi_state": "DATA_INSUFFICIENT"
+  },
+  "authority": {
+    "historical_outcome_read": false,
+    "prospective_outcome_read": false,
+    "parameter_search": false,
+    "threshold_search": false,
+    "weight_search": false,
+    "model_training": false,
+    "evidence_qualification_changed": false,
+    "production_permission": "NONE",
+    "trading_authority": false,
+    "automatic_execution": false,
+    "real_percentage_mapping": false
+  },
+  "workflow": {
+    "path": ".github/workflows/innovation-drug-sector-kpi-931152-raw-v1.yml",
+    "workflow_dispatch_only": true,
+    "schedule": false,
+    "push": false,
+    "pull_request": false,
+    "workflow_run": false
+  }
+}

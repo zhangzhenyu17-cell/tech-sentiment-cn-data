@@ -1,0 +1,109 @@
+name: Innovation Drug 931152 Sector KPI Raw V1
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  START_DATE: "2019-04-22"
+  END_DATE: "2026-09-11"
+  MEMBERSHIP_SCOPE: "data/reference/sector_931152_kpi_membership_scope_v1.csv"
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data,dev]"
+      - name: Public-tree and contract tests
+        run: |
+          python scripts/audit_public_tree.py
+          pytest -q tests/test_innovation_drug_sector_kpi_raw_v1.py tests/test_innovation_drug_sector_kpi_931152_raw_v1.py tests/test_innovation_drug_sector_kpi_931152_workflow_v1.py
+      - name: Build A-share trading calendar with successor sessions
+        run: |
+          mkdir -p stage/calendar
+          python - <<'PY'
+          import akshare as ak
+          import pandas as pd
+
+          frame = ak.tool_trade_date_hist_sina()
+          column = "trade_date" if "trade_date" in frame.columns else frame.columns[0]
+          dates = pd.to_datetime(frame[column], errors="raise").dt.normalize()
+          dates = dates[
+              dates.between(pd.Timestamp("2019-04-01"), pd.Timestamp("2026-10-02"))
+          ]
+          if dates.empty or not (dates > pd.Timestamp("2026-09-11")).any():
+              raise SystemExit("calendar does not include successor sessions after sector cutoff")
+          pd.DataFrame({"trade_date": dates}).drop_duplicates().sort_values("trade_date").to_csv(
+              "stage/calendar/trading_calendar.csv", index=False
+          )
+          PY
+      - name: Materialize PIT-member-filtered 931152 raw event coverage
+        run: |
+          python scripts/materialize_innovation_drug_sector_kpi_931152_raw_v1.py \
+            --membership-scope-csv "$MEMBERSHIP_SCOPE" \
+            --trading-calendar-csv stage/calendar/trading_calendar.csv \
+            --start-date "$START_DATE" \
+            --end-date "$END_DATE" \
+            --output-dir stage/sector-kpi-931152
+      - name: Validate sector raw-event boundary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          contract = json.loads(Path("reference/innovation_drug_sector_kpi_931152_raw_v1_contract.json").read_text())
+          membership_contract = json.loads(Path("reference/sector_931152_kpi_membership_scope_v1.json").read_text())
+          summary = json.loads(Path("stage/sector-kpi-931152/sector_931152_kpi_raw_summary.json").read_text())
+          events = pd.read_csv("stage/sector-kpi-931152/sector_931152_pit_raw_events.csv")
+          coverage = pd.read_csv("stage/sector-kpi-931152/market_keyword_query_coverage.csv")
+          errors = pd.read_csv("stage/sector-kpi-931152/market_keyword_query_errors.csv")
+
+          assert contract["status"] == "FROZEN_OUTCOME_BLIND_PIT_MEMBER_FILTERED_RAW_EVENT_COVERAGE_CONTRACT"
+          assert membership_contract["status"] == "QUALIFIED_EXISTING_PIT_MEMBERSHIP_REUSE_NO_NEW_EVIDENCE_QUALIFICATION"
+          assert membership_contract["scope_end"] == "2026-09-11"
+          assert summary["state"] == "PIT_MEMBER_FILTERED_RAW_EVENT_COVERAGE_MATERIALIZED_NOT_FORMALLY_QUALIFIED"
+          assert summary["membership_interval_rows"] == 155
+          assert summary["membership_unique_symbols"] == 86
+          assert summary["query_count"] == 15
+          assert summary["complete_query_count"] == 15
+          assert summary["query_error_rows"] == 0
+          assert summary["event_rows"] > 0
+          assert summary["cde_nmpa_snapshot_materialized"] is False
+          assert summary["sector_kpi_formal_state"] == "DATA_INSUFFICIENT"
+          assert summary["event_identity_is_direction"] is False
+          assert summary["event_weight_defined"] is False
+          assert summary["sector_score_defined"] is False
+          assert summary["historical_outcomes_read"] is False
+          assert summary["prospective_outcomes_read"] is False
+          assert summary["evidence_qualification_changed"] is False
+          assert summary["production_changed"] is False
+          assert summary["trading_authority_changed"] is False
+          assert summary["current_constituent_backfill_used"] is False
+          assert set(coverage["query_status"].astype(str)) == {"COMPLETE_WINDOW"}
+          assert errors.empty
+          assert not events["direction_classified"].astype(bool).any()
+          assert not events["predictive_weight_assigned"].astype(bool).any()
+          assert not events["outcome_read"].astype(bool).any()
+          assert events["pit_member_at_evidence_available_date"].astype(bool).all()
+          PY
+      - name: Upload immutable PIT-member-filtered raw event bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: innovation-drug-sector-kpi-931152-raw-v1
+          path: |
+            stage/sector-kpi-931152
+            reference/innovation_drug_sector_kpi_931152_raw_v1_contract.json
+            reference/sector_931152_kpi_membership_scope_v1.json
+            data/reference/sector_931152_kpi_membership_scope_v1.csv
+          if-no-files-found: error
+          retention-days: 90

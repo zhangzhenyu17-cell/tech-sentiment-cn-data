@@ -1,0 +1,36 @@
+{
+  "contract_id": "SECTOR_931152_KPI_MEMBERSHIP_SCOPE_V1",
+  "date": "2026-09-26",
+  "status": "QUALIFIED_EXISTING_PIT_MEMBERSHIP_REUSE_NO_NEW_EVIDENCE_QUALIFICATION",
+  "index_code": "931152",
+  "scope_start": "2019-04-22",
+  "scope_end": "2026-09-11",
+  "interval_rows": 155,
+  "unique_symbols": 86,
+  "sources": {
+    "design": {
+      "path": "data/reference/sector_931152_design_universe.csv",
+      "sha256": "1e2b751f0447268fe817fce077c3b7ada22e8d7a9ca2a89a7d5e5b890160e46f",
+      "qualification": "EXISTING_QUALIFIED_DESIGN_MEMBERSHIP"
+    },
+    "oos": {
+      "artifact_id": 10506915060,
+      "artifact_name": "931152-oos-inputs-v1",
+      "artifact_sha256": "1901c168222fb718277785b62815d1db03b5b4c016efeb91a6d9dbead60b11cd",
+      "member_file": "holdout_universe.csv",
+      "member_file_sha256": "e4da968a3a9adf6b12a90857620c6a32f1cfaaf1e175b902727c1505c9b7c600",
+      "qualification": "HOLDOUT_INPUT_QUALIFIED",
+      "forward_outcomes_computed": false,
+      "model_events_computed": false
+    }
+  },
+  "reuse_boundary": {
+    "current_constituent_backfill": false,
+    "post_2026_09_11_history_claimed": false,
+    "membership_research_rerun": false,
+    "outcome_read": false,
+    "evidence_qualification_changed": false,
+    "production_changed": false,
+    "trading_authority_changed": false
+  }
+}
