@@ -13,7 +13,7 @@ FIRST_ELIGIBLE_EXECUTION = time(9, 30)
 MIN_BUFFER_HOURS = 4
 
 
-def _calendar_dates(client: Any) -> pd.DatetimeIndex:
+def a_share_trading_dates(client: Any) -> pd.DatetimeIndex:
     raw = client.tool_trade_date_hist_sina()
     if raw is None or len(raw) == 0:
         raise RuntimeError("A-share trading calendar source returned no rows")
@@ -24,6 +24,15 @@ def _calendar_dates(client: Any) -> pd.DatetimeIndex:
         .sort_values()
         .unique()
     )
+
+
+def first_a_share_trading_day_after(*, cutoff_date: str, client: Any) -> str:
+    cutoff = pd.Timestamp(cutoff_date).normalize()
+    dates = a_share_trading_dates(client)
+    later = dates[dates > cutoff]
+    if len(later) == 0:
+        raise ValueError("trading calendar has no A-share session after cutoff_date")
+    return later[0].strftime("%Y-%m-%d")
 
 
 def validate_preopen_capture_window(
@@ -37,7 +46,7 @@ def validate_preopen_capture_window(
         raise ValueError("captured_at must be timezone-aware")
     session = pd.Timestamp(market_session_date).normalize()
     decision = pd.Timestamp(decision_date).normalize()
-    dates = _calendar_dates(client)
+    dates = a_share_trading_dates(client)
     if session not in set(dates):
         raise ValueError("market_session_date is not a confirmed A-share trading day")
     if decision not in set(dates):
@@ -79,5 +88,7 @@ __all__ = [
     "DATA_FREEZE_DEADLINE",
     "FIRST_ELIGIBLE_EXECUTION",
     "MIN_BUFFER_HOURS",
+    "a_share_trading_dates",
+    "first_a_share_trading_day_after",
     "validate_preopen_capture_window",
 ]
