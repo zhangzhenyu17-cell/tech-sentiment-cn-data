@@ -14,7 +14,12 @@ import pandas as pd
 
 from .csindex_index_price import fetch_csindex_history
 from .data_akshare import download_universe_history, fetch_current_csindex_universe
-from .prospective_preopen_timing_v2 import SHANGHAI, validate_preopen_capture_window
+from .prospective_preopen_timing_v2 import (
+    SHANGHAI,
+    a_share_trading_dates,
+    first_a_share_trading_day_after,
+    validate_preopen_capture_window,
+)
 from .sector_limit_coverage_strict import audit_strict_member_day_limit_coverage
 from .sector_limit_pipeline import build_and_audit_sector_limit_rows
 from .universe import apply_universe_membership
@@ -24,7 +29,8 @@ EXPECTED_CONSTITUENTS = 50
 MIN_DAILY_LIMIT_COVERAGE = 0.95
 WARMUP_CALENDAR_DAYS = 550
 EARLIEST_OPERATIONAL_CAPTURE = time(23, 45)
-FIRST_PROSPECTIVE_MARKET_SESSION = "2026-09-25"
+PROSPECTIVE_FREEZE_DATE = "2026-09-25"
+FIRST_PROSPECTIVE_MARKET_SESSION_RULE = "FIRST_CONFIRMED_A_SHARE_TRADING_DAY_STRICTLY_AFTER_PROSPECTIVE_FREEZE_DATE"
 BAOSTOCK_FIELDS = (
     "date,code,open,high,low,close,preclose,volume,amount,adjustflag,turn,"
     "tradestatus,pctChg,isST"
@@ -32,6 +38,7 @@ BAOSTOCK_FIELDS = (
 PACKAGE_SCHEMA = "innovation-drug-931152-preopen-public-v1"
 PACKAGE_FILES = (
     "membership_snapshot.csv",
+    "trading_calendar_dates.csv",
     "stock_prices_qfq.csv",
     "stock_download_errors.csv",
     "active_limit_rows.csv",
@@ -327,8 +334,6 @@ def build_public_preopen_capture(
     client: Any | None = None,
     bs: Any | None = None,
 ) -> PublicPreopenResult:
-    if market_session_date < FIRST_PROSPECTIVE_MARKET_SESSION:
-        raise ValueError("historical backfill before the frozen V1 prospective cutoff is forbidden")
     if captured_at.tzinfo is None:
         raise ValueError("captured_at must be timezone-aware")
     local = captured_at.astimezone(SHANGHAI)
@@ -351,6 +356,22 @@ def build_public_preopen_capture(
         captured_at=captured_at,
         client=client,
     )
+    first_prospective_market_session = first_a_share_trading_day_after(
+        cutoff_date=PROSPECTIVE_FREEZE_DATE,
+        client=client,
+    )
+    if pd.Timestamp(market_session_date).normalize() < pd.Timestamp(first_prospective_market_session):
+        raise ValueError(
+            "historical backfill before the first confirmed A-share session after the frozen V1 cutoff is forbidden"
+        )
+    calendar_dates = a_share_trading_dates(client)
+    timing = {
+        **timing,
+        "prospective_freeze_date": PROSPECTIVE_FREEZE_DATE,
+        "first_prospective_market_session_rule": FIRST_PROSPECTIVE_MARKET_SESSION_RULE,
+        "first_prospective_market_session": first_prospective_market_session,
+        "trading_calendar_source": "akshare.tool_trade_date_hist_sina",
+    }
     anchor_symbols = load_anchor_symbols(anchor_path)
     snapshot = fetch_current_csindex_universe([INDEX_CODE], client=client)
     universe = validate_live_snapshot(
@@ -383,12 +404,27 @@ def build_public_preopen_capture(
     latest = prices[prices["date"].eq(day.normalize())]
     if set(latest["symbol"]) != set(anchor_symbols):
         raise ValueError("current-day qfq rows do not cover the exact 931152 live membership")
+    required_price_columns = {
+        "date", "symbol", "open", "high", "low", "close", "volume", "amount", "turnover", "pct_chg"
+    }
+    missing_price_columns = required_price_columns - set(prices.columns)
+    if missing_price_columns:
+        raise ValueError(
+            f"current 931152 qfq input missing required fields: {sorted(missing_price_columns)}"
+        )
 
     active_limits, strict_daily, limit_report = _fetch_current_limit_rows(
         universe,
         market_session_date=market_session_date,
         bs=bs,
     )
+    required_limit_columns = {"date", "symbol", "tradestatus", "isST", "limit_pct", "limit_eligible"}
+    missing_limit_columns = required_limit_columns - set(active_limits.columns)
+    if missing_limit_columns:
+        raise ValueError(
+            f"current 931152 BaoStock status input missing required fields: {sorted(missing_limit_columns)}"
+        )
+
     index = fetch_csindex_history(
         INDEX_CODE,
         start_date=market_session_date,
@@ -407,6 +443,9 @@ def build_public_preopen_capture(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     universe.to_csv(out / "membership_snapshot.csv", index=False, date_format="%Y-%m-%d")
+    pd.DataFrame({"trade_date": calendar_dates.strftime("%Y-%m-%d")}).to_csv(
+        out / "trading_calendar_dates.csv", index=False
+    )
     prices.to_csv(out / "stock_prices_qfq.csv", index=False, date_format="%Y-%m-%d")
     errors.to_csv(out / "stock_download_errors.csv", index=False)
     active_limits.to_csv(out / "active_limit_rows.csv", index=False, date_format="%Y-%m-%d")
@@ -439,6 +478,8 @@ def build_public_preopen_capture(
             "symbols": int(prices["symbol"].nunique()),
             "current_session_symbols": int(latest["symbol"].nunique()),
             "download_error_rows": int(len(errors)),
+            "required_current_session_price_fields": sorted(required_price_columns),
+            "required_current_session_status_fields": ["tradestatus", "isST"],
         },
         "limit_rule": limit_report,
         "index": {
@@ -468,7 +509,8 @@ def build_public_preopen_capture(
 
 __all__ = [
     "EXPECTED_CONSTITUENTS",
-    "FIRST_PROSPECTIVE_MARKET_SESSION",
+    "FIRST_PROSPECTIVE_MARKET_SESSION_RULE",
+    "PROSPECTIVE_FREEZE_DATE",
     "INDEX_CODE",
     "PACKAGE_SCHEMA",
     "PublicPreopenResult",
