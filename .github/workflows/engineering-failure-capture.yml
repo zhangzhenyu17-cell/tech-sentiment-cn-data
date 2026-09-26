@@ -158,7 +158,7 @@ jobs:
             }
 
             const instructions = [
-              "按 GitHub v1.3 执行。",
+              "按 GitHub v1.4 执行。",
               "Inspect the exact failed run and logs before changing code.",
               "This lane is public-data engineering only.",
               "Never introduce private model semantics, thresholds, signals, holdings, private evidence, research results, secrets, or trading authority into the public repository.",
@@ -198,7 +198,7 @@ jobs:
                 body: [
                   "Automatic Copilot repair handoff was attempted but was unavailable.",
                   "",
-                  "The Failure Lesson remains open for the ChatGPT/GitHub v1.3 repair watcher.",
+                  "The Failure Lesson remains open for the ChatGPT/GitHub v1.4 repair watcher.",
                   "",
                   "Assignment error: `" + String(error.message).replace(/`/g, "'") + "`",
                 ].join("\n"),
