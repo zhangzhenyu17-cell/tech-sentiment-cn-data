@@ -59,27 +59,40 @@ jobs:
           decision = ""
           reason = "OUTSIDE_PREOPEN_AUTOMATION_WINDOW"
 
-          closed_sessions = [
-              value
-              for value in trading_days
-              if datetime.combine(value, time(15, 0), tzinfo=zone) <= now
-          ]
-          if closed_sessions:
-              session_date = closed_sessions[-1]
-              later = [value for value in trading_days if value > session_date]
-              if later:
-                  decision_date = later[0]
-                  session_close = datetime.combine(
-                      session_date, time(15, 0), tzinfo=zone
-                  )
-                  freeze_deadline = datetime.combine(
-                      decision_date, time(5, 30), tzinfo=zone
-                  )
-                  if session_close <= now <= freeze_deadline:
-                      session = session_date.isoformat()
-                      decision = decision_date.isoformat()
-                      should_run = True
-                      reason = "ACTIVE_SESSION_TO_DECISION_PREOPEN_WINDOW"
+          # GitHub scheduled workflows can be delivered substantially later than
+          # their cron slot. The cron is an invocation allowlist, not permission
+          # to dispatch at arbitrary runtime. Fail closed unless the actual
+          # Asia/Shanghai runner start remains inside the explicit lightweight
+          # wrapper window: 23:45 through 04:00. The independent raw workflow
+          # still owns the absolute 05:30 completion firewall.
+          local_clock = now.time().replace(tzinfo=None)
+          runtime_allowlisted = (
+              local_clock >= time(23, 45) or local_clock <= time(4, 0)
+          )
+          if not runtime_allowlisted:
+              reason = "OUTSIDE_EXPLICIT_WRAPPER_ALLOWLIST"
+          else:
+              closed_sessions = [
+                  value
+                  for value in trading_days
+                  if datetime.combine(value, time(15, 0), tzinfo=zone) <= now
+              ]
+              if closed_sessions:
+                  session_date = closed_sessions[-1]
+                  later = [value for value in trading_days if value > session_date]
+                  if later:
+                      decision_date = later[0]
+                      session_close = datetime.combine(
+                          session_date, time(15, 0), tzinfo=zone
+                      )
+                      freeze_deadline = datetime.combine(
+                          decision_date, time(5, 30), tzinfo=zone
+                      )
+                      if session_close <= now <= freeze_deadline:
+                          session = session_date.isoformat()
+                          decision = decision_date.isoformat()
+                          should_run = True
+                          reason = "ACTIVE_SESSION_TO_DECISION_PREOPEN_WINDOW"
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as h:
               h.write(f"should_run={'true' if should_run else 'false'}\n")
