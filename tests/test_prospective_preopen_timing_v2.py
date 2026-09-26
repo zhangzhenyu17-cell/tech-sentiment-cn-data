@@ -254,3 +254,7 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert "session_close = datetime.combine" in text
     assert "freeze_deadline = datetime.combine" in text
     assert "ACTIVE_SESSION_TO_DECISION_PREOPEN_WINDOW" in text
+    assert "OUTSIDE_EXPLICIT_WRAPPER_ALLOWLIST" in text
+    assert "local_clock = now.time().replace(tzinfo=None)" in text
+    assert "local_clock >= time(23, 45) or local_clock <= time(4, 0)" in text
+    assert text.index("if not runtime_allowlisted:") < text.index("closed_sessions = [")
