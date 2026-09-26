@@ -318,7 +318,7 @@ def test_build_extended_rows_preserves_document_provenance() -> None:
     assert set(rows["unit"]) == {"CNY"}
     assert set(rows["parser_version"]) == {EXTENDED_FILING_PARSER_VERSION}
     assert EXTENDED_FILING_PARSER_VERSION == (
-        "official-filing-extended-pit-primitives-v8-statement-dash-cell-safe"
+        "official-filing-extended-pit-primitives-v9-subtotal-reconciled-zero-safe"
     )
     assert set(rows["document_id"]) == {"1210000000"}
     assert set(rows["document_sha256"]) == {"a" * 64}
