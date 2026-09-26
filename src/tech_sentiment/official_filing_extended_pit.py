@@ -21,7 +21,7 @@ from .official_filing_facts import (
 
 
 EXTENDED_FILING_PARSER_VERSION = (
-    "official-filing-extended-pit-primitives-v6-tail-fragment-row-ownership-safe"
+    "official-filing-extended-pit-primitives-v8-statement-dash-cell-safe"
 )
 
 # These are direct statement line-items only. They are intentionally not mapped
@@ -138,6 +138,30 @@ def _nearby_header_has_note_column(
 _ROW_ORDINAL_PREFIX_RE = re.compile(
     r"^(?:[一二三四五六七八九十百]+[、.．]|[（(][一二三四五六七八九十百]+[）)])"
 )
+_NOTE_COLUMN_TAIL_RE = re.compile(
+    r"^(?P<label_prefix>.+?)(?P<note>[一二三四五六七八九十百]+、\d{1,4})$"
+)
+_STANDALONE_DASH_CELL_RE = re.compile(r"(?<!\S)-(?!\S)")
+
+
+def _ordered_numeric_or_dash_cells(text: str) -> list[tuple[int, str, str]]:
+    """Return ordered numeric/dash cells without assigning semantics to dash.
+
+    A standalone dash is only a column placeholder. It is never parsed as zero
+    and is never returned as a model/input value. This helper exists solely so
+    statement-scoped extraction can prove current/prior column ownership when
+    one amount cell is explicitly blank as a dash.
+    """
+
+    cells = [
+        (match.start(), "NUMERIC", match.group(0))
+        for match in _NUMERIC_TOKEN_RE.finditer(text)
+    ]
+    cells.extend(
+        (match.start(), "DASH", match.group(0))
+        for match in _STANDALONE_DASH_CELL_RE.finditer(text)
+    )
+    return sorted(cells, key=lambda item: item[0])
 
 
 def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
@@ -157,6 +181,90 @@ def _physical_line_starts_label(line: str, labels: Iterable[str]) -> bool:
         str(label).startswith(prefix) or prefix.startswith(str(label))
         for label in labels
     )
+
+def _wrapped_label_note_then_amount_value(
+    lines: list[str],
+    index: int,
+    labels: Iterable[str],
+    *,
+    unit_override: str | None = None,
+    note_column_override: bool | None = None,
+    max_continuation_lines: int = 2,
+) -> float | None:
+    """Recover a wrapped statement label split around an explicit note reference.
+
+    Some pypdf layout rows place an incomplete label plus the note reference on
+    one physical line, then emit the final label glyphs together with the
+    current/prior amount cells on the next line.  Recovery is allowed only when
+    the statement header explicitly declares an 附注 column, the first line
+    ends in a Chinese note reference such as 七、43, the label continuation is
+    exact, and the continuation row owns exactly current/prior amount cells.
+    """
+
+    if note_column_override is not True:
+        return None
+    compact = re.sub(r"\s+", "", str(lines[index]))
+    match = _NOTE_COLUMN_TAIL_RE.fullmatch(compact)
+    if match is None:
+        return None
+
+    prefix = match.group("label_prefix")
+    candidates = [
+        str(label)
+        for label in labels
+        if str(label).startswith(prefix) and str(label) != prefix
+    ]
+    if not candidates:
+        return None
+
+    continuation = ""
+    for position in range(
+        index + 1,
+        min(len(lines), index + 1 + max_continuation_lines),
+    ):
+        physical = str(lines[position])
+        tokens = list(_NUMERIC_TOKEN_RE.finditer(physical))
+        text_prefix = re.sub(
+            r"\s+", "", physical[: tokens[0].start()] if tokens else physical
+        )
+        if not text_prefix:
+            break
+        continuation += text_prefix
+        viable = [
+            label
+            for label in candidates
+            if label.startswith(prefix + continuation)
+        ]
+        if not viable:
+            break
+        exact = [
+            label
+            for label in viable
+            if label == prefix + continuation
+        ]
+        if exact:
+            if len(exact) != 1 or len(tokens) != 2:
+                return None
+            unit = (
+                unit_override
+                if unit_override is not None
+                else _nearest_explicit_unit(lines, index)
+            )
+            scale = _AMOUNT_UNIT_SCALE.get(str(unit or ""))
+            if scale is None:
+                return None
+            try:
+                value = _parse_numeric_token(tokens[0].group(0))
+            except ValueError:
+                return None
+            if pd.notna(value):
+                return float(value) * scale
+            return None
+        if tokens:
+            break
+
+    return None
+
 
 def _target_logical_row_window(
     lines: list[str],
@@ -283,6 +391,15 @@ def _direct_amount_value_after_label(
     label_options = tuple(str(label) for label in labels)
     for index in range(len(lines)):
         if not _physical_line_starts_label(lines[index], label_options):
+            wrapped_note_value = _wrapped_label_note_then_amount_value(
+                lines,
+                index,
+                label_options,
+                unit_override=unit_override,
+                note_column_override=note_column_override,
+            )
+            if wrapped_note_value is not None:
+                return float(wrapped_note_value)
             continue
 
         logical_row = _target_logical_row_window(lines, index, label_options)
@@ -310,26 +427,72 @@ def _direct_amount_value_after_label(
 
         suffix = logical_row[label_match.end() :]
         tokens = list(_NUMERIC_TOKEN_RE.finditer(suffix))
-        if not tokens:
-            continue
+        statement_scoped = (
+            unit_override is not None and note_column_override is not None
+        )
+        cells = (
+            _ordered_numeric_or_dash_cells(suffix)
+            if statement_scoped
+            else []
+        )
 
         has_note_column = (
             note_column_override
             if note_column_override is not None
             else _nearby_header_has_note_column(lines, index)
         )
+        chosen: str | None = None
         if has_note_column:
-            if len(tokens) != 3:
+            if len(tokens) == 3:
+                note_token = tokens[0].group(0).strip()
+                if re.fullmatch(r"\d{1,4}", note_token) is None:
+                    continue
+                chosen = tokens[1].group(0)
+            elif (
+                statement_scoped
+                and any(kind == "DASH" for _, kind, _ in cells)
+            ):
+                if len(cells) == 3:
+                    _, note_kind, note_text = cells[0]
+                    if (
+                        note_kind != "NUMERIC"
+                        or re.fullmatch(r"\d{1,4}", note_text.strip()) is None
+                    ):
+                        continue
+                    amount_cells = cells[1:]
+                elif len(cells) == 2:
+                    _, first_kind, first_text = cells[0]
+                    if (
+                        first_kind != "NUMERIC"
+                        or re.fullmatch(r"\d{1,4}", first_text.strip())
+                    ):
+                        continue
+                    amount_cells = cells
+                else:
+                    continue
+                if (
+                    len(amount_cells) != 2
+                    or amount_cells[0][1] != "NUMERIC"
+                ):
+                    continue
+                chosen = amount_cells[0][2]
+            else:
                 continue
-            note_token = tokens[0].group(0).strip()
-            if re.fullmatch(r"\d{1,4}", note_token) is None:
-                continue
-            chosen = tokens[1].group(0)
         else:
-            if len(tokens) != 2:
+            if len(tokens) == 2:
+                chosen = tokens[0].group(0)
+            elif (
+                statement_scoped
+                and any(kind == "DASH" for _, kind, _ in cells)
+            ):
+                if len(cells) != 2 or cells[0][1] != "NUMERIC":
+                    continue
+                chosen = cells[0][2]
+            else:
                 continue
-            chosen = tokens[0].group(0)
 
+        if chosen is None:
+            continue
         try:
             value = _parse_numeric_token(chosen)
         except ValueError:

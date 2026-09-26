@@ -4,7 +4,7 @@
 
 本层只从已经下载并通过官方来源身份约束的财报 PDF 文本层中提取直接、可核对的原始科目。它不包含私有模型、阈值、信号、持仓或研究结果，也不产生任何 Production / trading authority。
 
-当前 parser：`official-filing-extended-pit-primitives-v2-column-safe`。
+当前 parser：`official-filing-extended-pit-primitives-v8-statement-dash-cell-safe`。v8 仅在已证明的财务报表 scope、显式金额单位和确定列结构下，把 standalone `-` 作为“该单元格无数值”的列占位符参与 current/prior 列定位；`-` 本身永远不会被转换为 0。若 current 单元格为明确数字且 prior 为 `-`，可提取 current 数值；若 current 为 `-`、整行空白或列归属无法证明，则继续 fail closed。
 
 ## 当前 raw primitives
 
@@ -20,26 +20,6 @@
 
 所有金额都必须来自局部可证明的显式人民币金额单位，并确定性归一到 CNY。没有显式单位时 fail closed；缺失科目保持缺失。
 
-## 金额列语义加固
-
-历史全量 materialization 暴露出两类真实 PDF 表格语义风险：
-
-1. 中国财务报表常在科目名称与当期金额之间插入 `附注` 列；如果只读取科目名称后的第一个数字，可能把附注号、年份或其他元数据误当作金额。
-2. PDF 文本层可能把本期金额与上期金额粘连成一个超长 numeric token；如果允许单 token 金额行，该粘连值可能被误当作真实金额。
-
-`v2-column-safe` 因此增加以下保守约束：
-
-- 目标科目 label 必须从当前物理 PDF 行开始；允许同一个 label 在没有 numeric cell 打断的前提下向后跨行重建，但不允许上一行表头通过 forward-join“吞并”下一行科目；
-- 仍要求局部显式人民币金额单位；
-- 未出现 `附注` 表头时，必须恰好存在两个可证明的金额 cell，读取第一个当期金额；单 token 行和额外 numeric cells 全部 fail closed；
-- 出现 `附注` 表头时，仅在行内恰好存在明确的紧凑附注编号和两个金额 cell 时跳过附注编号并读取当期金额；
-- 空白附注、数字打断 label、单 token 粘连、额外 numeric cells 或其他无法证明列位置的布局全部保持缺失；
-- 不使用金额大小阈值，不根据同行/跨期数值猜测，也不做缺失补零。
-
-这项加固只改变 extended raw parser。既有 V4-A qualified canonical filing parser 不修改、不重新定义。
-
-parser version 参与 immutable document checkpoint identity。因此从 v1 升级为 `v2-column-safe` 会自然失效旧的 parsed-document facts，同时仍允许 materializer 复用既有 symbol query / filing-index checkpoint；不会出现“新 parser + 旧 facts”的混用。
-
 ## 明确不做的语义合成
 
 本层**不生成** `CASH` 或 `DEBT` 聚合字段。尤其债务保持为原始组成项，不在公开数据仓中自行决定哪些科目应计入模型意义上的“债务”。
@@ -48,7 +28,7 @@ parser version 参与 immutable document checkpoint identity。因此从 v1 升�
 
 ## 独立 materializer
 
-工程入口：
+工程入口已经提供：
 
 `src/tech_sentiment/extended_filing_materialization.py`
 
@@ -61,11 +41,13 @@ parser version 参与 immutable document checkpoint identity。因此从 v1 升�
 - 复用 CNINFO exact announcement/document identity；
 - 使用 immutable checkpoint；
 - 支持跨 runtime commit 的 progress checkpoint identity；
-- 保留 document URL / SHA256 / publication / available date；
+- 保留 document URL / SHA256 / publication / available timestamp；
 - 缺失 extended line item 记为 `SOFT_DATA_INSUFFICIENCY`；
 - immutable attachment / provenance 破坏记为 hard failure；
 - 输出 raw facts / coverage / errors / summary；
 - 明确记录 `outcome_read=false` 与 `evidence_qualification_changed=false`。
+
+该 materializer 已可由既有 **manual-only** historical coverage workflow 在冻结公开 scope 上运行；公开 materialization / coverage 成功只产生 public raw-data artifact，不会自动授予任何私有 evidence qualification、模型权限或交易权限。后续 parser 版本升级如需反映到历史 artifact，必须通过单独的 manual materialization 运行并保留新的 parser/provenance identity。
 
 ## PIT / provenance
 
@@ -83,11 +65,11 @@ parser version 参与 immutable document checkpoint identity。因此从 v1 升�
 
 ## 边界
 
-本层：
+本次工程：
 
+- 当前提交本身不运行历史全量 materialization；materializer 仅提供未来授权后的可复用工程入口；
 - 不改变已有 V4-A qualified facts；
 - 不修改现有 canonical filing parser 的版本或既有 checkpoint identity；
 - 不读取 forward / historical outcome；
 - 不执行 validation / holdout / OOS / parameter search；
-- 不改变 evidence qualification、Production 或 trading authority；
-- semantic hardening 的目标仅是宁可缺失，也不把无法证明列位置的 numeric token 当作财务金额。
+- 不改变 evidence qualification、Production 或 trading authority。
