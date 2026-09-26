@@ -21,7 +21,7 @@ from .official_filing_facts import (
 
 
 EXTENDED_FILING_PARSER_VERSION = (
-    "official-filing-extended-pit-primitives-v8-statement-dash-cell-safe"
+    "official-filing-extended-pit-primitives-v9-subtotal-reconciled-zero-safe"
 )
 
 # These are direct statement line-items only. They are intentionally not mapped
