@@ -96,3 +96,40 @@ Outputs:
 - `cde_nmpa_snapshot_summary.json`
 
 The adapter remains fail-closed until a real official snapshot and exact entity mapping are supplied. Adapter readiness does not change the formal sector KPI state from `DATA_INSUFFICIENT`.
+
+## V1.1 official endpoint discovery and raw intake
+
+On 2026-09-26 the current official CDE frontend asset was verified as:
+
+`https://www.cde.org.cn/main/js/xxgk/list.js?v=20260922`
+
+The frontend declares these official POST endpoints:
+
+- priority review: `/priority/getPriorityApprovalList`, included rows use `noticeType=2`;
+- breakthrough therapy: `/breakthrough/getBreakthroughCureList`, included rows use `noticeType=1`;
+- clinical-trial implied license: `/xxgk/getCliniCalList`;
+- conditional approval: `/xxgk/getFtjpzqdList`.
+
+The conditional-approval renderer explicitly consumes `bcftjpzDate` as the current conditional-approval date. The adapter therefore uses `OFFICIAL_APPROVAL_DATE_EXPLICIT` for this source rather than relabeling that field as a publication date.
+
+Direct page requests and headless DOM dumps still encounter the CDE challenge layer; browser network inspection shows dynamic challenge parameters on official requests. V1.1 therefore records the official endpoint identities but does not implement a brittle challenge-token scraper or any WAF bypass.
+
+### Raw official capture intake
+
+Use `scripts/materialize_innovation_drug_cde_nmpa_official_intake_v1.py` for a browser-rendered official table capture or official export. The intake layer:
+
+- validates source URL and frozen category identity;
+- derives stable record identity from CDE acceptance number, or from drug/holder/approval-date identity for conditional approvals;
+- applies only the exact audited applicant registry;
+- retains every non-exact applicant row in `cde_nmpa_unmapped_official_rows.csv`;
+- reports identical source duplicates and fails closed on conflicting rows with the same source identity;
+- preserves CNINFO and CDE/NMPA as separate provenance layers;
+- requires the manifest to declare each captured category `COMPLETE` or `PARTIAL`; completeness is never inferred from row count.
+
+The initial exact registry contains only `江苏恒瑞医药股份有限公司 -> 600276.SH`, supported by an official SSE issuer disclosure. No substring, short-name or affiliate inference is allowed. Applicants such as a subsidiary remain unmapped until a separately audited exact mapping is added.
+
+A real official snapshot has **not** been materialized by this engineering change. The current public state remains adapter/intake ready with real data pending, and the formal sector KPI remains `DATA_INSUFFICIENT`.
+
+### Workflow decision
+
+No new GitHub Actions workflow is added in V1.1. The current stable input is an explicit official export or browser-rendered capture file, not a reproducible runner-side CDE session. Materialization is therefore an explicit manual invocation of the checked-in script. This avoids creating a nominal `workflow_dispatch` job that cannot itself obtain an auditable official input. If a stable official export/API transport becomes available later, any GitHub workflow must remain `workflow_dispatch` only unless separately allowlisted.

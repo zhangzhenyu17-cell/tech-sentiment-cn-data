@@ -61,9 +61,11 @@ EVENT_FAMILY = {
     "REGISTRATION_APPLICATION_WITHDRAWAL": CLINICAL_REGULATORY,
     "CDE_BREAKTHROUGH_PROPOSED": CLINICAL_REGULATORY,
     "CDE_BREAKTHROUGH_INCLUDED": CLINICAL_REGULATORY,
+    "CDE_BREAKTHROUGH_THERAPY_INCLUDED": CLINICAL_REGULATORY,
     "CDE_PRIORITY_REVIEW_PROPOSED": CLINICAL_REGULATORY,
     "CDE_PRIORITY_REVIEW_INCLUDED": CLINICAL_REGULATORY,
     "CDE_IMPLIED_CLINICAL_TRIAL_PERMISSION": CLINICAL_REGULATORY,
+    "CDE_CLINICAL_TRIAL_IMPLIED_LICENSE_SNAPSHOT": CLINICAL_REGULATORY,
     "CDE_CONDITIONAL_APPROVAL": CLINICAL_REGULATORY,
     "BD_LICENSE_OR_COLLABORATION": BD_LICENSING,
     "BD_COLLABORATION": BD_LICENSING,
@@ -71,10 +73,10 @@ EVENT_FAMILY = {
 
 _CDE_CATEGORY_MAP = {
     "拟突破性治疗品种": "CDE_BREAKTHROUGH_PROPOSED",
-    "纳入突破性治疗品种名单": "CDE_BREAKTHROUGH_INCLUDED",
+    "纳入突破性治疗品种名单": "CDE_BREAKTHROUGH_THERAPY_INCLUDED",
     "拟优先审评品种": "CDE_PRIORITY_REVIEW_PROPOSED",
     "纳入优先审评品种名单": "CDE_PRIORITY_REVIEW_INCLUDED",
-    "临床试验默示许可": "CDE_IMPLIED_CLINICAL_TRIAL_PERMISSION",
+    "临床试验默示许可": "CDE_CLINICAL_TRIAL_IMPLIED_LICENSE_SNAPSHOT",
     "附条件批准品种": "CDE_CONDITIONAL_APPROVAL",
 }
 
@@ -291,7 +293,11 @@ def normalize_cde_snapshot(
         if category not in _CDE_CATEGORY_MAP:
             raise ValueError(f"unsupported frozen CDE category: {category}")
         mapping_basis = str(item["entity_mapping_basis"]).strip()
-        if mapping_basis not in {"EXACT_APPLICANT_ALIAS_REGISTRY", "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE"}:
+        if mapping_basis not in {
+            "EXACT_LISTED_ISSUER_LEGAL_NAME",
+            "EXACT_APPLICANT_ALIAS_REGISTRY",
+            "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE",
+        }:
             raise ValueError("CDE entity mapping must be exact and auditable")
         event_type = _CDE_CATEGORY_MAP[category]
         source_url = _validate_cde_url(item["source_url"])
@@ -301,19 +307,28 @@ def normalize_cde_snapshot(
         ).strip()
         if availability_basis not in {
             "PUBLICATION_DATE_EXPLICIT",
+            "OFFICIAL_APPROVAL_DATE_EXPLICIT",
             "FIRST_OBSERVED_SNAPSHOT_DATE",
         }:
             raise ValueError(
                 f"unsupported CDE availability basis: {availability_basis}"
             )
 
-        if availability_basis == "PUBLICATION_DATE_EXPLICIT":
-            publication_value = item.get("publication_date")
-            if pd.isna(publication_value) or not str(publication_value).strip():
+        if availability_basis in {
+            "PUBLICATION_DATE_EXPLICIT",
+            "OFFICIAL_APPROVAL_DATE_EXPLICIT",
+        }:
+            date_field = (
+                "publication_date"
+                if availability_basis == "PUBLICATION_DATE_EXPLICIT"
+                else "approval_date"
+            )
+            explicit_value = item.get(date_field)
+            if pd.isna(explicit_value) or not str(explicit_value).strip():
                 raise ValueError(
-                    "explicit CDE publication availability requires publication_date"
+                    f"explicit CDE availability requires {date_field}"
                 )
-            event_date = pd.Timestamp(publication_value).normalize()
+            event_date = pd.Timestamp(explicit_value).normalize()
             available_date, availability_rule = _market_available_date(
                 str(event_date.date()), trading_dates=calendar
             )
@@ -330,6 +345,11 @@ def normalize_cde_snapshot(
             if not pd.isna(publication_value) and str(publication_value).strip():
                 raise ValueError(
                     "first-observed CDE snapshot must not infer publication_date"
+                )
+            approval_value = item.get("approval_date")
+            if not pd.isna(approval_value) and str(approval_value).strip():
+                raise ValueError(
+                    "first-observed CDE snapshot must not infer approval_date"
                 )
             captured_timestamp = pd.Timestamp(captured_value)
             if captured_timestamp.tzinfo is not None:
@@ -368,13 +388,18 @@ def normalize_cde_snapshot(
             "historical_reconstruction_allowed": historical_reconstruction_allowed,
             "first_observed_snapshot_only": first_observed_snapshot_only,
             "snapshot_captured_at": (
-                None
-                if availability_basis == "PUBLICATION_DATE_EXPLICIT"
-                else str(item.get("snapshot_captured_at"))
+                str(item.get("snapshot_captured_at"))
+                if availability_basis == "FIRST_OBSERVED_SNAPSHOT_DATE"
+                else None
             ),
             "publication_date": (
                 str(event_date.date())
                 if availability_basis == "PUBLICATION_DATE_EXPLICIT"
+                else None
+            ),
+            "approval_date": (
+                str(event_date.date())
+                if availability_basis == "OFFICIAL_APPROVAL_DATE_EXPLICIT"
                 else None
             ),
             "direction_classified": False,

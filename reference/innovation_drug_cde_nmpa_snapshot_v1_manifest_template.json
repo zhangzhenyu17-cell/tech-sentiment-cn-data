@@ -1,0 +1,47 @@
+{
+  "manifest_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_CAPTURE_V1",
+  "snapshot_id": "REPLACE_WITH_UNIQUE_CAPTURE_ID",
+  "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
+  "captured_at": "YYYY-MM-DDTHH:MM:SS+08:00",
+  "capture_method": "BROWSER_RENDERED_OFFICIAL_TABLE_CAPTURE",
+  "source_urls": [
+    "https://www.cde.org.cn/main/xxgk/listpage/2f78f372d351c6851af7431c7710a731",
+    "https://www.cde.org.cn/main/xxgk/listpage/da6efd086c099b7fc949121166f0130c",
+    "https://www.cde.org.cn/main/xxgk/listpage/4b5255eb0a84820cef4ca3e8b6bbe20c",
+    "https://www.cde.org.cn/main/xxgk/listpage/c8d79e513a6df98adf05893281ace198"
+  ],
+  "category_capture_status": [
+    {
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/2f78f372d351c6851af7431c7710a731",
+      "category": "纳入优先审评品种名单",
+      "status": "PARTIAL"
+    },
+    {
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/da6efd086c099b7fc949121166f0130c",
+      "category": "纳入突破性治疗品种名单",
+      "status": "PARTIAL"
+    },
+    {
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/4b5255eb0a84820cef4ca3e8b6bbe20c",
+      "category": "临床试验默示许可",
+      "status": "PARTIAL"
+    },
+    {
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/c8d79e513a6df98adf05893281ace198",
+      "category": "附条件批准品种",
+      "status": "PARTIAL"
+    }
+  ],
+  "entity_mapping_registry_sha256": "REPLACE_WITH_SHA256",
+  "historical_outcome_read": false,
+  "prospective_outcome_read": false,
+  "fuzzy_entity_mapping_used": false,
+  "publication_date_inferred": false,
+  "current_page_presence_used_for_historical_backfill": false,
+  "current_constituent_backfill_used": false,
+  "direction_classified": false,
+  "predictive_weight_assigned": false,
+  "sector_score_computed": false,
+  "evidence_qualification_changed": false,
+  "formal_sector_kpi_state": "DATA_INSUFFICIENT"
+}

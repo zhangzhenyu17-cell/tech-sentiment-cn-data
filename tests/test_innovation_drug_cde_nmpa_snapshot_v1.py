@@ -102,7 +102,7 @@ def test_explicit_date_page_requires_explicit_publication_date() -> None:
     snapshot = pd.DataFrame([row])
     manifest = _manifest(str(row["source_url"]))
     validate_cde_snapshot_manifest(manifest, contract=contract)
-    with pytest.raises(ValueError, match="must use publication date"):
+    with pytest.raises(ValueError, match="requires availability basis PUBLICATION_DATE_EXPLICIT"):
         validate_cde_snapshot_rows(snapshot, contract=contract, manifest=manifest)
 
 
