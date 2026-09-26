@@ -275,7 +275,6 @@ def normalize_cde_snapshot(
         "entity_id",
         "entity_mapping_basis",
         "category",
-        "publication_date",
         "record_id",
         "applicant",
         "drug_name",
@@ -296,10 +295,55 @@ def normalize_cde_snapshot(
             raise ValueError("CDE entity mapping must be exact and auditable")
         event_type = _CDE_CATEGORY_MAP[category]
         source_url = _validate_cde_url(item["source_url"])
-        event_date = pd.Timestamp(item["publication_date"]).normalize()
-        available_date, availability_rule = _market_available_date(
-            str(event_date.date()), trading_dates=calendar
-        )
+        availability_basis = str(
+            item.get("availability_basis", "PUBLICATION_DATE_EXPLICIT")
+            or "PUBLICATION_DATE_EXPLICIT"
+        ).strip()
+        if availability_basis not in {
+            "PUBLICATION_DATE_EXPLICIT",
+            "FIRST_OBSERVED_SNAPSHOT_DATE",
+        }:
+            raise ValueError(
+                f"unsupported CDE availability basis: {availability_basis}"
+            )
+
+        if availability_basis == "PUBLICATION_DATE_EXPLICIT":
+            publication_value = item.get("publication_date")
+            if pd.isna(publication_value) or not str(publication_value).strip():
+                raise ValueError(
+                    "explicit CDE publication availability requires publication_date"
+                )
+            event_date = pd.Timestamp(publication_value).normalize()
+            available_date, availability_rule = _market_available_date(
+                str(event_date.date()), trading_dates=calendar
+            )
+            availability_state = "HISTORICAL_RECONSTRUCTABLE"
+            historical_reconstruction_allowed = True
+            first_observed_snapshot_only = False
+        else:
+            captured_value = item.get("snapshot_captured_at")
+            if pd.isna(captured_value) or not str(captured_value).strip():
+                raise ValueError(
+                    "first-observed CDE availability requires snapshot_captured_at"
+                )
+            publication_value = item.get("publication_date")
+            if not pd.isna(publication_value) and str(publication_value).strip():
+                raise ValueError(
+                    "first-observed CDE snapshot must not infer publication_date"
+                )
+            captured_timestamp = pd.Timestamp(captured_value)
+            if captured_timestamp.tzinfo is not None:
+                captured_timestamp = (
+                    captured_timestamp.tz_convert("Asia/Shanghai").tz_localize(None)
+                )
+            event_date = captured_timestamp.normalize()
+            available_date, availability_rule = _market_available_date(
+                str(event_date.date()), trading_dates=calendar
+            )
+            availability_state = "PROSPECTIVE_FIRST_OBSERVED_ONLY"
+            historical_reconstruction_allowed = False
+            first_observed_snapshot_only = True
+
         title = f"{category}:{str(item['drug_name']).strip()}:{str(item['indication']).strip()}"
         identity_payload = {
             "schema_version": SCHEMA_VERSION,
@@ -307,7 +351,8 @@ def normalize_cde_snapshot(
             "entity_id": str(item["entity_id"]),
             "record_id": str(item["record_id"]),
             "event_type": event_type,
-            "publication_date": str(event_date.date()),
+            "availability_basis": availability_basis,
+            "event_date": str(event_date.date()),
         }
         provenance = {
             "source_identity": CDE_SOURCE_ID,
@@ -317,8 +362,21 @@ def normalize_cde_snapshot(
             "drug_name": str(item["drug_name"]).strip(),
             "indication": str(item["indication"]).strip(),
             "entity_mapping_basis": mapping_basis,
+            "availability_basis": availability_basis,
             "availability_rule": availability_rule,
-            "date_only_publication_delayed_to_next_real_trading_date": True,
+            "date_only_source_timestamp_delayed_to_next_real_trading_date": True,
+            "historical_reconstruction_allowed": historical_reconstruction_allowed,
+            "first_observed_snapshot_only": first_observed_snapshot_only,
+            "snapshot_captured_at": (
+                None
+                if availability_basis == "PUBLICATION_DATE_EXPLICIT"
+                else str(item.get("snapshot_captured_at"))
+            ),
+            "publication_date": (
+                str(event_date.date())
+                if availability_basis == "PUBLICATION_DATE_EXPLICIT"
+                else None
+            ),
             "direction_classified": False,
             "predictive_weight_assigned": False,
             "forward_or_historical_outcome_read": False,
@@ -341,7 +399,7 @@ def normalize_cde_snapshot(
                 "classification_basis": "OFFICIAL_CDE_CATEGORY_NO_DIRECTION",
                 "provenance": json.dumps(provenance, ensure_ascii=False, sort_keys=True),
                 "ingestion_identity": _stable_hash(identity_payload),
-                "availability_state": "HISTORICAL_RECONSTRUCTABLE",
+                "availability_state": availability_state,
                 "direction_classified": False,
                 "predictive_weight_assigned": False,
                 "outcome_read": False,

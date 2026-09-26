@@ -1,0 +1,99 @@
+{
+  "contract_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_V1",
+  "date": "2026-09-26",
+  "status": "FROZEN_OUTCOME_BLIND_OFFICIAL_SNAPSHOT_ADAPTER_READY_DATA_PENDING",
+  "domain_id": "INNOVATION_DRUG",
+  "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
+  "official_source_catalog": [
+    {
+      "category_family": "PRIORITY_REVIEW",
+      "url": "https://www.cde.org.cn/main/xxgk/listpage/2f78f372d351c6851af7431c7710a731",
+      "allowed_categories": [
+        "拟优先审评品种",
+        "纳入优先审评品种名单"
+      ],
+      "record_level_publication_date_available": true
+    },
+    {
+      "category_family": "BREAKTHROUGH_THERAPY",
+      "url": "https://www.cde.org.cn/main/xxgk/listpage/da6efd086c099b7fc949121166f0130c",
+      "allowed_categories": [
+        "拟突破性治疗品种",
+        "纳入突破性治疗品种名单"
+      ],
+      "record_level_publication_date_available": true
+    },
+    {
+      "category_family": "IMPLIED_CLINICAL_TRIAL_PERMISSION",
+      "url": "https://www.cde.org.cn/main/xxgk/listpage/4b5255eb0a84820cef4ca3e8b6bbe20c",
+      "allowed_categories": [
+        "临床试验默示许可"
+      ],
+      "record_level_publication_date_available": false
+    },
+    {
+      "category_family": "CONDITIONAL_APPROVAL",
+      "url": "https://www.cde.org.cn/main/xxgk/listpage/c8d79e513a6df98adf05893281ace198",
+      "allowed_categories": [
+        "附条件批准品种"
+      ],
+      "record_level_publication_date_available": true
+    }
+  ],
+  "snapshot_schema": {
+    "required_identity_columns": [
+      "entity_id",
+      "entity_mapping_basis",
+      "category",
+      "record_id",
+      "applicant",
+      "drug_name",
+      "indication",
+      "source_url",
+      "availability_basis"
+    ],
+    "availability_basis_allowed": [
+      "PUBLICATION_DATE_EXPLICIT",
+      "FIRST_OBSERVED_SNAPSHOT_DATE"
+    ],
+    "publication_date_explicit_requires": [
+      "publication_date"
+    ],
+    "first_observed_requires": [
+      "snapshot_captured_at"
+    ]
+  },
+  "pit_semantics": {
+    "explicit_publication_date_is_historical_reconstructable": true,
+    "date_only_publication_delayed_to_next_real_trading_date": true,
+    "first_observed_snapshot_is_prospective_only": true,
+    "first_observed_snapshot_historical_backfill_allowed": false,
+    "missing_publication_date_may_be_inferred": false,
+    "current_page_presence_may_imply_historical_presence": false,
+    "fuzzy_entity_mapping_allowed": false,
+    "exact_mapping_required": true
+  },
+  "interpretation_boundary": {
+    "event_identity_is_direction": false,
+    "supportive_or_adverse_state_defined": false,
+    "event_weight_defined": false,
+    "clinical_stage_weight_defined": false,
+    "sector_score_defined": false,
+    "company_score_defined": false,
+    "absence_of_record_may_imply_negative_or_positive_state": false,
+    "formal_sector_kpi_state": "DATA_INSUFFICIENT"
+  },
+  "authority": {
+    "historical_outcome_read": false,
+    "prospective_outcome_read": false,
+    "parameter_search": false,
+    "threshold_search": false,
+    "weight_search": false,
+    "model_training": false,
+    "evidence_qualification_changed": false,
+    "production_permission": "NONE",
+    "trading_authority": false,
+    "automatic_execution": false,
+    "real_percentage_mapping": false
+  }
+}

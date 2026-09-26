@@ -104,9 +104,74 @@ def test_cde_snapshot_requires_exact_mapping_and_delays_date_only_publication() 
     assert out.loc[0, "event_type"] == "CDE_BREAKTHROUGH_INCLUDED"
     assert str(out.loc[0, "event_date"].date()) == "2026-04-17"
     assert str(out.loc[0, "evidence_available_date"].date()) == "2026-04-20"
+    assert out.loc[0, "availability_state"] == "HISTORICAL_RECONSTRUCTABLE"
+    provenance = json.loads(out.loc[0, "provenance"])
+    assert provenance["availability_basis"] == "PUBLICATION_DATE_EXPLICIT"
+    assert provenance["historical_reconstruction_allowed"] is True
+    assert provenance["first_observed_snapshot_only"] is False
     assert out.loc[0, "direction_classified"] is False or not bool(
         out.loc[0, "direction_classified"]
     )
+
+
+def test_cde_snapshot_without_record_publication_date_is_prospective_first_observed_only() -> None:
+    calendar = pd.to_datetime(["2026-09-25", "2026-09-28", "2026-09-29"])
+    snapshot = pd.DataFrame(
+        [
+            {
+                "entity_id": "600276.SH",
+                "entity_mapping_basis": "EXACT_APPLICANT_ALIAS_REGISTRY",
+                "category": "临床试验默示许可",
+                "availability_basis": "FIRST_OBSERVED_SNAPSHOT_DATE",
+                "snapshot_captured_at": "2026-09-26T09:30:00+08:00",
+                "publication_date": "",
+                "record_id": "cde-first-observed-1",
+                "applicant": "江苏恒瑞医药股份有限公司",
+                "drug_name": "TEST-IND-001",
+                "indication": "示例适应症",
+                "source_url": (
+                    "https://www.cde.org.cn/main/xxgk/listpage/"
+                    "4b5255eb0a84820cef4ca3e8b6bbe20c"
+                ),
+            }
+        ]
+    )
+    out = normalize_cde_snapshot(snapshot, trading_dates=calendar)
+    assert out.loc[0, "event_type"] == "CDE_IMPLIED_CLINICAL_TRIAL_PERMISSION"
+    assert str(out.loc[0, "event_date"].date()) == "2026-09-26"
+    assert str(out.loc[0, "evidence_available_date"].date()) == "2026-09-28"
+    assert out.loc[0, "availability_state"] == "PROSPECTIVE_FIRST_OBSERVED_ONLY"
+    provenance = json.loads(out.loc[0, "provenance"])
+    assert provenance["availability_basis"] == "FIRST_OBSERVED_SNAPSHOT_DATE"
+    assert provenance["historical_reconstruction_allowed"] is False
+    assert provenance["first_observed_snapshot_only"] is True
+    assert provenance["publication_date"] is None
+
+
+def test_cde_first_observed_snapshot_rejects_inferred_publication_date() -> None:
+    calendar = pd.to_datetime(["2026-09-25", "2026-09-28"])
+    snapshot = pd.DataFrame(
+        [
+            {
+                "entity_id": "600276.SH",
+                "entity_mapping_basis": "EXACT_APPLICANT_ALIAS_REGISTRY",
+                "category": "临床试验默示许可",
+                "availability_basis": "FIRST_OBSERVED_SNAPSHOT_DATE",
+                "snapshot_captured_at": "2026-09-26",
+                "publication_date": "2024-01-01",
+                "record_id": "cde-bad-backfill",
+                "applicant": "江苏恒瑞医药股份有限公司",
+                "drug_name": "TEST",
+                "indication": "示例",
+                "source_url": (
+                    "https://www.cde.org.cn/main/xxgk/listpage/"
+                    "4b5255eb0a84820cef4ca3e8b6bbe20c"
+                ),
+            }
+        ]
+    )
+    with pytest.raises(ValueError, match="must not infer publication_date"):
+        normalize_cde_snapshot(snapshot, trading_dates=calendar)
 
 
 def test_cde_snapshot_rejects_fuzzy_or_unofficial_mapping() -> None:
