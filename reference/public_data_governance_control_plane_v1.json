@@ -195,6 +195,16 @@
       "registration_state": "EXISTING_RAIL_REGISTERED_NO_RECLASSIFICATION",
       "public_workflow_success_grants_private_qualification": false,
       "may_promote_evidence": false
+    },
+    {
+      "product_id": "INNOVATION_DRUG_CDE_NMPA_OFFICIAL_RAW_CONTEXT_V1",
+      "contract_path": "reference/innovation_drug_cde_nmpa_snapshot_v1_contract.json",
+      "producer_path": "scripts/materialize_innovation_drug_cde_nmpa_official_intake_v1.py",
+      "logical_dataset": "innovation drug CDE/NMPA official raw regulatory context v1",
+      "private_consumer_boundary": "Innovation Drug Sector KPI Context source-layer intake only; no qualification, score, Production or trading authority",
+      "registration_state": "ADAPTER_READY_REAL_OFFICIAL_SNAPSHOT_PENDING",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
     }
   ],
   "ci_enforcement": {

@@ -180,20 +180,28 @@ def validate_cde_snapshot_rows(
         if basis not in set(contract["snapshot_schema"]["availability_basis_allowed"]):
             raise ValueError("CDE/NMPA row availability basis is not frozen")
 
-        record_date_available = bool(source["record_level_publication_date_available"])
-        if record_date_available and basis != "PUBLICATION_DATE_EXPLICIT":
-            raise ValueError(
-                "CDE/NMPA source with explicit record date must use publication date"
+        semantics = str(source.get("availability_semantics") or "")
+        expected_basis = {
+            "OFFICIAL_PUBLICATION_DATE": "PUBLICATION_DATE_EXPLICIT",
+            "OFFICIAL_APPROVAL_DATE": "OFFICIAL_APPROVAL_DATE_EXPLICIT",
+            "FIRST_OBSERVED_SNAPSHOT_ONLY": "FIRST_OBSERVED_SNAPSHOT_DATE",
+        }.get(semantics)
+        if expected_basis is None:
+            expected_basis = (
+                "PUBLICATION_DATE_EXPLICIT"
+                if bool(source.get("record_level_publication_date_available"))
+                else "FIRST_OBSERVED_SNAPSHOT_DATE"
             )
-        if not record_date_available and basis != "FIRST_OBSERVED_SNAPSHOT_DATE":
+        if basis != expected_basis:
             raise ValueError(
-                "CDE/NMPA source without record date must remain first-observed only"
+                f"CDE/NMPA source requires availability basis {expected_basis}"
             )
 
-        if basis == "PUBLICATION_DATE_EXPLICIT":
-            value = row.get("publication_date")
+        if basis in {"PUBLICATION_DATE_EXPLICIT", "OFFICIAL_APPROVAL_DATE_EXPLICIT"}:
+            field = "publication_date" if basis == "PUBLICATION_DATE_EXPLICIT" else "approval_date"
+            value = row.get(field)
             if pd.isna(value) or not str(value).strip():
-                raise ValueError("explicit CDE/NMPA row missing publication_date")
+                raise ValueError(f"explicit CDE/NMPA row missing {field}")
         else:
             value = row.get("snapshot_captured_at")
             if pd.isna(value) or not str(value).strip():
@@ -207,6 +215,7 @@ def validate_cde_snapshot_rows(
 
         mapping_basis = str(row["entity_mapping_basis"]).strip()
         if mapping_basis not in {
+            "EXACT_LISTED_ISSUER_LEGAL_NAME",
             "EXACT_APPLICANT_ALIAS_REGISTRY",
             "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE",
         }:

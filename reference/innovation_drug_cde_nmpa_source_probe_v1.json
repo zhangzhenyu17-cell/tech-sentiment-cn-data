@@ -1,0 +1,48 @@
+{
+  "probe_id": "INNOVATION_DRUG_CDE_NMPA_SOURCE_PROBE_V1",
+  "date": "2026-09-26",
+  "state": "OFFICIAL_ENDPOINTS_IDENTIFIED_REAL_SNAPSHOT_NOT_MATERIALIZED",
+  "official_frontend_asset": "https://www.cde.org.cn/main/js/xxgk/list.js?v=20260922",
+  "transport_observations": {
+    "direct_python_page_request": "HTTP_202_WAF_CHALLENGE_HTML",
+    "headless_chrome_dump_dom": "WAF_CHALLENGE_HTML",
+    "browser_network_log": "OFFICIAL_DYNAMIC_ENDPOINTS_OBSERVED",
+    "generic_rendered_tbody_capture": "EMPTY_OR_PROXY_ERROR",
+    "direct_requests_scraper_approved": false
+  },
+  "official_endpoints": {
+    "priority_review_included": "/priority/getPriorityApprovalList noticeType=2 POST",
+    "breakthrough_therapy_included": "/breakthrough/getBreakthroughCureList noticeType=1 POST",
+    "clinical_trial_implied_license": "/xxgk/getCliniCalList POST",
+    "conditional_approval": "/xxgk/getFtjpzqdList POST"
+  },
+  "conditional_approval_frontend_fields": [
+    "ypmc",
+    "ssxkcyr",
+    "list[].instruction",
+    "list[].bcftjpzDate",
+    "list[].ypzczsyxq",
+    "list[].ftjpzLimit",
+    "list[].state"
+  ],
+  "data_state": {
+    "real_official_snapshot_materialized": false,
+    "historical_reconstructable_rows": 0,
+    "prospective_first_observed_rows": 0,
+    "exact_mapped_rows": 0,
+    "unmapped_rows": 0,
+    "formal_sector_kpi_state": "DATA_INSUFFICIENT"
+  },
+  "governance": {
+    "historical_outcome_read": false,
+    "prospective_outcome_read": false,
+    "direction_classified": false,
+    "predictive_weight_assigned": false,
+    "sector_score_defined": false,
+    "evidence_qualification_changed": false,
+    "production_permission": "NONE",
+    "trading_authority": false,
+    "bottom_v1_changed": false,
+    "high_v1_changed": false
+  }
+}

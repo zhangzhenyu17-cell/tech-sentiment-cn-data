@@ -101,7 +101,7 @@ def test_cde_snapshot_requires_exact_mapping_and_delays_date_only_publication() 
         ]
     )
     out = normalize_cde_snapshot(snapshot, trading_dates=calendar)
-    assert out.loc[0, "event_type"] == "CDE_BREAKTHROUGH_INCLUDED"
+    assert out.loc[0, "event_type"] == "CDE_BREAKTHROUGH_THERAPY_INCLUDED"
     assert str(out.loc[0, "event_date"].date()) == "2026-04-17"
     assert str(out.loc[0, "evidence_available_date"].date()) == "2026-04-20"
     assert out.loc[0, "availability_state"] == "HISTORICAL_RECONSTRUCTABLE"
@@ -137,7 +137,7 @@ def test_cde_snapshot_without_record_publication_date_is_prospective_first_obser
         ]
     )
     out = normalize_cde_snapshot(snapshot, trading_dates=calendar)
-    assert out.loc[0, "event_type"] == "CDE_IMPLIED_CLINICAL_TRIAL_PERMISSION"
+    assert out.loc[0, "event_type"] == "CDE_CLINICAL_TRIAL_IMPLIED_LICENSE_SNAPSHOT"
     assert str(out.loc[0, "event_date"].date()) == "2026-09-26"
     assert str(out.loc[0, "evidence_available_date"].date()) == "2026-09-28"
     assert out.loc[0, "availability_state"] == "PROSPECTIVE_FIRST_OBSERVED_ONLY"

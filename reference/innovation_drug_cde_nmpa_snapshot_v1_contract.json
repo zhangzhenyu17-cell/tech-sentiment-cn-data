@@ -1,9 +1,24 @@
 {
   "contract_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_V1",
+  "contract_revision": "1.1",
   "date": "2026-09-26",
   "status": "FROZEN_OUTCOME_BLIND_OFFICIAL_SNAPSHOT_ADAPTER_READY_DATA_PENDING",
   "domain_id": "INNOVATION_DRUG",
   "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
+  "acquisition": {
+    "mode": "BROWSER_RENDERED_OFFICIAL_SNAPSHOT_INPUT_OR_OFFICIAL_EXPORT",
+    "direct_requests_scraper_required": false,
+    "waf_bypass_allowed": false,
+    "official_domain_allowlist": [
+      "cde.org.cn",
+      "www.cde.org.cn",
+      "nmpa.gov.cn",
+      "www.nmpa.gov.cn"
+    ],
+    "frontend_asset_url": "https://www.cde.org.cn/main/js/xxgk/list.js?v=20260922",
+    "endpoint_discovery_verified_on": "2026-09-26",
+    "endpoint_transport_state": "OFFICIAL_ENDPOINTS_IDENTIFIED_BROWSER_WAF_SESSION_REQUIRED_NO_DIRECT_REQUESTS_SCRAPER"
+  },
   "official_source_catalog": [
     {
       "category_family": "PRIORITY_REVIEW",
@@ -12,7 +27,20 @@
         "拟优先审评品种",
         "纳入优先审评品种名单"
       ],
-      "record_level_publication_date_available": true
+      "availability_semantics": "OFFICIAL_PUBLICATION_DATE",
+      "availability_date_field": "publication_date",
+      "record_identity_rule": "ACCEPTANCE_NUMBER_REQUIRED",
+      "record_level_publication_date_available": true,
+      "official_api_path": "/priority/getPriorityApprovalList",
+      "http_method": "POST",
+      "request_params": {
+        "noticeType": 2,
+        "pageSize": "INTEGER",
+        "pageNum": "INTEGER",
+        "acceptid": "OPTIONAL",
+        "drugname": "OPTIONAL",
+        "company": "OPTIONAL"
+      }
     },
     {
       "category_family": "BREAKTHROUGH_THERAPY",
@@ -21,15 +49,38 @@
         "拟突破性治疗品种",
         "纳入突破性治疗品种名单"
       ],
-      "record_level_publication_date_available": true
+      "availability_semantics": "OFFICIAL_PUBLICATION_DATE",
+      "availability_date_field": "publication_date",
+      "record_identity_rule": "ACCEPTANCE_NUMBER_REQUIRED",
+      "record_level_publication_date_available": true,
+      "official_api_path": "/breakthrough/getBreakthroughCureList",
+      "http_method": "POST",
+      "request_params": {
+        "noticeType": 1,
+        "pageSize": "INTEGER",
+        "pageNum": "INTEGER",
+        "acceptid": "OPTIONAL",
+        "drugname": "OPTIONAL",
+        "company": "OPTIONAL"
+      }
     },
     {
-      "category_family": "IMPLIED_CLINICAL_TRIAL_PERMISSION",
+      "category_family": "IMPLIED_CLINICAL_TRIAL_LICENSE",
       "url": "https://www.cde.org.cn/main/xxgk/listpage/4b5255eb0a84820cef4ca3e8b6bbe20c",
       "allowed_categories": [
         "临床试验默示许可"
       ],
-      "record_level_publication_date_available": false
+      "availability_semantics": "FIRST_OBSERVED_SNAPSHOT_ONLY",
+      "availability_date_field": "snapshot_captured_at",
+      "record_identity_rule": "ACCEPTANCE_NUMBER_REQUIRED",
+      "record_level_publication_date_available": false,
+      "official_api_path": "/xxgk/getCliniCalList",
+      "http_method": "POST",
+      "request_params": {
+        "pageSize": "INTEGER",
+        "pageNum": "INTEGER",
+        "condition": "OPTIONAL"
+      }
     },
     {
       "category_family": "CONDITIONAL_APPROVAL",
@@ -37,10 +88,51 @@
       "allowed_categories": [
         "附条件批准品种"
       ],
-      "record_level_publication_date_available": true
+      "availability_semantics": "OFFICIAL_APPROVAL_DATE",
+      "availability_date_field": "approval_date",
+      "record_identity_rule": "DRUG_HOLDER_APPROVAL_DATE_HASH",
+      "record_level_publication_date_available": true,
+      "official_api_path": "/xxgk/getFtjpzqdList",
+      "http_method": "POST",
+      "request_params": {
+        "pageSize": "INTEGER",
+        "pageNum": "INTEGER",
+        "drugnamecn": "OPTIONAL",
+        "instruction": "OPTIONAL",
+        "ssxkcyr": "OPTIONAL"
+      },
+      "verified_frontend_response_fields": [
+        "ypmc",
+        "ssxkcyr",
+        "list[].instruction",
+        "list[].bcftjpzDate",
+        "list[].ypzczsyxq",
+        "list[].ftjpzLimit",
+        "list[].state"
+      ],
+      "approval_date_source_field": "list[].bcftjpzDate"
     }
   ],
-  "snapshot_schema": {
+  "raw_capture_schema": {
+    "required_columns": [
+      "category",
+      "source_url",
+      "applicant",
+      "drug_name"
+    ],
+    "supported_columns": [
+      "acceptance_no",
+      "indication",
+      "registration_class",
+      "publication_date",
+      "approval_date",
+      "status",
+      "snapshot_captured_at"
+    ],
+    "record_id_is_derived": true,
+    "unmapped_rows_must_be_preserved": true
+  },
+  "mapped_snapshot_schema": {
     "required_identity_columns": [
       "entity_id",
       "entity_mapping_basis",
@@ -54,24 +146,62 @@
     ],
     "availability_basis_allowed": [
       "PUBLICATION_DATE_EXPLICIT",
+      "OFFICIAL_APPROVAL_DATE_EXPLICIT",
       "FIRST_OBSERVED_SNAPSHOT_DATE"
     ],
-    "publication_date_explicit_requires": [
-      "publication_date"
-    ],
-    "first_observed_requires": [
-      "snapshot_captured_at"
+    "exact_mapping_bases_allowed": [
+      "EXACT_LISTED_ISSUER_LEGAL_NAME",
+      "EXACT_APPLICANT_ALIAS_REGISTRY",
+      "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE"
     ]
   },
+  "entity_mapping": {
+    "registry_path": "reference/innovation_drug_cde_nmpa_entity_mapping_v1.json",
+    "exact_name_only": true,
+    "fuzzy_matching_allowed": false,
+    "substring_matching_allowed": false,
+    "affiliate_inference_allowed": false,
+    "unmapped_affiliates_remain_unmapped": true
+  },
+  "duplicate_and_revision_semantics": {
+    "same_source_identity_key": [
+      "source_url",
+      "category",
+      "record_id"
+    ],
+    "identical_duplicate_rows": "DEDUPLICATE_AND_REPORT",
+    "conflicting_rows_same_identity": "FAIL_CLOSED",
+    "cross_source_cninfo_cde_deduplication_applied": false,
+    "source_provenance_must_remain_separate": true,
+    "mutable_status_change_may_rewrite_inclusion_event_identity": false
+  },
+  "source_completeness": {
+    "manifest_category_capture_status_required": true,
+    "allowed_status": [
+      "COMPLETE",
+      "PARTIAL"
+    ],
+    "adapter_may_infer_complete_from_row_count": false
+  },
   "pit_semantics": {
-    "explicit_publication_date_is_historical_reconstructable": true,
-    "date_only_publication_delayed_to_next_real_trading_date": true,
+    "official_publication_date_historical_reconstructable": true,
+    "official_approval_date_historical_reconstructable": true,
+    "date_only_official_timestamp_delayed_to_next_real_trading_date": true,
     "first_observed_snapshot_is_prospective_only": true,
     "first_observed_snapshot_historical_backfill_allowed": false,
-    "missing_publication_date_may_be_inferred": false,
+    "missing_publication_or_approval_date_may_be_inferred": false,
     "current_page_presence_may_imply_historical_presence": false,
-    "fuzzy_entity_mapping_allowed": false,
-    "exact_mapping_required": true
+    "exact_mapping_required": true,
+    "explicit_publication_date_is_historical_reconstructable": true,
+    "date_only_publication_delayed_to_next_real_trading_date": true,
+    "missing_publication_date_may_be_inferred": false,
+    "fuzzy_entity_mapping_allowed": false
+  },
+  "canonical_event_types": {
+    "纳入优先审评品种名单": "CDE_PRIORITY_REVIEW_INCLUDED",
+    "纳入突破性治疗品种名单": "CDE_BREAKTHROUGH_THERAPY_INCLUDED",
+    "临床试验默示许可": "CDE_CLINICAL_TRIAL_IMPLIED_LICENSE_SNAPSHOT",
+    "附条件批准品种": "CDE_CONDITIONAL_APPROVAL"
   },
   "interpretation_boundary": {
     "event_identity_is_direction": false,
@@ -94,6 +224,40 @@
     "production_permission": "NONE",
     "trading_authority": false,
     "automatic_execution": false,
-    "real_percentage_mapping": false
+    "real_percentage_mapping": false,
+    "bottom_v1_changed": false,
+    "high_v1_changed": false
+  },
+  "snapshot_schema": {
+    "required_identity_columns": [
+      "entity_id",
+      "entity_mapping_basis",
+      "category",
+      "record_id",
+      "applicant",
+      "drug_name",
+      "indication",
+      "source_url",
+      "availability_basis"
+    ],
+    "availability_basis_allowed": [
+      "PUBLICATION_DATE_EXPLICIT",
+      "OFFICIAL_APPROVAL_DATE_EXPLICIT",
+      "FIRST_OBSERVED_SNAPSHOT_DATE"
+    ],
+    "exact_mapping_bases_allowed": [
+      "EXACT_LISTED_ISSUER_LEGAL_NAME",
+      "EXACT_APPLICANT_ALIAS_REGISTRY",
+      "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE"
+    ],
+    "publication_date_explicit_requires": [
+      "publication_date"
+    ],
+    "official_approval_date_explicit_requires": [
+      "approval_date"
+    ],
+    "first_observed_requires": [
+      "snapshot_captured_at"
+    ]
   }
 }

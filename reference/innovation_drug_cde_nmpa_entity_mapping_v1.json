@@ -1,0 +1,33 @@
+{
+  "registry_id": "INNOVATION_DRUG_CDE_NMPA_ENTITY_MAPPING_V1",
+  "date": "2026-09-26",
+  "status": "FROZEN_EXACT_MAPPING_ONLY",
+  "domain_id": "INNOVATION_DRUG",
+  "fuzzy_matching_allowed": false,
+  "substring_matching_allowed": false,
+  "affiliate_inference_allowed": false,
+  "unmapped_affiliates_remain_unmapped": true,
+  "mappings": [
+    {
+      "applicant_name_exact": "江苏恒瑞医药股份有限公司",
+      "entity_id": "600276.SH",
+      "mapping_basis": "EXACT_LISTED_ISSUER_LEGAL_NAME",
+      "evidence": {
+        "source_kind": "SSE_OFFICIAL_ISSUER_DISCLOSURE",
+        "source_url": "https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/2026-04-17/600276_20260417_XMOL.pdf",
+        "security_code": "600276",
+        "security_short_name": "恒瑞医药",
+        "listed_issuer_legal_name": "江苏恒瑞医药股份有限公司",
+        "source_document_date": "2026-04-17"
+      }
+    }
+  ],
+  "safety": {
+    "outcome_read": false,
+    "direction_classified": false,
+    "predictive_weight_assigned": false,
+    "sector_score_defined": false,
+    "production_permission": "NONE",
+    "trading_authority": false
+  }
+}
