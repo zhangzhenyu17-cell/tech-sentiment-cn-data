@@ -2,6 +2,7 @@ import http.client
 from urllib.error import HTTPError, URLError
 
 import pytest
+import requests
 
 from tech_sentiment.bounded_retry import (
     call_with_bounded_network_retry,
@@ -47,6 +48,26 @@ def test_http_status_and_schema_failures_are_not_transport_retries():
     with pytest.raises(ValueError, match="schema drift"):
         call_with_bounded_network_retry(call, attempts=3, backoff_seconds=0)
     assert calls == 1
+
+
+def test_requests_chunked_encoding_error_is_transient() -> None:
+    exc = requests.exceptions.ChunkedEncodingError("response ended prematurely")
+    assert is_transient_network_error(exc) is True
+
+    calls: list[int] = []
+
+    def call():
+        calls.append(len(calls) + 1)
+        if len(calls) < 2:
+            raise requests.exceptions.ChunkedEncodingError("response ended prematurely")
+        return "ok"
+
+    assert call_with_bounded_network_retry(
+        call,
+        attempts=2,
+        backoff_seconds=0,
+    ) == "ok"
+    assert calls == [1, 2]
 
 
 def test_incomplete_read_is_transient_and_retried_verbatim():
