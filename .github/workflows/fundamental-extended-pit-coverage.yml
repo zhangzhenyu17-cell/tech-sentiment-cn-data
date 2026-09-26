@@ -7,7 +7,7 @@ on:
         description: "Exact authorized code commit for this historical rematerialization"
         required: true
         type: string
-        default: "cec1194806ccf0c8bac043548985d58b88a0c8d9"
+        default: "ab892532cd1ebc3f6f76bd31bf2a53d6f5432d65"
 
 permissions:
   contents: read
@@ -17,12 +17,12 @@ env:
   END_DATE: "2026-09-17"
   CALENDAR_START_DATE: "2020-01-01"
   SHARD_COUNT: "48"
-  PROGRESS_GENERATION_ID: "fund-ext-pit-v1-20220917-window-20260922"
-  CACHE_PREFIX: "fund-ext-pit-v2-48unit-query-reuse-20260922"
+  PROGRESS_GENERATION_ID: "fund-ext-pit-v8-ab892532-20220917-window-20260926"
+  CACHE_PREFIX: "fund-ext-pit-v8-48unit-query-reuse-20260926"
   RECOVERY_REF: "refs/heads/v4a/fundamental-resume-295710"
   LEGACY_QUERY_PRIMARY_COMMIT: "2ef3ee784c7e6ced5801cf35b6a5113a68e9ab6a"
   LEGACY_QUERY_SECONDARY_COMMIT: "29571066bbf69da5ba252982f71b592e07969314"
-  AUTHORIZED_MATERIALIZATION_REF: "cec1194806ccf0c8bac043548985d58b88a0c8d9"
+  AUTHORIZED_MATERIALIZATION_REF: "ab892532cd1ebc3f6f76bd31bf2a53d6f5432d65"
   MATERIALIZATION_SOURCE_COMMIT: ${{ inputs.materialization_ref }}
 
 jobs:
