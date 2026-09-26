@@ -64,6 +64,30 @@ _FINANCIAL_STATEMENT_TOKENS = (
     "所有者权益变动表",
 )
 
+# V9 does not reinterpret a blank/dash cell as numeric zero.  It adds one
+# separate evidence route: a blank non-current-liability debt row may be
+# reconciled to zero only when the exact consolidated balance-sheet subtotal is
+# reproduced by every explicit standardized component in the same CNY scope.
+# The component set is deliberately closed and all component balances are
+# treated as non-negative liability presentation amounts; any negative,
+# absent, ambiguous, non-CNY, or non-zero residual fails closed.
+_NON_CURRENT_LIABILITY_COMPONENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("INSURANCE_CONTRACT_RESERVE", ("保险合同准备金",)),
+    ("LONG_TERM_BORROWINGS", ("长期借款",)),
+    ("BONDS_PAYABLE", ("应付债券",)),
+    ("LEASE_LIABILITIES", ("租赁负债",)),
+    ("LONG_TERM_PAYABLES", ("长期应付款",)),
+    ("LONG_TERM_EMPLOYEE_BENEFITS", ("长期应付职工薪酬",)),
+    ("PROVISIONS", ("预计负债",)),
+    ("DEFERRED_INCOME", ("递延收益",)),
+    ("DEFERRED_TAX_LIABILITIES", ("递延所得税负债",)),
+    ("OTHER_NON_CURRENT_LIABILITIES", ("其他非流动负债",)),
+)
+_RECONCILABLE_NON_CURRENT_DEBT_FACTS = frozenset(
+    {"LONG_TERM_BORROWINGS", "BONDS_PAYABLE", "LEASE_LIABILITIES"}
+)
+_NON_CURRENT_LIABILITY_SUBTOTAL_LABELS = ("非流动负债合计",)
+
 
 def _compact_line(value: object) -> str:
     return "".join(str(value).split())
@@ -538,6 +562,143 @@ def _direct_amount_value_in_statement_scope(
     return None
 
 
+def _exact_statement_row_current_state(
+    lines: list[str],
+    labels: Iterable[str],
+    *,
+    unit_override: str,
+) -> tuple[str, float | None]:
+    """Return NUMERIC/BLANK/AMBIGUOUS/ABSENT for one no-note statement row.
+
+    This helper is intentionally narrower than the ordinary parser.  It is used
+    only by subtotal reconciliation, where a zero may be inferred only from a
+    closed accounting identity.  A single unowned numeric cell, a wrapped row,
+    or any other uncertain layout is AMBIGUOUS rather than guessed.
+    """
+
+    label_options = tuple(str(label) for label in labels)
+    scale = _AMOUNT_UNIT_SCALE.get(str(unit_override or ""))
+    if scale != 1.0:
+        return ("AMBIGUOUS", None)
+
+    found = False
+    for index in range(len(lines)):
+        if not _physical_line_starts_label(lines[index], label_options):
+            continue
+        found = True
+        logical_row = _target_logical_row_window(lines, index, label_options)
+        label_match = _wrapped_label_match(logical_row, label_options)
+        if label_match is None:
+            return ("AMBIGUOUS", None)
+        suffix = logical_row[label_match.end() :]
+        cells = _ordered_numeric_or_dash_cells(suffix)
+        if not cells:
+            return ("BLANK", None)
+        if len(cells) != 2:
+            return ("AMBIGUOUS", None)
+        _, current_kind, current_text = cells[0]
+        if current_kind == "DASH":
+            return ("BLANK", None)
+        if current_kind != "NUMERIC":
+            return ("AMBIGUOUS", None)
+        try:
+            value = _parse_numeric_token(current_text)
+        except ValueError:
+            return ("AMBIGUOUS", None)
+        if pd.isna(value):
+            return ("AMBIGUOUS", None)
+        return ("NUMERIC", float(value))
+
+    return ("ABSENT" if not found else "AMBIGUOUS", None)
+
+
+def _subtotal_reconciled_zero_non_current_debt(
+    lines: list[str],
+) -> dict[str, float]:
+    """Prove selected blank debt rows as zero from a closed liability subtotal.
+
+    This is not blank-to-zero imputation.  The route is allowed only for the
+    consolidated balance sheet, explicit CNY unit, no note column, the complete
+    standardized non-current-liability row set, non-negative explicit balances,
+    and a current-period subtotal residual within half a cent of exactly zero.
+    Under those constraints, every blank component in the non-negative closed
+    set is mathematically zero.  Only the three frozen debt components are
+    emitted; no synthetic aggregate is created.
+    """
+
+    boundaries = _statement_boundaries(lines)
+    for offset, (start, token) in enumerate(boundaries):
+        if token != "资产负债表":
+            continue
+        if "合并资产负债表" not in _compact_line(lines[start]):
+            continue
+        end = (
+            boundaries[offset + 1][0]
+            if offset + 1 < len(boundaries)
+            else len(lines)
+        )
+        statement = lines[start:end]
+        unit = _explicit_statement_unit(statement, start=0, end=len(statement))
+        if unit is None or _AMOUNT_UNIT_SCALE.get(str(unit)) != 1.0:
+            continue
+        if _statement_header_has_note_column(statement, start=0, end=len(statement)):
+            continue
+
+        non_current_start = None
+        subtotal_index = None
+        for index, line in enumerate(statement):
+            compact = _compact_line(line)
+            if compact in {"非流动负债：", "非流动负债:"}:
+                non_current_start = index
+                continue
+            if non_current_start is not None and compact.startswith("非流动负债合计"):
+                subtotal_index = index
+                break
+        if non_current_start is None or subtotal_index is None:
+            continue
+        scope = statement[non_current_start + 1 : subtotal_index + 1]
+
+        subtotal = _direct_amount_value_after_label(
+            scope,
+            _NON_CURRENT_LIABILITY_SUBTOTAL_LABELS,
+            unit_override=unit,
+            note_column_override=False,
+        )
+        if subtotal is None or subtotal < 0:
+            continue
+
+        explicit_sum = 0.0
+        blank_facts: list[str] = []
+        failed = False
+        for fact_type, labels in _NON_CURRENT_LIABILITY_COMPONENTS:
+            state, value = _exact_statement_row_current_state(
+                scope,
+                labels,
+                unit_override=unit,
+            )
+            if state == "NUMERIC":
+                assert value is not None
+                if value < 0:
+                    failed = True
+                    break
+                explicit_sum += float(value)
+            elif state == "BLANK":
+                if fact_type in _RECONCILABLE_NON_CURRENT_DEBT_FACTS:
+                    blank_facts.append(fact_type)
+            else:
+                failed = True
+                break
+        if failed or not blank_facts:
+            continue
+
+        residual = float(subtotal) - explicit_sum
+        if abs(residual) > 0.005:
+            continue
+        return {fact_type: 0.0 for fact_type in blank_facts}
+
+    return {}
+
+
 def extract_extended_filing_facts(text: str) -> dict[str, float]:
     """Extract direct CNY statement primitives without semantic aggregation.
 
@@ -570,6 +731,11 @@ def extract_extended_filing_facts(text: str) -> dict[str, float]:
             value = _direct_amount_value_after_label(lines, labels)
         if value is not None:
             facts[fact_type] = float(value)
+
+    # V9 adds only accounting-identity-proven zeros.  Existing direct numeric
+    # facts always win; blank/dash semantics above are unchanged.
+    for fact_type, value in _subtotal_reconciled_zero_non_current_debt(lines).items():
+        facts.setdefault(fact_type, float(value))
 
     if not facts:
         raise ValueError(

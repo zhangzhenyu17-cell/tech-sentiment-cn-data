@@ -456,3 +456,85 @@ def test_statement_presence_blocks_global_note_table_fallback() -> None:
 
     assert "BONDS_PAYABLE" not in facts
     assert facts["LEASE_LIABILITIES"] == pytest.approx(14_369_849.36)
+
+def _huaxing_q1_non_current_liability_text(*, subtotal: str = "802,516,109.61", unit: str = "元") -> str:
+    return f"""
+    苏州华兴源创科技股份有限公司2025年第一季度报告
+    合并资产负债表
+    单位：{unit} 币种：人民币
+    项目 2025年3月31日 2024年12月31日
+    流动负债合计 1,156,124,679.33 1,040,267,246.06
+    非流动负债：
+    保险合同准备金
+    长期借款
+    应付债券 715,144,637.75 707,056,859.30
+    租赁负债 27,048,831.94 30,343,038.91
+    长期应付款
+    长期应付职工薪酬
+    预计负债
+    递延收益 39,775,023.02 40,727,408.72
+    递延所得税负债 20,547,616.90 21,570,912.66
+    其他非流动负债
+    非流动负债合计 {subtotal} 799,698,219.59
+    负债合计 1,958,640,788.94 1,839,965,465.65
+    合并利润表
+    单位：元
+    研发费用 87,853,861.44 89,950,768.32
+    """
+
+
+def test_subtotal_reconciliation_proves_huaxing_long_term_borrowings_zero() -> None:
+    facts = extract_extended_filing_facts(_huaxing_q1_non_current_liability_text())
+
+    assert facts["BONDS_PAYABLE"] == pytest.approx(715_144_637.75)
+    assert facts["LEASE_LIABILITIES"] == pytest.approx(27_048_831.94)
+    assert facts["LONG_TERM_BORROWINGS"] == pytest.approx(0.0)
+
+
+def test_subtotal_reconciliation_nonzero_residual_fails_closed() -> None:
+    facts = extract_extended_filing_facts(
+        _huaxing_q1_non_current_liability_text(subtotal="802,516,110.61")
+    )
+
+    assert "LONG_TERM_BORROWINGS" not in facts
+
+
+def test_subtotal_reconciliation_requires_complete_standard_component_set() -> None:
+    text = _huaxing_q1_non_current_liability_text().replace(
+        "    保险合同准备金\n",
+        "",
+    )
+    facts = extract_extended_filing_facts(text)
+
+    assert "LONG_TERM_BORROWINGS" not in facts
+
+
+def test_subtotal_reconciliation_requires_exact_cny_unit_not_rounded_wan_yuan() -> None:
+    facts = extract_extended_filing_facts(
+        _huaxing_q1_non_current_liability_text(
+            subtotal="80,251.610961",
+            unit="人民币万元",
+        )
+    )
+
+    assert "LONG_TERM_BORROWINGS" not in facts
+
+
+def test_blank_debt_row_without_closed_subtotal_remains_missing_v9() -> None:
+    text = """
+    2025年第一季度报告
+    合并资产负债表
+    单位：元
+    项目 2025年3月31日 2024年12月31日
+    长期借款
+    应付债券 715,144,637.75 707,056,859.30
+    租赁负债 27,048,831.94 30,343,038.91
+    合并利润表
+    单位：元
+    研发费用 1 1
+    """
+
+    facts = extract_extended_filing_facts(text)
+
+    assert "LONG_TERM_BORROWINGS" not in facts
+

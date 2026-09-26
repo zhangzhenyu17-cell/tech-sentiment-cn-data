@@ -4,7 +4,7 @@
 
 本层只从已经下载并通过官方来源身份约束的财报 PDF 文本层中提取直接、可核对的原始科目。它不包含私有模型、阈值、信号、持仓或研究结果，也不产生任何 Production / trading authority。
 
-当前 parser：`official-filing-extended-pit-primitives-v8-statement-dash-cell-safe`。v8 仅在已证明的财务报表 scope、显式金额单位和确定列结构下，把 standalone `-` 作为“该单元格无数值”的列占位符参与 current/prior 列定位；`-` 本身永远不会被转换为 0。若 current 单元格为明确数字且 prior 为 `-`，可提取 current 数值；若 current 为 `-`、整行空白或列归属无法证明，则继续 fail closed。
+当前 parser：`official-filing-extended-pit-primitives-v9-subtotal-reconciled-zero-safe`。v9 保留 v8 的全部 direct-statement 语义：standalone `-` 仍只作为列占位符，blank / dash 本身永远不会被转换为 0。v9 额外增加一条独立、窄化的 `SUBTOTAL_RECONCILED_ZERO` 证据路线：仅在**合并资产负债表**、显式单位为**元/CNY**、无附注列歧义、标准化“非流动负债”component set 完整、全部显式 component 非负，且“非流动负债合计”与显式 component 之和的 current-period 残差在半分以内严格为 0 时，才允许把该封闭 non-negative liability scope 内的空白 debt component（仅 `LONG_TERM_BORROWINGS` / `BONDS_PAYABLE` / `LEASE_LIABILITIES`）证明为数值 0。任何缺行、非零残差、单位为万元/千元、负值、单列歧义或 scope 不完整均 fail closed。该路径是会计恒等式证明，不是 blank/dash→0 imputation。
 
 ## 当前 raw primitives
 
@@ -19,6 +19,12 @@
 - `LEASE_LIABILITIES`：租赁负债。
 
 所有金额都必须来自局部可证明的显式人民币金额单位，并确定性归一到 CNY。没有显式单位时 fail closed；缺失科目保持缺失。
+
+## V9 subtotal-reconciled-zero 边界
+
+该路线的设计目标是恢复“官方报表已经通过小计恒等式证明为 0、但目标行没有直接数字”的极少数 debt fact。它不扩展到利润表、现金流量表、流动负债，也不对任意 note table 做 residual 推断。
+
+当前工程只提供 parser + regression tests；**不自动运行历史全量 materialization，不自动改变任何私有 Fundamental evidence qualification，也不自动改变 ESS / sample gate**。若后续需要把 V9 产物纳入私有 Hardened V2 coverage，必须在独立、显式授权下验证 exact document identity、PIT/provenance、support-set identity 与 private qualifier 后再重算。
 
 ## 明确不做的语义合成
 
