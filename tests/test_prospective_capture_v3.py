@@ -187,9 +187,16 @@ def test_v3_rejects_unregistered_transport_origin(tmp_path: Path) -> None:
 
 
 def test_v3_sidecars_heal_from_exact_archive(tmp_path: Path) -> None:
+    import importlib.util
     import json
-    from scripts.heal_prospective_source_observation_v3 import heal_sidecars
     from tech_sentiment.prospective_source_observation_v3 import SourceObservation
+
+    script = Path(__file__).resolve().parents[1] / "scripts/heal_prospective_source_observation_v3.py"
+    spec = importlib.util.spec_from_file_location("heal_prospective_source_observation_v3", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    heal_sidecars = module.heal_sidecars
 
     root = tmp_path / "SSE_588000"
     root.mkdir()
