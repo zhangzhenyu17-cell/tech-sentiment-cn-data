@@ -178,12 +178,12 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     ]
     assert entry["triggers"] == ["schedule"]
     assert entry["cron_utc"] == [
-        "45 15 * * *",
+        "15,45 7-15 * * *",
         "0,15,30,45 16-23 * * *",
         "0,15,30,35,40,45,50,55 0 * * *",
         "0,5 1 * * *",
     ]
-    assert entry["intended_time_asia_shanghai"][0] == "23:45"
+    assert entry["intended_time_asia_shanghai"][0] == "15:15"
     assert entry["intended_time_asia_shanghai"][-1] == "09:05"
     assert "08:45" in entry["necessity"]
     assert "09:15" in entry["necessity"]
@@ -218,10 +218,12 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     text = (
         root / ".github/workflows/prospective-public-daily-orchestrator-v1.yml"
     ).read_text(encoding="utf-8")
-    assert 'cron: "45 15 * * *"' in text
+    assert 'cron: "15,45 7-15 * * *"' in text
     assert 'cron: "0,15,30,45 16-23 * * *"' in text
     assert 'cron: "0,15,30,35,40,45,50,55 0 * * *"' in text
     assert 'cron: "0,5 1 * * *"' in text
+    assert "local_clock >= time(15, 15) or local_clock <= time(9, 5)" in text
+    assert "decision_date, time(9, 5)" in text
     assert "workflow_dispatch:" in text
     assert "actions: write" in text
     assert "publish-market-bundle.yml" in text
@@ -252,5 +254,5 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert "ACTIVE_SESSION_TO_DECISION_FORMAL_V3_WINDOW" in text
     assert "OUTSIDE_EXPLICIT_WRAPPER_ALLOWLIST" in text
     assert "local_clock = now.time().replace(tzinfo=None)" in text
-    assert "local_clock >= time(23, 45) or local_clock <= time(9, 0)" in text
+    assert "local_clock >= time(15, 15) or local_clock <= time(9, 5)" in text
     assert text.index("if not runtime_allowlisted:") < text.index("closed_sessions = [")
