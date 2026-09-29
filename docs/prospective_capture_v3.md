@@ -31,8 +31,7 @@ The active shadow collector treats the four capital inputs independently:
 
 A successful source is packaged and published independently under an immutable
 source-specific release. Later retries request only still-missing sources.
-This prevents an SSE failure from discarding already successful SZSE observations.
-
+This prevents an SSE failure from discarding already successful SZSE observations.\n\nPublication is archive-first. If an interrupted GitHub run leaves a partial\nrelease with the archive present, the next collector heals checksum/manifest\nsidecars from that exact archive instead of recapturing the source. This\npreserves the original `first_observed_at_asia_shanghai`. A partial release\nwithout its archive fails closed, and any byte conflict fails closed.\n
 ## Scheduling
 
 The scheduled GitHub-hosted collector starts at 23:45 Asia/Shanghai, retries
@@ -45,11 +44,16 @@ semantics and may still be reported as an operational SLA comparison.
 ## Transport diversity
 
 The source observation receipt records `transport_origin` and `runner_name`.
-`GITHUB_HOSTED` is the only active transport in the first shadow phase.
-The contract is intentionally ready for a future isolated
-`SELF_HOSTED_PUBLIC_DATA` transport, but that fallback must be security-audited
-before connection. It must use the same official source identities, exact T,
-normalization rules, and immutable observation schema.
+Two public-only GitHub-hosted transport origins are active in shadow mode:
+`GITHUB_HOSTED` (Ubuntu primary) and `GITHUB_HOSTED_MACOS_FALLBACK`.
+They share the same official source identities, normalization semantics,
+immutable release tags, and one concurrency group. The macOS rail is lower
+frequency and attempts only source observations that remain missing.
+
+The contract remains ready for a future isolated `SELF_HOSTED_PUBLIC_DATA`
+transport, but self-hosted infrastructure is **not connected** and still
+requires a separate security audit. It must use the same official source
+identities, exact T, normalization rules, and immutable observation schema.
 
 ## Activation
 

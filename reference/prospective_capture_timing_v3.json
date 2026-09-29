@@ -1,5 +1,28 @@
 {
   "activation_mode": "SHADOW_ONLY_NO_FORMAL_EVIDENCE_HANDOFF",
+  "automation": {
+    "automatic_workflows": {
+      "prospective-public-continuous-collector-v3-macos-fallback.yml": {
+        "crons_utc": [
+          "30 0,10,20 * * *"
+        ],
+        "role": "LOW_FREQUENCY_NETWORK_PATH_FALLBACK",
+        "runner": "macos-15"
+      },
+      "prospective-public-continuous-collector-v3.yml": {
+        "crons_utc": [
+          "45 15 * * *",
+          "15,45 16-23 * * *",
+          "15,45 0 * * *",
+          "15 1,2,4,6 * * *"
+        ],
+        "role": "PRIMARY_PUBLIC_SOURCE_COLLECTION",
+        "runner": "ubuntu-24.04"
+      }
+    },
+    "formal_consumer_dispatch_allowed": false,
+    "shared_concurrency_group": "prospective-public-continuous-collector-v3"
+  },
   "contract_id": "prospective_capture_timing_v3",
   "contract_version": 3,
   "date": "2026-09-29",
@@ -40,5 +63,16 @@
     "market_session_date": "T",
     "session_close_asia_shanghai": "15:00",
     "shadow_decision_cutoff_asia_shanghai": "08:45"
+  },
+  "transport": {
+    "active_origins": [
+      "GITHUB_HOSTED",
+      "GITHUB_HOSTED_MACOS_FALLBACK"
+    ],
+    "same_normalization_semantics_required": true,
+    "same_official_source_identity_required": true,
+    "self_hosted_public_data_connected": false,
+    "self_hosted_requires_separate_security_audit": true,
+    "shared_immutable_release_identity": true
   }
 }
