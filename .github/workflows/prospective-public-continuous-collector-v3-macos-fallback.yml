@@ -144,6 +144,31 @@ jobs:
             --source-commit "$GITHUB_SHA" \
             --sources "${{ steps.pair.outputs.sources }}"
 
+      - name: Classify fallback source attempt
+        if: steps.pair.outputs.should_run == 'true'
+        id: attempt_outcome
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("dist/prospective_source_observations_v3/SOURCE_OBSERVATION_ATTEMPT.json")
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          def csv(key: str) -> str:
+              return ",".join(payload.get(key) or [])
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"transport_sources={csv('transport_failure_sources')}\n")
+              handle.write(f"pending_sources={csv('publication_pending_sources')}\n")
+              handle.write(f"review_sources={csv('review_required_sources')}\n")
+              handle.write(f"all_complete={'true' if payload.get('all_sources_complete') else 'false'}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write("## Formal V3 macOS fallback attempt\n")
+              handle.write(f"- transport failures: {csv('transport_failure_sources') or 'none'}\n")
+              handle.write(f"- publication pending: {csv('publication_pending_sources') or 'none'}\n")
+              handle.write(f"- review required: {csv('review_required_sources') or 'none'}\n")
+          PY
+
       - name: Publish successful fallback source observations immutably
         if: steps.pair.outputs.should_run == 'true'
         env:
@@ -187,6 +212,12 @@ jobs:
             dist/prospective_source_observation_packages_v3/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Fail closed if macOS fallback still has transport or provider errors
+        if: steps.pair.outputs.should_run == 'true' && (steps.attempt_outcome.outputs.transport_sources != '' || steps.attempt_outcome.outputs.review_sources != '')
+        run: |
+          echo "FORMAL_V3_MACOS_FALLBACK_UNRESOLVED_ERROR transport=${{ steps.attempt_outcome.outputs.transport_sources }} review=${{ steps.attempt_outcome.outputs.review_sources }}" >&2
+          exit 1
 
       - name: Record fallback no-op
         if: steps.pair.outputs.should_run != 'true'

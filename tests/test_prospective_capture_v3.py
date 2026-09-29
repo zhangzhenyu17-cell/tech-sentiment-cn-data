@@ -8,6 +8,7 @@ from tech_sentiment.capital_input_data import ExchangeTurnoverFetchResult, EtfSh
 from tech_sentiment.prospective_capture_timing_v3 import validate_capture_pair_v3
 from tech_sentiment.prospective_source_observation_v3 import (
     capture_capital_source_observations_v3,
+    classify_source_incomplete_v3,
     package_complete_source_observation_v3,
 )
 from tech_sentiment.v4c03_szse_etf_shares import SzseEtfShareFetchResult
@@ -222,3 +223,47 @@ def test_v3_sidecars_heal_from_exact_archive(tmp_path: Path) -> None:
     archive = tmp_path / "original" / f"{original['release_tag']}.tar.gz"
     healed = heal_sidecars(archive, tmp_path / "healed")
     assert healed == original
+
+def test_v3_failure_classifies_publication_pending() -> None:
+    data = pd.DataFrame(columns=["date", "fund_code"])
+    errors = pd.DataFrame([{"date": "2026-09-29", "error": "NO_MATCHING_ETF_ROW"}])
+    assert classify_source_incomplete_v3(data, errors) == "SOURCE_NOT_YET_PUBLISHED"
+
+
+def test_v3_failure_classifies_transport_error() -> None:
+    data = pd.DataFrame(columns=["date", "fund_code"])
+    errors = pd.DataFrame([{"date": "2026-09-29", "error": "ReadTimeout: connection timed out"}])
+    assert classify_source_incomplete_v3(data, errors) == "TRANSPORT_FAILURE"
+
+
+def test_v3_failure_classifies_unknown_provider_error_for_review() -> None:
+    data = pd.DataFrame(columns=["date", "fund_code"])
+    errors = pd.DataFrame([{"date": "2026-09-29", "error": "unexpected provider schema"}])
+    assert classify_source_incomplete_v3(data, errors) == "SOURCE_DATA_ERROR_REQUIRES_REVIEW"
+
+
+def test_v3_receipt_records_retry_disposition(tmp_path: Path) -> None:
+    empty = EtfShareFetchResult(
+        data=pd.DataFrame(columns=["date", "fund_code", "fund_shares"]),
+        errors=pd.DataFrame([{"date": "2026-09-28", "error": "NO_MATCHING_ETF_ROW"}]),
+    )
+    observations = capture_capital_source_observations_v3(
+        market_session_date="2026-09-28",
+        decision_date="2026-09-29",
+        source_commit="abc",
+        output_root=tmp_path / "obs",
+        observed_at=_dt("2026-09-29T08:30:00"),
+        client=_CalendarClient(),
+        transport_origin="GITHUB_HOSTED",
+        sse_etf_fetcher=lambda **_: empty,
+        source_keys=("SSE_588000",),
+        clock=lambda: _dt("2026-09-29T08:30:01"),
+    )
+    receipt = observations["SSE_588000"].receipt
+    assert receipt["failure_class"] == "SOURCE_NOT_YET_PUBLISHED"
+    assert receipt["retry_disposition"] == "WAIT_FOR_PUBLICATION"
+    import json
+    summary = json.loads((tmp_path / "obs" / "SOURCE_OBSERVATION_ATTEMPT.json").read_text())
+    assert summary["publication_pending_sources"] == ["SSE_588000"]
+    assert summary["transport_failure_sources"] == []
+    assert summary["review_required_sources"] == []

@@ -18,6 +18,7 @@ on:
     - cron: "15 1,2,4,6 * * *"
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -202,6 +203,31 @@ jobs:
             --source-commit "$GITHUB_SHA" \
             --sources "${{ steps.missing.outputs.sources }}"
 
+      - name: Classify incomplete V3 source attempt
+        if: steps.pair.outputs.should_run == 'true' && steps.missing.outputs.all_complete != 'true'
+        id: attempt_outcome
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("dist/prospective_source_observations_v3/SOURCE_OBSERVATION_ATTEMPT.json")
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          def csv(key: str) -> str:
+              return ",".join(payload.get(key) or [])
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"transport_sources={csv('transport_failure_sources')}\n")
+              handle.write(f"pending_sources={csv('publication_pending_sources')}\n")
+              handle.write(f"review_sources={csv('review_required_sources')}\n")
+              handle.write(f"all_complete={'true' if payload.get('all_sources_complete') else 'false'}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write("## Formal V3 source attempt\n")
+              handle.write(f"- transport failures: {csv('transport_failure_sources') or 'none'}\n")
+              handle.write(f"- publication pending: {csv('publication_pending_sources') or 'none'}\n")
+              handle.write(f"- review required: {csv('review_required_sources') or 'none'}\n")
+          PY
+
       - name: Publish each successful source observation immutably
         if: steps.pair.outputs.should_run == 'true' && steps.missing.outputs.all_complete != 'true'
         env:
@@ -259,6 +285,35 @@ jobs:
             dist/prospective_source_observation_packages_v3/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Escalate transport failures to macOS fallback
+        if: steps.pair.outputs.should_run == 'true' && steps.attempt_outcome.outputs.transport_sources != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ACTIVE="$(
+            gh run list \
+              --workflow prospective-public-continuous-collector-v3-macos-fallback.yml \
+              --limit 20 \
+              --json status \
+              --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length'
+          )"
+          if [ "$ACTIVE" -gt 0 ]; then
+            echo "V3 macOS fallback already active; not dispatching duplicate."
+            exit 0
+          fi
+          gh workflow run prospective-public-continuous-collector-v3-macos-fallback.yml \
+            --ref main \
+            -f market_session_date="${{ steps.pair.outputs.market_session_date }}" \
+            -f decision_date="${{ steps.pair.outputs.decision_date }}"
+          echo "Dispatched macOS fallback for transport-class failures: ${{ steps.attempt_outcome.outputs.transport_sources }}"
+
+      - name: Fail closed on unclassified provider/data errors
+        if: steps.pair.outputs.should_run == 'true' && steps.attempt_outcome.outputs.review_sources != ''
+        run: |
+          echo "FORMAL_V3_SOURCE_DATA_ERROR_REQUIRES_REVIEW: ${{ steps.attempt_outcome.outputs.review_sources }}" >&2
+          exit 1
 
       - name: Record scheduled no-op
         if: steps.pair.outputs.should_run != 'true'

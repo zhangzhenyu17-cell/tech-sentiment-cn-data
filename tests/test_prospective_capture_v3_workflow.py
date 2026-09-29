@@ -42,6 +42,12 @@ def test_v3_workflow_collects_after_0530_for_formal_capture_without_source_level
     assert "heal_prospective_source_observation_v3.py" in text
     assert "V3_PARTIAL_RELEASE_WITHOUT_ARCHIVE" in text
     assert "V3_SOURCE_RELEASE_INCOMPLETE_AFTER_HEAL" in text
+    assert "actions: write" in text
+    assert "Classify incomplete V3 source attempt" in text
+    assert "transport_failure_sources" in text
+    assert "publication_pending_sources" in text
+    assert "prospective-public-continuous-collector-v3-macos-fallback.yml" in text
+    assert "Fail closed on unclassified provider/data errors" in text
 
 
 def test_v3_macos_fallback_is_public_only_and_shared_identity() -> None:
@@ -63,6 +69,9 @@ def test_v3_macos_fallback_is_public_only_and_shared_identity() -> None:
     assert "[-5:]" not in text
     assert "reversed(closed)" not in text
     assert "V3_FALLBACK_MANUAL_PAIR_REQUIRES_BOTH_OR_NEITHER" in text
+    assert "Classify fallback source attempt" in text
+    assert "publication_pending_sources" in text
+    assert "FORMAL_V3_MACOS_FALLBACK_UNRESOLVED_ERROR" in text
     assert "pull_request:" not in text
     assert "push:" not in text
 
