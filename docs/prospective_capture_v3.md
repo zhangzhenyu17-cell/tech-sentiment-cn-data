@@ -43,7 +43,7 @@ without its archive fails closed, and any byte conflict fails closed.
 
 ## Scheduling
 
-The scheduled GitHub-hosted collector starts at 15:15 Asia/Shanghai, fifteen minutes after the market-session close, and retries every 30 minutes through the 08:45 formal source cutoff. It also retains sparse post-cutoff late-recovery attempts. This earlier start reduces unobserved post-close publication time without changing decision eligibility semantics.
+The scheduled GitHub-hosted collector starts at 15:15 Asia/Shanghai, fifteen minutes after the market-session close. It uses a 30-minute baseline cadence, then increases observation density to every five minutes at 08:15, 08:20, 08:25, 08:30, 08:35, and 08:40 before the immutable 08:45 formal source cutoff. An 08:45 dispatch is retained only as a late-recovery observation; source-fetch completion must itself be no later than 08:45 to qualify for that decision date. Sparse post-cutoff late-recovery attempts remain available. This reduces conservative false gaps without changing eligibility semantics.
 
 The collector retries
 through the morning decision window, and continues low-frequency late recovery

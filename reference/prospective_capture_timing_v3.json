@@ -14,13 +14,23 @@
       "prospective-public-continuous-collector-v3.yml": {
         "crons_utc": [
           "15,45 7-23 * * *",
-          "15,45 0 * * *",
+          "15,20,25,30,35,40,45 0 * * *",
           "15 1,2,4,6 * * *"
+        ],
+        "cutoff_dispatch_asia_shanghai": "08:45",
+        "cutoff_dispatch_does_not_relax_source_fetch_completion_cutoff": true,
+        "near_cutoff_observation_asia_shanghai": [
+          "08:15",
+          "08:20",
+          "08:25",
+          "08:30",
+          "08:35",
+          "08:40"
         ],
         "python_version": "3.11.16",
         "role": "PRIMARY_PUBLIC_SOURCE_COLLECTION",
         "runner": "ubuntu-24.04",
-        "schedule_intent": "BEGIN_15_MINUTES_AFTER_SESSION_CLOSE_THEN_30_MINUTE_RETRY_THROUGH_0845_WITH_SPARSE_LATE_RECOVERY"
+        "schedule_intent": "BEGIN_15_MINUTES_AFTER_SESSION_CLOSE; 30_MINUTE_BASELINE_RETRY; 5_MINUTE_OBSERVATION_0815_TO_0840; 0845_LATE_RECOVERY_OBSERVATION_WITH_IMMUTABLE_SOURCE_FETCH_CUTOFF; SPARSE_POST_CUTOFF_LATE_RECOVERY"
       }
     },
     "formal_consumer_dispatch_allowed": true,
