@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows:
       - "publish-market-bundle"
+      - "prospective-public-continuous-collector-v3"
+      - "prospective-public-continuous-collector-v3-macos-fallback"
       - "prospective-public-daily-orchestrator-v1"
       - "prospective-context-raw-preopen-v2"
       - "qualify-931152-oos-inputs"

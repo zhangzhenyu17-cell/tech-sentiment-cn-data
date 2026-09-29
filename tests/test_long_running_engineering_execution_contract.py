@@ -504,7 +504,9 @@ def test_failure_response_automation_is_public_engineering_only() -> None:
         "prospective-public-daily-orchestrator-v1",
     ]
     assert handoff["diagnosis_only_workflows"] == [
-        "prospective-context-raw-preopen-v2"
+        "prospective-public-continuous-collector-v3",
+        "prospective-public-continuous-collector-v3-macos-fallback",
+        "prospective-context-raw-preopen-v2",
     ]
     assert handoff["automatic_merge"] is False
     assert handoff["assignment_failure_falls_back_to_open_issue"] is True
@@ -515,6 +517,8 @@ def test_failure_response_automation_is_public_engineering_only() -> None:
         ROOT / ".github/workflows/engineering-failure-capture.yml"
     ).read_text(encoding="utf-8")
     for name in (
+        "prospective-public-continuous-collector-v3",
+        "prospective-public-continuous-collector-v3-macos-fallback",
         "prospective-public-daily-orchestrator-v1",
         "prospective-context-raw-preopen-v2",
     ):
@@ -524,3 +528,6 @@ def test_failure_response_automation_is_public_engineering_only() -> None:
     assert "COPILOT_CANDIDATE" in workflow
     assert "DIAGNOSIS_ONLY" in workflow
     assert "public-data engineering only" in workflow
+    safe_block = workflow.split("const safeAutoRepairWorkflows = new Set([", 1)[1].split("]);", 1)[0]
+    assert '"prospective-public-continuous-collector-v3"' not in safe_block
+    assert '"prospective-public-continuous-collector-v3-macos-fallback"' not in safe_block
