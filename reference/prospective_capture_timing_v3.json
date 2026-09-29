@@ -1,5 +1,5 @@
 {
-  "activation_mode": "SHADOW_ONLY_NO_FORMAL_EVIDENCE_HANDOFF",
+  "activation_mode": "FORMAL_CAPTURE_WITH_PRIVATE_QUALIFICATION",
   "automation": {
     "automatic_resolution_scope": "LATEST_CLOSED_SESSION_ONLY",
     "automatic_workflows": {
@@ -23,7 +23,7 @@
         "runner": "ubuntu-24.04"
       }
     },
-    "formal_consumer_dispatch_allowed": false,
+    "formal_consumer_dispatch_allowed": true,
     "older_session_recovery_requires_explicit_exact_pair": true,
     "shared_concurrency_group": "prospective-public-continuous-collector-v3"
   },
@@ -47,7 +47,7 @@
     "research_result_allowed": false,
     "trading_authority_changed": false
   },
-  "purpose": "Decouple public-data acquisition time from decision eligibility. Permit exact market-session observations to arrive after the former 05:30 operational freeze while preserving first-observed-time provenance and prohibiting retroactive evidence qualification.",
+  "purpose": "Formal public Prospective capture rail. Source acquisition remains continuous after cutoff, while decision eligibility is frozen by immutable source-fetch-completion timestamps and late observations can never be retroactively qualified.",
   "semantics": {
     "attempt_start_may_not_substitute_for_first_observed_at": true,
     "first_observed_at_definition": "SOURCE_FETCH_COMPLETION_TIME",
@@ -58,12 +58,14 @@
     "source_level_persistence": true,
     "source_observation_immutable": true
   },
-  "status": "FROZEN_SHADOW_ONLY",
+  "status": "ACTIVE_FORMAL_CAPTURE",
   "timing": {
     "capture_after_decision_cutoff_allowed": true,
     "capture_after_former_0530_allowed": true,
     "decision_date": "IMMEDIATE_NEXT_A_SHARE_TRADING_DAY_AFTER_T",
     "first_eligible_execution_asia_shanghai": "09:30",
+    "formal_artifact_deadline_asia_shanghai": "09:15",
+    "formal_source_cutoff_asia_shanghai": "08:45",
     "former_preopen_sla_asia_shanghai": "05:30",
     "manual_late_recovery_after_session_roll_allowed": true,
     "market_session_date": "T",

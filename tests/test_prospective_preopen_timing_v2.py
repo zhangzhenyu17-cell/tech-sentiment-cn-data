@@ -131,7 +131,7 @@ def test_capture_completion_guard_rejects_outside_operational_window() -> None:
         )
 
 
-def test_preopen_workflow_is_manual_only_and_freeze_hardened() -> None:
+def test_preopen_workflow_is_manual_only_and_formal_v3_backed() -> None:
     root = ROOT
     text = (
         root / ".github/workflows/prospective-context-raw-preopen-v2.yml"
@@ -141,11 +141,11 @@ def test_preopen_workflow_is_manual_only_and_freeze_hardened() -> None:
     assert "\n  workflow_run:" not in text
     assert "\n  pull_request:" not in text
     assert "\n  push:" not in text
-    assert "market_session_date" in text
-    assert "decision_date" in text
-    assert "prospective-context-checkpoints-${{ inputs.market_session_date }}" in text
-    assert "PREOPEN_PUBLIC_SOURCE_PUBLICATION_WINDOW_NOT_YET_MATURE" in text
-    assert "time(23, 45)" in text
+    assert "formal V3-backed assembly" in text
+    assert "FORMAL_V3_SOURCE_PACKAGE_INCOMPLETE" in text
+    assert "--v3-package-root formal-v3-packages" in text
+    assert "08:45" in text
+    assert "09:15" in text
     assert '"akshare==1.18.94"' in text
     assert '"pandas==3.0.5"' in text
     assert '"pytest==8.4.2"' in text
@@ -156,10 +156,11 @@ def test_preopen_workflow_is_manual_only_and_freeze_hardened() -> None:
     builder = (root / "scripts/build_prospective_context_raw_preopen_v2.py").read_text(
         encoding="utf-8"
     )
-    assert "_require_capture_completed_before_freeze" in builder
-    assert "PREOPEN_CAPTURE_COMPLETED_AFTER_0530_FREEZE" in builder
-    assert "PREOPEN_CAPTURE_COMPLETED_BEFORE_2345_OPERATIONAL_WINDOW" in builder
-    call = "    _require_capture_completed_before_freeze(\n        args.market_session_date,"
+    assert "_require_capture_completed_before_formal_v3_deadline" in builder
+    assert "FORMAL_V3_PUBLIC_RAW_COMPLETED_AFTER_0915_DEADLINE" in builder
+    assert 'timing_mode="FORMAL_V3"' in builder
+    assert "load_formal_v3_capital_sources" in builder
+    call = "    _require_capture_completed_before_formal_v3_deadline(\n        args.decision_date,"
     assert builder.index(call) < builder.index("manifest = package_preopen_capture")
 
 
@@ -178,30 +179,17 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert entry["triggers"] == ["schedule"]
     assert entry["cron_utc"] == [
         "45 15 * * *",
-        "0,15,30,45 16-19 * * *",
-        "0 20 * * *",
+        "0,15,30,45 16-23 * * *",
+        "0,15,30,45 0 * * *",
+        "0 1 * * *",
     ]
-    assert entry["intended_time_asia_shanghai"] == [
-        "23:45",
-        "00:00",
-        "00:15",
-        "00:30",
-        "00:45",
-        "01:00",
-        "01:15",
-        "01:30",
-        "01:45",
-        "02:00",
-        "02:15",
-        "02:30",
-        "02:45",
-        "03:00",
-        "03:15",
-        "03:30",
-        "03:45",
-        "04:00",
-    ]
-    assert manifest["authorization_scope"] == "FROZEN_PROSPECTIVE_DAILY_OPERATIONS_ONLY"
+    assert entry["intended_time_asia_shanghai"][0] == "23:45"
+    assert entry["intended_time_asia_shanghai"][-1] == "09:00"
+    assert "08:45" in entry["necessity"]
+    assert "09:15" in entry["necessity"]
+    assert manifest["authorization_scope"] == (
+        "AUTHORIZED_FORMAL_V3_CAPTURE_REPLACEMENT_WITH_FROZEN_MODEL_AND_TRADING_BOUNDARIES"
+    )
 
     safety = manifest["safety"]
     assert safety["trading_calendar_required"] is True
@@ -209,7 +197,10 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert safety["intervening_non_trading_days_preserve_active_window"] is True
     assert safety["exact_dated_release_required"] is True
     assert safety["scheduler_delay_redundancy_minutes"] == 15
-    assert safety["last_wrapper_opportunity_asia_shanghai"] == "04:00"
+    assert safety["last_wrapper_opportunity_asia_shanghai"] == "09:00"
+    assert safety["formal_v3_source_cutoff_asia_shanghai"] == "08:45"
+    assert safety["formal_v3_artifact_deadline_asia_shanghai"] == "09:15"
+    assert safety["evidence_qualification_changed"] is True
     for key in (
         "rolling_latest_substitution_allowed",
         "historical_backfill_allowed",
@@ -217,7 +208,6 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
         "private_evidence_allowed",
         "forward_outcome_read_allowed",
         "research_result_allowed",
-        "evidence_qualification_changed",
         "trading_authority_changed",
     ):
         assert safety[key] is False, key
@@ -226,14 +216,17 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
         root / ".github/workflows/prospective-public-daily-orchestrator-v1.yml"
     ).read_text(encoding="utf-8")
     assert 'cron: "45 15 * * *"' in text
-    assert 'cron: "0,15,30,45 16-19 * * *"' in text
-    assert 'cron: "0 20 * * *"' in text
+    assert 'cron: "0,15,30,45 16-23 * * *"' in text
+    assert 'cron: "0,15,30,45 0 * * *"' in text
+    assert 'cron: "0 1 * * *"' in text
     assert "workflow_dispatch:" in text
     assert "actions: write" in text
     assert "publish-market-bundle.yml" in text
+    assert "prospective-public-continuous-collector-v3.yml" in text
     assert "prospective-context-raw-preopen-v2.yml" in text
     assert "market-bundle-$MARKET_SESSION_DATE" in text
-    assert "Complete immutable market bundle" in text
+    assert "FORMAL_V3_SOURCE_SET_ELIGIBLE" in text
+    assert "FORMAL_V3_SOURCE_AFTER_0845_CUTOFF" in text
     assert "Complete immutable public raw release" in text
     assert '"$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"' in text
     assert '"$RAW_TAG.tar.gz" "$RAW_TAG.sha256" "$RAW_TAG.manifest.json"' in text
@@ -252,9 +245,9 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert "IMMUTABLE_DATED_BUNDLE_INCOMPLETE_AFTER_HEAL" in publisher
     assert "Healed missing immutable asset" in publisher
     assert "session_close = datetime.combine" in text
-    assert "freeze_deadline = datetime.combine" in text
-    assert "ACTIVE_SESSION_TO_DECISION_PREOPEN_WINDOW" in text
+    assert "dispatch_deadline = datetime.combine" in text
+    assert "ACTIVE_SESSION_TO_DECISION_FORMAL_V3_WINDOW" in text
     assert "OUTSIDE_EXPLICIT_WRAPPER_ALLOWLIST" in text
     assert "local_clock = now.time().replace(tzinfo=None)" in text
-    assert "local_clock >= time(23, 45) or local_clock <= time(4, 0)" in text
+    assert "local_clock >= time(23, 45) or local_clock <= time(9, 0)" in text
     assert text.index("if not runtime_allowlisted:") < text.index("closed_sessions = [")

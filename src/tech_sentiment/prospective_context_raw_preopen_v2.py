@@ -88,7 +88,23 @@ def package_preopen_capture(
     timing = receipt.get("preopen_timing") or {}
     if timing.get("decision_date") != decision_date:
         raise ValueError("public raw decision date mismatch")
-    if timing.get("minimum_preopen_buffer_hours") != 4:
+    timing_mode = str(receipt.get("timing_mode") or "")
+    if timing_mode == "FORMAL_V3":
+        if timing.get("timing_contract") != "prospective_capture_timing_v3_formal":
+            raise ValueError("formal V3 timing contract identity mismatch")
+        if float(timing.get("minimum_preopen_buffer_hours") or 0.0) != 0.75:
+            raise ValueError("formal V3 pre-open buffer identity mismatch")
+        if receipt.get("formal_capture_contract") != "prospective_capture_timing_v3":
+            raise ValueError("formal V3 source contract identity mismatch")
+        source_observations = receipt.get("formal_v3_source_observations") or {}
+        if sorted(source_observations) != [
+            "SSE_588000",
+            "SSE_TURNOVER",
+            "SZSE_159915",
+            "SZSE_TURNOVER",
+        ]:
+            raise ValueError("formal V3 source observation set is incomplete")
+    elif timing.get("minimum_preopen_buffer_hours") != 4:
         raise ValueError("public raw pre-open buffer identity mismatch")
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -145,7 +161,8 @@ def package_preopen_capture(
             "data_freeze_deadline_asia_shanghai"
         ],
         "first_eligible_execution_at": timing["first_eligible_execution_at"],
-        "minimum_preopen_buffer_hours": 4,
+        "minimum_preopen_buffer_hours": timing["minimum_preopen_buffer_hours"],
+        "formal_capture_contract": receipt.get("formal_capture_contract"),
         "historical_replay_allowed": False,
         "retroactive_evidence_qualification_allowed": False,
         "private_model_semantics_materialized": False,

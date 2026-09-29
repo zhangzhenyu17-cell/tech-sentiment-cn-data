@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from .capital_input_data import (
+    combine_sse_szse_a_share_turnover,
     fetch_sse_etf_share_history,
     fetch_sse_szse_a_share_turnover_history,
     qualify_trailing_etf_coverage,
@@ -27,6 +28,10 @@ from .prospective_context_checkpoint_v1 import (
     universe_checkpoint_identity,
 )
 from .prospective_preopen_timing_v2 import validate_preopen_capture_window
+from .prospective_formal_v3_sources import (
+    FormalV3CapitalSources,
+    validate_formal_v3_assembly_window,
+)
 from .resumable_capital import (
     expected_capital_checkpoint_identities,
     expected_szse_etf_checkpoint_identities,
@@ -445,6 +450,61 @@ def _write_csv(
     ).to_csv(path, index=False, date_format="%Y-%m-%d")
 
 
+
+def _replace_operation_date_etf_row(
+    frame: pd.DataFrame,
+    override: pd.DataFrame,
+    *,
+    operation_date: str,
+    fund_code: str,
+) -> pd.DataFrame:
+    base = frame.copy()
+    if not base.empty:
+        dates = pd.to_datetime(base["date"], errors="raise").dt.normalize()
+        codes = (
+            base["fund_code"]
+            .astype(str)
+            .str.replace(r"\.0$", "", regex=True)
+            .str.zfill(6)
+        )
+        base = base[~(dates.eq(pd.Timestamp(operation_date)) & codes.eq(fund_code))].copy()
+    out = pd.concat([base, override.copy()], ignore_index=True, sort=False)
+    out["date"] = pd.to_datetime(out["date"], errors="raise").dt.normalize()
+    out["fund_code"] = (
+        out["fund_code"].astype(str).str.replace(r"\.0$", "", regex=True).str.zfill(6)
+    )
+    return out.sort_values(["date", "fund_code"]).reset_index(drop=True)
+
+
+def _replace_operation_date_frame(
+    frame: pd.DataFrame,
+    override: pd.DataFrame,
+    *,
+    operation_date: str,
+) -> pd.DataFrame:
+    base = frame.copy()
+    if not base.empty and "date" in base.columns:
+        dates = pd.to_datetime(base["date"], errors="raise").dt.normalize()
+        base = base[~dates.eq(pd.Timestamp(operation_date))].copy()
+    out = pd.concat([base, override.copy()], ignore_index=True, sort=False)
+    out["date"] = pd.to_datetime(out["date"], errors="raise").dt.normalize()
+    return out.sort_values("date").reset_index(drop=True)
+
+
+def _drop_operation_date_errors(frame: pd.DataFrame, operation_date: str) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    target = pd.Timestamp(operation_date).normalize()
+    out = frame.copy()
+    if "date" in out.columns:
+        parsed = pd.to_datetime(out["date"], errors="coerce").dt.normalize()
+        return out[~parsed.eq(target)].reset_index(drop=True)
+    if {"chunk_start", "chunk_end"} <= set(out.columns):
+        start = pd.to_datetime(out["chunk_start"], errors="coerce").dt.normalize()
+        end = pd.to_datetime(out["chunk_end"], errors="coerce").dt.normalize()
+        return out[~((start <= target) & (target <= end))].reset_index(drop=True)
+    return out
+
 def materialize_public_raw_capture(
     *,
     repo_root: Path,
@@ -457,6 +517,7 @@ def materialize_public_raw_capture(
     client: Any | None = None,
     timing_mode: str = "SAME_DAY_V1",
     decision_date: str | None = None,
+    formal_v3_capital_sources: FormalV3CapitalSources | None = None,
 ) -> CaptureResult:
     contract = _read_contract(contract_path)
     now = captured_at or datetime.now(ZoneInfo("UTC"))
@@ -478,6 +539,18 @@ def materialize_public_raw_capture(
             market_session_date=operation_date,
             decision_date=decision_date,
             captured_at=now,
+            client=_client(client),
+        )
+        checkpoint_capture_date = operation_date
+    elif timing_mode == "FORMAL_V3":
+        if not decision_date:
+            raise ValueError("FORMAL_V3 requires decision_date")
+        if formal_v3_capital_sources is None:
+            raise ValueError("FORMAL_V3 requires verified V3 capital source packages")
+        timing_receipt = validate_formal_v3_assembly_window(
+            market_session_date=operation_date,
+            decision_date=decision_date,
+            assembled_at=now,
             client=_client(client),
         )
         checkpoint_capture_date = operation_date
@@ -503,23 +576,34 @@ def materialize_public_raw_capture(
     # Prefer an exact same-capture durable checkpoint over touching the
     # provider again. Otherwise fail fast before heavy history downloads when
     # same-day capital sources have not yet published.
-    freshness_from_checkpoint = _same_day_capital_checkpoint_preflight_ready(
-        repo_root=repo_root,
-        checkpoint_dir=checkpoint_dir,
-        trading_dates=trading_dates,
-        operation_date=operation_date,
-    )
-    if not freshness_from_checkpoint:
-        _same_day_capital_preflight(
+    freshness_from_formal_v3 = formal_v3_capital_sources is not None
+    freshness_from_checkpoint = False
+    if freshness_from_formal_v3:
+        _validate_same_day_capital_preflight(
             operation_date=operation_date,
-            client=client,
-            publication_retry_attempts=(
-                4 if timing_mode == "PREOPEN_DUAL_CLOCK_V2" else 1
-            ),
-            publication_retry_backoff_seconds=(
-                20.0 if timing_mode == "PREOPEN_DUAL_CLOCK_V2" else 0.0
-            ),
+            sse_etf_data=formal_v3_capital_sources.sse_etf,
+            szse_etf_data=formal_v3_capital_sources.szse_etf,
+            turnover_data=formal_v3_capital_sources.combined_turnover,
+            diagnostics={"source": "VERIFIED_FORMAL_V3_SOURCE_PACKAGES"},
         )
+    else:
+        freshness_from_checkpoint = _same_day_capital_checkpoint_preflight_ready(
+            repo_root=repo_root,
+            checkpoint_dir=checkpoint_dir,
+            trading_dates=trading_dates,
+            operation_date=operation_date,
+        )
+        if not freshness_from_checkpoint:
+            _same_day_capital_preflight(
+                operation_date=operation_date,
+                client=client,
+                publication_retry_attempts=(
+                    4 if timing_mode == "PREOPEN_DUAL_CLOCK_V2" else 1
+                ),
+                publication_retry_backoff_seconds=(
+                    20.0 if timing_mode == "PREOPEN_DUAL_CLOCK_V2" else 0.0
+                ),
+            )
 
     universe_receipts: dict[str, Any] = {}
     minimum_coverage = float(
@@ -811,6 +895,9 @@ def materialize_public_raw_capture(
                 "same_day_freshness_from_checkpoint": bool(
                     freshness_from_checkpoint
                 ),
+                "same_day_freshness_from_formal_v3": bool(
+                    freshness_from_formal_v3
+                ),
                 "universe": runtime_universe,
                 "sse_capital": {
                     "resumed_chunks": int(capital.resumed_chunks),
@@ -830,8 +917,53 @@ def materialize_public_raw_capture(
         encoding="utf-8",
     )
 
+    sse_etf_data = capital.etf.data.copy()
+    szse_etf_data = szse.data.copy()
+    sse_turnover_data = capital.turnover.sse.copy()
+    szse_turnover_data = capital.turnover.szse.copy()
+    sse_etf_errors = capital.etf.errors.copy()
+    szse_etf_errors = szse.errors.copy()
+    turnover_errors = capital.turnover.errors.copy()
+    turnover = capital.turnover.combined.copy()
+
+    if formal_v3_capital_sources is not None:
+        sse_etf_data = _replace_operation_date_etf_row(
+            sse_etf_data,
+            formal_v3_capital_sources.sse_etf,
+            operation_date=operation_date,
+            fund_code="588000",
+        )
+        szse_etf_data = _replace_operation_date_etf_row(
+            szse_etf_data,
+            formal_v3_capital_sources.szse_etf,
+            operation_date=operation_date,
+            fund_code="159915",
+        )
+        sse_turnover_data = _replace_operation_date_frame(
+            sse_turnover_data,
+            formal_v3_capital_sources.sse_turnover,
+            operation_date=operation_date,
+        )
+        szse_turnover_data = _replace_operation_date_frame(
+            szse_turnover_data,
+            formal_v3_capital_sources.szse_turnover,
+            operation_date=operation_date,
+        )
+        turnover = combine_sse_szse_a_share_turnover(
+            sse_turnover_data, szse_turnover_data
+        )
+        sse_etf_errors = _drop_operation_date_errors(
+            sse_etf_errors, operation_date
+        )
+        szse_etf_errors = _drop_operation_date_errors(
+            szse_etf_errors, operation_date
+        )
+        turnover_errors = _drop_operation_date_errors(
+            turnover_errors, operation_date
+        )
+
     shares = pd.concat(
-        [capital.etf.data.copy(), szse.data.copy()],
+        [sse_etf_data, szse_etf_data],
         ignore_index=True,
         sort=False,
     )
@@ -860,7 +992,6 @@ def materialize_public_raw_capture(
             raise ValueError(f"ETF share source lacks operation-date row for {code}")
     coverage_frame = pd.concat(coverage_rows, ignore_index=True, sort=False)
 
-    turnover = capital.turnover.combined.copy()
     _require_operation_date_row(
         turnover,
         operation_date=operation_date,
@@ -879,22 +1010,22 @@ def materialize_public_raw_capture(
         capture_date=capture_date,
     )
     _write_csv(
-        capital.etf.errors,
+        sse_etf_errors,
         capital_root / "sse_etf_share_errors.csv",
         capture_date=capture_date,
     )
     _write_csv(
-        szse.errors,
+        szse_etf_errors,
         capital_root / "szse_etf_share_errors.csv",
         capture_date=capture_date,
     )
     _write_csv(
-        capital.turnover.sse,
+        sse_turnover_data,
         capital_root / "sse_a_share_turnover.csv",
         capture_date=capture_date,
     )
     _write_csv(
-        capital.turnover.szse,
+        szse_turnover_data,
         capital_root / "szse_a_share_turnover.csv",
         capture_date=capture_date,
     )
@@ -904,7 +1035,7 @@ def materialize_public_raw_capture(
         capture_date=capture_date,
     )
     _write_csv(
-        capital.turnover.errors,
+        turnover_errors,
         capital_root / "sse_szse_turnover_errors.csv",
         capture_date=capture_date,
     )
@@ -961,6 +1092,16 @@ def materialize_public_raw_capture(
         "universes": universe_receipts,
         "etf_share_state": etf_state,
         "turnover_operation_date_present": True,
+        "formal_capture_contract": (
+            "prospective_capture_timing_v3"
+            if formal_v3_capital_sources is not None
+            else None
+        ),
+        "formal_v3_source_observations": (
+            formal_v3_capital_sources.provenance
+            if formal_v3_capital_sources is not None
+            else {}
+        ),
         "files": files,
     }
     receipt_path = output_root / RECEIPT_NAME

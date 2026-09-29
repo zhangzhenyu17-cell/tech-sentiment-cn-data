@@ -1,20 +1,22 @@
-# Prospective Capture V3 — shadow source-observation rail
+# Prospective Capture V3 — formal source-observation rail
 
 ## Scope
 
 V3 decouples **public-data acquisition time** from **decision eligibility**.
-It is shadow-only. It does not replace `PROSPECTIVE_TIMING_V2`, does not modify
-formal evidence qualification, and does not rewrite existing canonical gaps.
+As of the explicit 2026-09-29 activation, V3 is the formal public capture rail.
+It supersedes Timing V2 for future capture/qualification timing only. Historical
+V2 receipts and existing canonical gaps are not reinterpreted or rewritten.
+Individual source packages still do not grant downstream evidence qualification.
 
 ## Invariants
 
 - `market_session_date=T` remains the event date.
 - `decision_date` must be the immediate next A-share trading day.
-- capture may continue after the former 05:30 SLA and after the shadow decision cutoff;
+- capture may continue after the former 05:30 SLA and after the formal source-eligibility cutoff;
 - every successful source receipt preserves `first_observed_at_asia_shanghai`;
 - event date never implies that the value was known earlier;
 - an observation first seen after the cutoff is permanently ineligible for that
-  decision in V3 shadow semantics;
+  decision under formal V3 timing;
 - late recovery may improve data completeness, but never retroactively converts a
   historical `NON_BACKFILLABLE_PROSPECTIVE_EVIDENCE_GAP` into a clean prospective day;
 - no forward outcome, private model semantics, portfolio data, Production change,
@@ -22,7 +24,7 @@ formal evidence qualification, and does not rewrite existing canonical gaps.
 
 ## Source-level persistence
 
-The active shadow collector treats the four capital inputs independently:
+The active formal collector treats the four capital inputs independently:
 
 - `SSE_588000`
 - `SZSE_159915`
@@ -51,7 +53,7 @@ semantics and may still be reported as an operational SLA comparison.
 ## Transport diversity
 
 The source observation receipt records `transport_origin` and `runner_name`.
-Two public-only GitHub-hosted transport origins are active in shadow mode:
+Two public-only GitHub-hosted transport origins are active in formal capture mode:
 `GITHUB_HOSTED` (Ubuntu primary) and `GITHUB_HOSTED_MACOS_FALLBACK`.
 They share the same official source identities, normalization semantics,
 immutable release tags, and one concurrency group. The macOS rail is lower
@@ -66,6 +68,14 @@ identities, exact T, normalization rules, and immutable observation schema.
 
 ## Activation
 
-Formal consumer activation requires a later explicit gate after shadow evidence
-shows that timing, identity, and transport behavior are stable. Until then,
-`formal_evidence_handoff=false` is mandatory.
+Formal consumer activation was explicitly authorized on 2026-09-29. The
+compatibility aggregate artifact remains named `prospective-context-raw-preopen-v2`,
+but future qualification requires V3 source-fetch-completion timestamps no later
+than 08:45 Asia/Shanghai, aggregate artifact completion no later than 09:15, and
+qualification before the 09:30 first eligible execution boundary. Source-level
+`formal_evidence_handoff=false` remains mandatory because qualification occurs
+only after the verified aggregate/private gate.
+
+## Compatibility field
+
+The package schema retains the legacy compatibility key `shadow_decision_eligible` to avoid breaking existing immutable package readers. Under formal V3 activation this key is interpreted only as the source-level “first observed by the formal 08:45 cutoff” flag; it does not itself grant downstream evidence qualification.
