@@ -22,7 +22,7 @@ concurrency:
 jobs:
   capture:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -127,7 +127,7 @@ jobs:
           decision = datetime.strptime(os.environ["DECISION_DATE"], "%Y-%m-%d").date()
           checkpoint_handoff = datetime.combine(decision, time(9, 10), tzinfo=zone)
           remaining = int((checkpoint_handoff - now).total_seconds())
-          budget = min(30 * 60, remaining)
+          budget = min(90 * 60, remaining)
           if budget <= 0:
               raise SystemExit(
                   "FORMAL_V3_RAW_ASSEMBLY_CHECKPOINT_HANDOFF_DEADLINE_PASSED_0910"
@@ -135,7 +135,7 @@ jobs:
           print(budget)
           PY
           )"
-          echo "Formal V3 raw assembly budget: ${BUDGET_SECONDS}s; checkpoint handoff reserved before 09:10 Asia/Shanghai."
+          echo "Formal V3 raw assembly budget: ${BUDGET_SECONDS}s (max 90 minutes); checkpoint handoff reserved before 09:10 Asia/Shanghai."
           timeout --signal=TERM --kill-after=60s "${BUDGET_SECONDS}s" \
             python scripts/build_prospective_context_raw_preopen_v2.py \
               --market-session-date "${{ inputs.market_session_date }}" \

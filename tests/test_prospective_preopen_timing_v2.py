@@ -145,10 +145,11 @@ def test_preopen_workflow_is_manual_only_and_formal_v3_backed() -> None:
     assert "FORMAL_V3_SOURCE_PACKAGE_INCOMPLETE" in text
     assert "--v3-package-root formal-v3-packages" in text
     assert "FORMAL_V3_RAW_ASSEMBLY_CHECKPOINT_HANDOFF_DEADLINE_PASSED_0910" in text
-    assert "budget = min(30 * 60, remaining)" in text
+    assert "budget = min(90 * 60, remaining)" in text
     assert 'timeout --signal=TERM --kill-after=60s "${BUDGET_SECONDS}s"' in text
     assert "08:45" in text
     assert "09:10" in text
+    assert "timeout-minutes: 120" in text
     assert "09:15" in text
     assert '"akshare==1.18.94"' in text
     assert '"pandas==3.0.5"' in text
