@@ -70,6 +70,9 @@ def heal_sidecars(archive: Path, output_dir: Path) -> dict:
         "first_observed_at_asia_shanghai": receipt[
             "first_observed_at_asia_shanghai"
         ],
+        "observation_timestamp_semantics": receipt[
+            "observation_timestamp_semantics"
+        ],
         "shadow_decision_eligible": receipt["shadow_decision_eligible"],
         "formal_evidence_handoff": False,
         "historical_backfill_allowed": False,

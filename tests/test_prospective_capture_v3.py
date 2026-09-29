@@ -207,6 +207,7 @@ def test_v3_sidecars_heal_from_exact_archive(tmp_path: Path) -> None:
         "market_session_date": "2026-09-28",
         "decision_date": "2026-09-29",
         "first_observed_at_asia_shanghai": "2026-09-29T08:30:00+08:00",
+        "observation_timestamp_semantics": "SOURCE_FETCH_COMPLETION_TIME",
         "shadow_decision_eligible": True,
     }
     (root / "SOURCE_OBSERVATION_RECEIPT.json").write_text(
