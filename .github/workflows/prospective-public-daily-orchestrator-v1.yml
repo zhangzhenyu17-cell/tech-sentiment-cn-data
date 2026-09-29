@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "45 15 * * *"
-    - cron: "0,15,30,45 16-19 * * *"
-    - cron: "0 20 * * *"
+    - cron: "0,15,30,45 16-23 * * *"
+    - cron: "0,15,30,45 0 * * *"
+    - cron: "0 1 * * *"
 
 permissions:
   actions: write
@@ -61,13 +62,13 @@ jobs:
 
           # GitHub scheduled workflows can be delivered substantially later than
           # their cron slot. The cron is an invocation allowlist, not permission
-          # to dispatch at arbitrary runtime. Fail closed unless the actual
-          # Asia/Shanghai runner start remains inside the explicit lightweight
-          # wrapper window: 23:45 through 04:00. The independent raw workflow
-          # still owns the absolute 05:30 completion firewall.
+          # to dispatch at arbitrary runtime. The formal V3 wrapper may run from
+          # 23:45 through 09:00 Asia/Shanghai. Source eligibility is independently
+          # frozen at first_observed_at <= 08:45 and the aggregate artifact has a
+          # 09:15 completion deadline.
           local_clock = now.time().replace(tzinfo=None)
           runtime_allowlisted = (
-              local_clock >= time(23, 45) or local_clock <= time(4, 0)
+              local_clock >= time(23, 45) or local_clock <= time(9, 0)
           )
           if not runtime_allowlisted:
               reason = "OUTSIDE_EXPLICIT_WRAPPER_ALLOWLIST"
@@ -85,14 +86,14 @@ jobs:
                       session_close = datetime.combine(
                           session_date, time(15, 0), tzinfo=zone
                       )
-                      freeze_deadline = datetime.combine(
-                          decision_date, time(5, 30), tzinfo=zone
+                      dispatch_deadline = datetime.combine(
+                          decision_date, time(9, 0), tzinfo=zone
                       )
-                      if session_close <= now <= freeze_deadline:
+                      if session_close <= now <= dispatch_deadline:
                           session = session_date.isoformat()
                           decision = decision_date.isoformat()
                           should_run = True
-                          reason = "ACTIVE_SESSION_TO_DECISION_PREOPEN_WINDOW"
+                          reason = "ACTIVE_SESSION_TO_DECISION_FORMAL_V3_WINDOW"
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as h:
               h.write(f"should_run={'true' if should_run else 'false'}\n")
@@ -145,8 +146,102 @@ jobs:
           gh workflow run publish-market-bundle.yml --ref main \
             -f target_date="$MARKET_SESSION_DATE"
 
-      - name: Dispatch exact pre-open public raw capture once
+      - name: Ensure V3 source capture and determine formal eligibility
         if: steps.pair.outputs.should_run == 'true'
+        id: v3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKET_SESSION_DATE: ${{ steps.pair.outputs.market_session_date }}
+          DECISION_DATE: ${{ steps.pair.outputs.decision_date }}
+        run: |
+          set -euo pipefail
+          mkdir -p v3-formal-manifests
+          MISSING=()
+          for SOURCE in SSE_588000 SZSE_159915 SSE_TURNOVER SZSE_TURNOVER; do
+            TAG="prospective-source-observation-v3-${MARKET_SESSION_DATE}-${SOURCE}"
+            COMPLETE=false
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+              COMPLETE=true
+              for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+                grep -Fxq "$REQUIRED" <<<"$ASSETS" || COMPLETE=false
+              done
+            fi
+            if [ "$COMPLETE" = "true" ]; then
+              gh release download "$TAG" \
+                --pattern "$TAG.manifest.json" \
+                --dir v3-formal-manifests
+            else
+              MISSING+=("$SOURCE")
+            fi
+          done
+
+          if [ "${#MISSING[@]}" -gt 0 ]; then
+            ACTIVE="$(
+              gh run list \
+                --workflow prospective-public-continuous-collector-v3.yml \
+                --limit 20 \
+                --json status \
+                --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length'
+            )"
+            if [ "$ACTIVE" -eq 0 ]; then
+              gh workflow run prospective-public-continuous-collector-v3.yml \
+                --ref main \
+                -f market_session_date="$MARKET_SESSION_DATE" \
+                -f decision_date="$DECISION_DATE"
+              echo "Requested V3 collection for missing sources: ${MISSING[*]}"
+            else
+              echo "V3 collector already active; missing sources: ${MISSING[*]}"
+            fi
+            echo "formal_ready=false" >> "$GITHUB_OUTPUT"
+            echo "reason=V3_SOURCE_PACKAGES_INCOMPLETE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, time
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          zone = ZoneInfo("Asia/Shanghai")
+          decision = datetime.fromisoformat(os.environ["DECISION_DATE"]).date()
+          cutoff = datetime.combine(decision, time(8, 45), tzinfo=zone)
+          expected = {"SSE_588000", "SZSE_159915", "SSE_TURNOVER", "SZSE_TURNOVER"}
+          found = set()
+          for path in sorted(Path("v3-formal-manifests").glob("*.manifest.json")):
+              payload = json.loads(path.read_text(encoding="utf-8"))
+              source = str(payload.get("source_key") or "")
+              if source not in expected or source in found:
+                  raise SystemExit("FORMAL_V3_MANIFEST_SOURCE_IDENTITY_INVALID")
+              found.add(source)
+              if payload.get("observation_timestamp_semantics") != "SOURCE_FETCH_COMPLETION_TIME":
+                  raise SystemExit("FORMAL_V3_SOURCE_TIMESTAMP_SEMANTICS_INVALID")
+              if payload.get("shadow_decision_eligible") is not True:
+                  raise SystemExit("FORMAL_V3_SOURCE_NOT_DECISION_ELIGIBLE")
+              if payload.get("formal_evidence_handoff") is not False:
+                  raise SystemExit("FORMAL_V3_SOURCE_HANDOFF_FLAG_DRIFT")
+              if payload.get("historical_backfill_allowed") is not False:
+                  raise SystemExit("FORMAL_V3_SOURCE_BACKFILL_FLAG_DRIFT")
+              if payload.get("retroactive_evidence_qualification_allowed") is not False:
+                  raise SystemExit("FORMAL_V3_SOURCE_RETROACTIVE_FLAG_DRIFT")
+              observed = datetime.fromisoformat(
+                  str(payload.get("first_observed_at_asia_shanghai") or "")
+              )
+              if observed.tzinfo is None:
+                  raise SystemExit("FORMAL_V3_SOURCE_TIMESTAMP_NAIVE")
+              if observed.astimezone(zone) > cutoff:
+                  raise SystemExit("FORMAL_V3_SOURCE_AFTER_0845_CUTOFF")
+          if found != expected:
+              raise SystemExit("FORMAL_V3_MANIFEST_SET_INCOMPLETE")
+          print("FORMAL_V3_SOURCE_SET_ELIGIBLE")
+          PY
+          echo "formal_ready=true" >> "$GITHUB_OUTPUT"
+          echo "reason=FORMAL_V3_SOURCE_SET_ELIGIBLE" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch exact V3-backed public raw assembly once
+        if: steps.pair.outputs.should_run == 'true' && steps.v3.outputs.formal_ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           MARKET_SESSION_DATE: ${{ steps.pair.outputs.market_session_date }}
@@ -186,9 +281,14 @@ jobs:
             --ref main \
             -f market_session_date="$MARKET_SESSION_DATE" \
             -f decision_date="$DECISION_DATE"
-          echo "Dispatched public raw capture: ${MARKET_SESSION_DATE} -> ${DECISION_DATE}"
+          echo "Dispatched formal V3-backed public raw assembly: ${MARKET_SESSION_DATE} -> ${DECISION_DATE}"
 
       - name: Record non-trading/no-op state
         if: steps.pair.outputs.should_run != 'true'
         run: |
           echo "No prospective public dispatch required: ${{ steps.pair.outputs.reason }}"
+
+      - name: Record waiting-for-V3 state
+        if: steps.pair.outputs.should_run == 'true' && steps.v3.outputs.formal_ready != 'true'
+        run: |
+          echo "Formal public raw assembly is waiting for eligible V3 source packages: ${{ steps.v3.outputs.reason }}"

@@ -534,3 +534,24 @@ def test_public_v1_capture_workflow_is_manual_fail_closed_tombstone() -> None:
     assert "LEGACY_PROSPECTIVE_RAIL_SUPERSEDED_BY_TIMING_V2" in text
     assert "build_prospective_context_raw_v1.py" not in text
     assert "timeout-minutes: 2" in text
+
+
+def test_formal_v3_etf_override_replaces_operation_date_row() -> None:
+    from tech_sentiment.prospective_context_raw_v1 import _replace_operation_date_etf_row
+
+    base = pd.DataFrame(
+        {
+            "date": ["2026-09-28", "2026-09-29"],
+            "fund_code": ["588000", "588000"],
+            "fund_shares": [1.0, 2.0],
+        }
+    )
+    override = pd.DataFrame(
+        {"date": ["2026-09-29"], "fund_code": ["588000"], "fund_shares": [9.0]}
+    )
+    out = _replace_operation_date_etf_row(
+        base, override, operation_date="2026-09-29", fund_code="588000"
+    )
+    today = out[pd.to_datetime(out["date"]).dt.normalize().eq(pd.Timestamp("2026-09-29"))]
+    assert len(today) == 1
+    assert float(today.iloc[0]["fund_shares"]) == 9.0

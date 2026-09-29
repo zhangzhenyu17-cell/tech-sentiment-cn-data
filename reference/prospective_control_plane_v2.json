@@ -1,11 +1,32 @@
 {
-  "schema_version": "prospective-control-plane-v2",
-  "status": "ACTIVE_SINGLE_TIMING_V2_RAIL",
-  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "active_chain": [
+    "prospective-public-continuous-collector-v3.yml",
+    "prospective-public-continuous-collector-v3-macos-fallback.yml",
+    "prospective-public-daily-orchestrator-v1.yml",
+    "prospective-context-raw-preopen-v2.yml"
+  ],
   "authoritative_for": [
     "PROSPECTIVE_WORKFLOW_IDENTITY",
     "PROSPECTIVE_TRIGGER_CLASS",
     "PROSPECTIVE_LIFECYCLE_CLASS"
+  ],
+  "invariants": {
+    "active_capture_automatic_trigger_allowed": true,
+    "evidence_qualification_change_allowed": true,
+    "formal_v3_replacement_authorized": true,
+    "forward_outcome_read_allowed": false,
+    "historical_backfill_allowed": false,
+    "late_observation_retroactive_qualification_allowed": false,
+    "model_change_allowed": false,
+    "only_orchestrator_may_have_automatic_trigger": false,
+    "production_change_allowed": false,
+    "threshold_change_allowed": false,
+    "trading_authority_change_allowed": false,
+    "universe_change_allowed": false,
+    "v1_operational_reactivation_allowed": false
+  },
+  "legacy_fail_closed": [
+    "prospective-context-raw-v1.yml"
   ],
   "not_authoritative_for": [
     "MODEL_FORMULA",
@@ -16,77 +37,95 @@
     "PORTFOLIO_POLICY",
     "TRADING_AUTHORITY"
   ],
-  "active_chain": [
-    "prospective-public-daily-orchestrator-v1.yml",
-    "prospective-context-raw-preopen-v2.yml"
-  ],
+  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "schema_version": "prospective-control-plane-v2",
   "shared_upstream_dependency": {
-    "workflow": "publish-market-bundle.yml",
+    "may_promote_prospective_evidence": false,
     "purpose": "EXACT_IMMUTABLE_PUBLIC_MARKET_BUNDLE",
-    "may_promote_prospective_evidence": false
+    "workflow": "publish-market-bundle.yml"
   },
-  "legacy_fail_closed": [
-    "prospective-context-raw-v1.yml"
-  ],
+  "status": "ACTIVE_FORMAL_V3_CAPTURE_WITH_COMPATIBILITY_ASSEMBLER",
   "timing_contract": {
-    "market_session": "T",
+    "continuous_capture_after_session_close": true,
     "decision_date": "IMMEDIATE_NEXT_A_SHARE_TRADING_DAY_T_PLUS_1",
-    "earliest_operational_probe_asia_shanghai": "23:45",
-    "data_freeze_deadline_asia_shanghai": "05:30",
-    "evidence_window_extended_by_retry_cadence": false
+    "first_eligible_execution_asia_shanghai": "09:30",
+    "formal_artifact_deadline_asia_shanghai": "09:15",
+    "formal_source_cutoff_asia_shanghai": "08:45",
+    "late_capture_continues_after_cutoff": true,
+    "late_capture_retroactive_qualification_allowed": false,
+    "market_session": "T"
   },
   "workflows": [
     {
-      "file": "prospective-public-daily-orchestrator-v1.yml",
+      "crons": [
+        "45 15 * * *",
+        "15,45 16-23 * * *",
+        "15,45 0 * * *",
+        "15 1,2,4,6 * * *"
+      ],
+      "file": "prospective-public-continuous-collector-v3.yml",
+      "lifecycle_class": "ACTIVE_FORMAL_PRIMARY_SOURCE_COLLECTOR",
+      "permissions": [
+        "contents: write"
+      ],
       "triggers": [
         "workflow_dispatch",
         "schedule"
-      ],
+      ]
+    },
+    {
       "crons": [
-        "0 20 * * *",
-        "0,15,30,45 16-19 * * *",
-        "45 15 * * *"
+        "30 0,10,20 * * *"
       ],
+      "file": "prospective-public-continuous-collector-v3-macos-fallback.yml",
+      "lifecycle_class": "ACTIVE_FORMAL_NETWORK_FALLBACK_COLLECTOR",
+      "permissions": [
+        "contents: write"
+      ],
+      "triggers": [
+        "workflow_dispatch",
+        "schedule"
+      ]
+    },
+    {
+      "crons": [
+        "45 15 * * *",
+        "0,15,30,45 16-23 * * *",
+        "0,15,30,45 0 * * *",
+        "0 1 * * *"
+      ],
+      "file": "prospective-public-daily-orchestrator-v1.yml",
+      "lifecycle_class": "ACTIVE_FORMAL_V3_ASSEMBLY_ORCHESTRATOR",
       "permissions": [
         "actions: write",
         "contents: read"
       ],
-      "lifecycle_class": "ACTIVE_AUTOMATED_ORCHESTRATOR"
+      "triggers": [
+        "workflow_dispatch",
+        "schedule"
+      ]
     },
     {
-      "file": "prospective-context-raw-preopen-v2.yml",
-      "triggers": [
-        "workflow_dispatch"
-      ],
       "crons": [],
+      "file": "prospective-context-raw-preopen-v2.yml",
+      "lifecycle_class": "ACTIVE_FORMAL_V3_COMPATIBILITY_ASSEMBLER",
       "permissions": [
         "contents: write"
       ],
-      "lifecycle_class": "ACTIVE_DISPATCHED_LEAF"
-    },
-    {
-      "file": "prospective-context-raw-v1.yml",
       "triggers": [
         "workflow_dispatch"
-      ],
+      ]
+    },
+    {
       "crons": [],
+      "file": "prospective-context-raw-v1.yml",
+      "lifecycle_class": "LEGACY_FAIL_CLOSED",
       "permissions": [
         "contents: read"
       ],
-      "lifecycle_class": "LEGACY_FAIL_CLOSED"
+      "triggers": [
+        "workflow_dispatch"
+      ]
     }
-  ],
-  "invariants": {
-    "only_orchestrator_may_have_automatic_trigger": true,
-    "v1_operational_reactivation_allowed": false,
-    "active_capture_automatic_trigger_allowed": false,
-    "historical_backfill_allowed": false,
-    "forward_outcome_read_allowed": false,
-    "model_change_allowed": false,
-    "threshold_change_allowed": false,
-    "universe_change_allowed": false,
-    "evidence_qualification_change_allowed": false,
-    "production_change_allowed": false,
-    "trading_authority_change_allowed": false
-  }
+  ]
 }

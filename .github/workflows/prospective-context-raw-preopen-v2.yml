@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       market_session_date:
-        description: Market session date T (YYYY-MM-DD); operationally run at/after 23:45 Asia/Shanghai on T
+        description: Market session date T (YYYY-MM-DD); formal V3-backed assembly uses exact immutable source observations
         required: true
         type: string
       decision_date:
-        description: Immediate next A-share trading day T+1 (YYYY-MM-DD); capture must finish by 05:30 Asia/Shanghai
+        description: Immediate next A-share trading day T+1 (YYYY-MM-DD); source eligibility cutoff 08:45 and artifact deadline 09:15 Asia/Shanghai
         required: true
         type: string
 
@@ -31,36 +31,41 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Reject operationally premature same-session provider probe
-        env:
-          MARKET_SESSION_DATE: ${{ inputs.market_session_date }}
-          DECISION_DATE: ${{ inputs.decision_date }}
-        run: |
-          python - <<'PY'
-          from datetime import datetime, time
-          import os
-          from zoneinfo import ZoneInfo
-
-          now = datetime.now(ZoneInfo("Asia/Shanghai"))
-          session = os.environ["MARKET_SESSION_DATE"]
-          decision = os.environ["DECISION_DATE"]
-          if now.date().isoformat() == session and now.timetz().replace(tzinfo=None) < time(23, 45):
-              raise SystemExit(
-                  "PREOPEN_PUBLIC_SOURCE_PUBLICATION_WINDOW_NOT_YET_MATURE: "
-                  "the frozen evidence window is already legal after 15:00, but the "
-                  "required 588000/159915 official ETF-share sources have not been "
-                  "operationally reliable that early. Re-run at/after 23:45 "
-                  "Asia/Shanghai on T, or on T+1 before 05:30. "
-                  f"session={session} decision={decision} now={now.isoformat()}"
-              )
-          PY
-
       - name: Install public data environment
         run: |
           python -m pip install --upgrade pip
           python -m pip install "akshare==1.18.94" "pandas==3.0.5" "pytest==8.4.2"
           python -m pip install -e ".[data,dev]"
           python -m pip check
+
+      - name: Download exact immutable V3 capital source packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKET_SESSION_DATE: ${{ inputs.market_session_date }}
+        run: |
+          set -euo pipefail
+          mkdir -p formal-v3-packages
+          for SOURCE in SSE_588000 SZSE_159915 SSE_TURNOVER SZSE_TURNOVER; do
+            TAG="prospective-source-observation-v3-${MARKET_SESSION_DATE}-${SOURCE}"
+            ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+            COUNT="$(printf '%s\n' "$ASSETS" | sed '/^$/d' | wc -l | tr -d ' ')"
+            if [ "$COUNT" -ne 3 ]; then
+              echo "FORMAL_V3_SOURCE_ASSET_SURFACE_MISMATCH: $TAG count=$COUNT" >&2
+              exit 1
+            fi
+            for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+              grep -Fxq "$REQUIRED" <<<"$ASSETS" || {
+                echo "FORMAL_V3_SOURCE_PACKAGE_INCOMPLETE: $TAG/$REQUIRED" >&2
+                exit 1
+              }
+            done
+            mkdir -p "formal-v3-packages/$SOURCE"
+            gh release download "$TAG" \
+              --pattern "$TAG.tar.gz" \
+              --pattern "$TAG.sha256" \
+              --pattern "$TAG.manifest.json" \
+              --dir "formal-v3-packages/$SOURCE"
+          done
 
       - name: Resolve exact durable checkpoint identities
         run: |
@@ -108,13 +113,14 @@ jobs:
             --cache-root .cache/prospective_context_raw \
             --out checkpoint-meta/restored.json
 
-      - name: Capture previous-session public raw inputs before 05:30 freeze
+      - name: Assemble formal V3-backed previous-session public raw inputs
         id: capture
         run: |
           python scripts/build_prospective_context_raw_preopen_v2.py \
             --market-session-date "${{ inputs.market_session_date }}" \
             --decision-date "${{ inputs.decision_date }}" \
-            --source-commit "$GITHUB_SHA"
+            --source-commit "$GITHUB_SHA" \
+            --v3-package-root formal-v3-packages
 
       - name: Package every completed reusable checkpoint
         id: checkpoint_package
@@ -153,7 +159,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: prospective-context-preopen-checkpoint-diagnostics-${{ github.run_id }}
+          name: prospective-context-formal-v3-checkpoint-diagnostics-${{ github.run_id }}
           path: |
             checkpoint-meta/
             .cache/prospective_context_raw/runtime_summary.json
@@ -196,7 +202,7 @@ jobs:
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "Prospective pre-open public raw Context ${{ inputs.market_session_date }} -> ${{ inputs.decision_date }}" \
-              --notes "Public-only previous-session raw inputs, frozen no later than 05:30 Asia/Shanghai for next-trading-day pre-open decision. No historical backfill or evidence qualification is granted here."
+              --notes "Formal V3-backed public Context bundle. Capital source observations must be first observed no later than 08:45 Asia/Shanghai; the aggregate artifact must complete by 09:15. No historical backfill, retroactive qualification, outcome read, Production change, or trading-authority change is allowed."
           fi
 
           mkdir -p existing

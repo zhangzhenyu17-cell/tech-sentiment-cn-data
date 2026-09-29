@@ -69,7 +69,7 @@ def validate_capture_pair_v3(
 
     return {
         "timing_contract": "PROSPECTIVE_CAPTURE_TIMING_V3",
-        "activation_mode": "SHADOW_ONLY_NO_FORMAL_EVIDENCE_HANDOFF",
+        "activation_mode": "FORMAL_CAPTURE_SOURCE_NO_SOURCE_LEVEL_HANDOFF",
         "market_session_date": market_session_date,
         "decision_date": decision_date,
         "session_close_asia_shanghai": session_close.isoformat(),

@@ -1,17 +1,13 @@
 {
-  "schema_version": "prospective-daily-automation-v1",
+  "authorization_scope": "AUTHORIZED_FORMAL_V3_CAPTURE_REPLACEMENT_WITH_FROZEN_MODEL_AND_TRADING_BOUNDARIES",
   "authorized_on": "2026-09-22",
-  "authorization_scope": "FROZEN_PROSPECTIVE_DAILY_OPERATIONS_ONLY",
-  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
   "automatic_workflow_allowlist": {
     "prospective-public-daily-orchestrator-v1.yml": {
-      "triggers": [
-        "schedule"
-      ],
       "cron_utc": [
         "45 15 * * *",
-        "0,15,30,45 16-19 * * *",
-        "0 20 * * *"
+        "0,15,30,45 16-23 * * *",
+        "0,15,30,45 0 * * *",
+        "0 1 * * *"
       ],
       "intended_time_asia_shanghai": [
         "23:45",
@@ -31,29 +27,57 @@
         "03:15",
         "03:30",
         "03:45",
-        "04:00"
+        "04:00",
+        "04:15",
+        "04:30",
+        "04:45",
+        "05:00",
+        "05:15",
+        "05:30",
+        "05:45",
+        "06:00",
+        "06:15",
+        "06:30",
+        "06:45",
+        "07:00",
+        "07:15",
+        "07:30",
+        "07:45",
+        "08:00",
+        "08:15",
+        "08:30",
+        "08:45",
+        "09:00"
       ],
-      "necessity": "Start at the earliest operationally mature 23:45 window and retry idempotently every 15 minutes through a final 04:00 opportunity. First-night evidence showed GitHub scheduled Actions can arrive with hour-scale delay; denser lightweight wrapper triggers increase the chance that at least one dispatch is delivered early enough while complete-asset and active-run guards make repeats no-op after success. The raw target keeps its independent 90-minute job bound and absolute 05:30 completion firewall, so this redundancy does not extend the evidence window."
+      "necessity": "Formal V3 capture replacement: retry the lightweight wrapper every 15 minutes through the 08:45 source-eligibility cutoff, with one final 09:00 assembly-dispatch opportunity. The wrapper requests the V3 collector when source packages are incomplete and dispatches the compatibility raw assembler only when all four immutable source observations are complete, source-fetch-completion timestamped, and first observed by 08:45 Asia/Shanghai. The aggregate artifact must complete by 09:15; late V3 observations remain captured but never become retroactively decision-eligible.",
+      "triggers": [
+        "schedule"
+      ]
     }
   },
+  "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "safety": {
+    "evidence_qualification_changed": true,
+    "exact_dated_release_required": true,
+    "formal_v3_artifact_deadline_asia_shanghai": "09:15",
+    "formal_v3_source_cutoff_asia_shanghai": "08:45",
+    "forward_outcome_read_allowed": false,
+    "historical_backfill_allowed": false,
+    "intervening_non_trading_days_preserve_active_window": true,
+    "last_wrapper_opportunity_asia_shanghai": "09:00",
+    "non_trading_day_outside_active_window_noop": true,
+    "private_evidence_allowed": false,
+    "private_model_material_allowed": false,
+    "research_result_allowed": false,
+    "rolling_latest_substitution_allowed": false,
+    "scheduler_delay_redundancy_minutes": 15,
+    "trading_authority_changed": false,
+    "trading_calendar_required": true
+  },
+  "schema_version": "prospective-daily-automation-v1",
   "target_workflows": [
     "publish-market-bundle.yml",
+    "prospective-public-continuous-collector-v3.yml",
     "prospective-context-raw-preopen-v2.yml"
-  ],
-  "safety": {
-    "trading_calendar_required": true,
-    "exact_dated_release_required": true,
-    "rolling_latest_substitution_allowed": false,
-    "historical_backfill_allowed": false,
-    "private_model_material_allowed": false,
-    "private_evidence_allowed": false,
-    "forward_outcome_read_allowed": false,
-    "research_result_allowed": false,
-    "evidence_qualification_changed": false,
-    "trading_authority_changed": false,
-    "non_trading_day_outside_active_window_noop": true,
-    "intervening_non_trading_days_preserve_active_window": true,
-    "scheduler_delay_redundancy_minutes": 15,
-    "last_wrapper_opportunity_asia_shanghai": "04:00"
-  }
+  ]
 }

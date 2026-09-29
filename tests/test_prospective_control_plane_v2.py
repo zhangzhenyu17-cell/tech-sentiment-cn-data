@@ -61,26 +61,43 @@ def test_registered_public_prospective_surface_matches_yaml() -> None:
         assert sorted(row["permissions"]) == _permissions(text), row["file"]
 
 
-def test_only_public_prospective_orchestrator_is_automatic() -> None:
+def test_formal_v3_public_automatic_surface_is_explicit() -> None:
     payload = _payload()
     automatic = [
         row["file"]
         for row in payload["workflows"]
         if AUTOMATIC.intersection(row["triggers"])
     ]
-    assert automatic == ["prospective-public-daily-orchestrator-v1.yml"]
-    row = next(
+    assert automatic == [
+        "prospective-public-continuous-collector-v3.yml",
+        "prospective-public-continuous-collector-v3-macos-fallback.yml",
+        "prospective-public-daily-orchestrator-v1.yml",
+    ]
+    orchestrator = next(
         item
         for item in payload["workflows"]
         if item["file"] == "prospective-public-daily-orchestrator-v1.yml"
     )
-    assert sorted(row["crons"]) == sorted(
+    assert sorted(orchestrator["crons"]) == sorted(
         [
             "45 15 * * *",
-            "0,15,30,45 16-19 * * *",
-            "0 20 * * *",
+            "0,15,30,45 16-23 * * *",
+            "0,15,30,45 0 * * *",
+            "0 1 * * *",
         ]
     )
+    primary = next(
+        item
+        for item in payload["workflows"]
+        if item["file"] == "prospective-public-continuous-collector-v3.yml"
+    )
+    assert primary["lifecycle_class"] == "ACTIVE_FORMAL_PRIMARY_SOURCE_COLLECTOR"
+    fallback = next(
+        item
+        for item in payload["workflows"]
+        if item["file"] == "prospective-public-continuous-collector-v3-macos-fallback.yml"
+    )
+    assert fallback["lifecycle_class"] == "ACTIVE_FORMAL_NETWORK_FALLBACK_COLLECTOR"
 
 
 def test_public_v1_capture_is_fail_closed_tombstone() -> None:
@@ -99,34 +116,45 @@ def test_public_v1_capture_is_fail_closed_tombstone() -> None:
     assert "contents: write" not in text
 
 
-def test_v2_capture_remains_manual_leaf_with_fixed_freeze() -> None:
+def test_compatibility_raw_leaf_is_formal_v3_backed_and_manual_only() -> None:
     payload = _payload()
     row = next(
         item
         for item in payload["workflows"]
         if item["file"] == "prospective-context-raw-preopen-v2.yml"
     )
-    assert row["lifecycle_class"] == "ACTIVE_DISPATCHED_LEAF"
+    assert row["lifecycle_class"] == "ACTIVE_FORMAL_V3_COMPATIBILITY_ASSEMBLER"
     assert row["triggers"] == ["workflow_dispatch"]
     text = _text(row["file"])
     assert "prospective-context-raw-preopen-v2" in text
-    assert "05:30" in text
+    assert "formal V3-backed assembly" in text
+    assert "08:45" in text
+    assert "09:15" in text
+    assert "--v3-package-root formal-v3-packages" in text
     for forbidden in ("\n  schedule:", "\n  workflow_run:", "\n  push:", "\n  pull_request:"):
         assert forbidden not in text
 
 
-def test_control_plane_does_not_widen_evidence_window_or_authority() -> None:
+def test_control_plane_formal_v3_promotion_is_bounded() -> None:
     payload = _payload()
-    assert payload["timing_contract"]["data_freeze_deadline_asia_shanghai"] == "05:30"
-    assert payload["timing_contract"]["evidence_window_extended_by_retry_cadence"] is False
+    timing = payload["timing_contract"]
+    assert timing["formal_source_cutoff_asia_shanghai"] == "08:45"
+    assert timing["formal_artifact_deadline_asia_shanghai"] == "09:15"
+    assert timing["first_eligible_execution_asia_shanghai"] == "09:30"
+    assert timing["continuous_capture_after_session_close"] is True
+    assert timing["late_capture_continues_after_cutoff"] is True
+    assert timing["late_capture_retroactive_qualification_allowed"] is False
     assert payload["shared_upstream_dependency"]["may_promote_prospective_evidence"] is False
+    assert payload["invariants"]["formal_v3_replacement_authorized"] is True
+    assert payload["invariants"]["evidence_qualification_change_allowed"] is True
+    assert payload["invariants"]["active_capture_automatic_trigger_allowed"] is True
+    assert payload["invariants"]["late_observation_retroactive_qualification_allowed"] is False
     for key in (
         "historical_backfill_allowed",
         "forward_outcome_read_allowed",
         "model_change_allowed",
         "threshold_change_allowed",
         "universe_change_allowed",
-        "evidence_qualification_change_allowed",
         "production_change_allowed",
         "trading_authority_change_allowed",
     ):

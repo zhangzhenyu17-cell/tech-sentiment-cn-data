@@ -251,7 +251,7 @@ def capture_capital_source_observations_v3(
 
     summary = {
         "schema_version": "prospective-source-observation-attempt-v3",
-        "activation_mode": "SHADOW_ONLY_NO_FORMAL_EVIDENCE_HANDOFF",
+        "activation_mode": "FORMAL_CAPTURE_SOURCE_NO_SOURCE_LEVEL_HANDOFF",
         "market_session_date": market_session_date,
         "decision_date": decision_date,
         "attempt_started_at_asia_shanghai": attempt_started_at.astimezone(SHANGHAI).isoformat(),

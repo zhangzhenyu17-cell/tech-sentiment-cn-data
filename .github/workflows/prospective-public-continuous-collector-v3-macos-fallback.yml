@@ -174,7 +174,7 @@ jobs:
               "$ARCHIVE" "$CHECKSUM" "$MANIFEST" \
               --target "$GITHUB_SHA" \
               --title "Prospective source observation V3 $TAG" \
-              --notes "Shadow-only immutable public source observation from GitHub-hosted macOS fallback. Same official source identity and normalization; no formal evidence handoff, historical backfill, outcome read, Production change, or trading authority."
+              --notes "Formal V3 capture source observation from GitHub-hosted macOS fallback. Same official source identity and normalization; the source package alone grants no evidence handoff and cannot enable historical backfill, outcome read, Production change, or trading authority."
           done
 
       - name: Upload fallback diagnostics

@@ -17,7 +17,7 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Capture source-level public observations for Prospective Capture V3 shadow mode."
+        description="Capture source-level public observations for formal Prospective Capture V3."
     )
     parser.add_argument("--market-session-date", required=True)
     parser.add_argument("--decision-date", required=True)

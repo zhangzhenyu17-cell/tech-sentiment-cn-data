@@ -36,7 +36,7 @@ jobs:
           python-version: "3.11.16"
           cache: pip
 
-      - name: Install frozen shadow collection environment
+      - name: Install frozen formal V3 collection environment
         run: |
           python -m pip install --upgrade pip
           python -m pip install "akshare==1.18.94" "pandas==3.0.5"
@@ -223,7 +223,7 @@ jobs:
               gh release create "$TAG" \
                 --target "$GITHUB_SHA" \
                 --title "Prospective source observation V3 $TAG" \
-                --notes "Shadow-only immutable public source observation. first_observed_at is preserved in the receipt. No formal evidence handoff, historical backfill, outcome read, Production change, or trading authority."
+                --notes "Formal V3 capture source observation. This source package alone grants no evidence handoff; first_observed_at is immutable. No historical backfill, outcome read, Production change, or trading authority."
             fi
             ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
             for LOCAL in "$ARCHIVE" "$CHECKSUM" "$MANIFEST"; do
@@ -249,7 +249,7 @@ jobs:
             done
           done
 
-      - name: Upload V3 shadow attempt diagnostics
+      - name: Upload V3 capture attempt diagnostics
         if: steps.pair.outputs.should_run == 'true' && steps.missing.outputs.all_complete != 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -263,4 +263,4 @@ jobs:
       - name: Record scheduled no-op
         if: steps.pair.outputs.should_run != 'true'
         run: |
-          echo "V3 shadow collector no-op: ${{ steps.pair.outputs.reason }}"
+          echo "V3 formal collector no-op: ${{ steps.pair.outputs.reason }}"
