@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -10,10 +11,16 @@ from tech_sentiment.index_price import (
     _DIRECT_EASTMONEY_SECIDS,
     _TENCENT_INDEX_SYMBOLS,
 )
-from scripts.materialize_market_regime_v0_public_input import (
-    INDEX_CODES,
-    build_market_regime_public_input,
+_ROOT = Path(__file__).resolve().parents[1]
+_SPEC = importlib.util.spec_from_file_location(
+    "market_regime_v0_public_materializer",
+    _ROOT / "scripts/materialize_market_regime_v0_public_input.py",
 )
+assert _SPEC is not None and _SPEC.loader is not None
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
+INDEX_CODES = _MODULE.INDEX_CODES
+build_market_regime_public_input = _MODULE.build_market_regime_public_input
 
 
 def _fake_fetcher(code: str, *, start_date: str, end_date: str, **_: object) -> pd.DataFrame:
