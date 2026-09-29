@@ -180,11 +180,11 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert entry["cron_utc"] == [
         "45 15 * * *",
         "0,15,30,45 16-23 * * *",
-        "0,15,30,45 0 * * *",
-        "0 1 * * *",
+        "0,15,30,35,40,45,50,55 0 * * *",
+        "0,5 1 * * *",
     ]
     assert entry["intended_time_asia_shanghai"][0] == "23:45"
-    assert entry["intended_time_asia_shanghai"][-1] == "09:00"
+    assert entry["intended_time_asia_shanghai"][-1] == "09:05"
     assert "08:45" in entry["necessity"]
     assert "09:15" in entry["necessity"]
     assert manifest["authorization_scope"] == (
@@ -197,7 +197,10 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert safety["intervening_non_trading_days_preserve_active_window"] is True
     assert safety["exact_dated_release_required"] is True
     assert safety["scheduler_delay_redundancy_minutes"] == 15
-    assert safety["last_wrapper_opportunity_asia_shanghai"] == "09:00"
+    assert safety["last_wrapper_opportunity_asia_shanghai"] == "09:05"
+    assert safety["near_cutoff_wrapper_cadence_minutes"] == 5
+    assert safety["near_cutoff_wrapper_window_asia_shanghai"] == "08:30-09:05"
+    assert safety["near_cutoff_wrapper_does_not_relax_source_cutoff"] is True
     assert safety["formal_v3_source_cutoff_asia_shanghai"] == "08:45"
     assert safety["formal_v3_artifact_deadline_asia_shanghai"] == "09:15"
     assert safety["evidence_qualification_changed"] is True
@@ -217,8 +220,8 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     ).read_text(encoding="utf-8")
     assert 'cron: "45 15 * * *"' in text
     assert 'cron: "0,15,30,45 16-23 * * *"' in text
-    assert 'cron: "0,15,30,45 0 * * *"' in text
-    assert 'cron: "0 1 * * *"' in text
+    assert 'cron: "0,15,30,35,40,45,50,55 0 * * *"' in text
+    assert 'cron: "0,5 1 * * *"' in text
     assert "workflow_dispatch:" in text
     assert "actions: write" in text
     assert "publish-market-bundle.yml" in text
