@@ -111,14 +111,14 @@ class FakeSession:
 def test_fetch_index_history_normalizes_legacy_akshare_contract_for_unknown_code() -> None:
     client = FakeAKShare()
     out = fetch_index_history(
-        "000300",
+        "000016",
         start_date="2026-06-01",
         end_date="2026-06-30",
         client=client,
     )
 
-    assert client.legacy_calls[0]["symbol"] == "000300"
-    assert list(out["index_code"].unique()) == ["000300"]
+    assert client.legacy_calls[0]["symbol"] == "000016"
+    assert list(out["index_code"].unique()) == ["000016"]
     assert out["date"].dtype.kind == "M"
     assert list(out["close"]) == [1010.0, 1005.0, 1020.0]
     assert list(out["pct_chg"]) == [1.0, -0.5, 1.49]
@@ -127,7 +127,14 @@ def test_fetch_index_history_normalizes_legacy_akshare_contract_for_unknown_code
 
 @pytest.mark.parametrize(
     ("code", "expected_symbol"),
-    [("000688", "sh000688"), ("000985", "sh000985"), ("399673", "sz399673")],
+    [
+        ("000300", "sh000300"),
+        ("000688", "sh000688"),
+        ("000905", "sh000905"),
+        ("000985", "sh000985"),
+        ("399006", "sz399006"),
+        ("399673", "sz399673"),
+    ],
 )
 def test_fetch_index_history_uses_tencent_for_formal_indices(
     code: str, expected_symbol: str
@@ -175,7 +182,13 @@ def test_fetch_index_history_retries_tencent_before_fallback() -> None:
 
 @pytest.mark.parametrize(
     ("code", "expected_secid"),
-    [("000688", "1.000688"), ("000985", "1.000985")],
+    [
+        ("000300", "1.000300"),
+        ("000688", "1.000688"),
+        ("000905", "1.000905"),
+        ("000985", "1.000985"),
+        ("399006", "0.399006"),
+    ],
 )
 def test_fetch_index_history_falls_back_to_direct_eastmoney_after_tencent_failure(
     code: str, expected_secid: str

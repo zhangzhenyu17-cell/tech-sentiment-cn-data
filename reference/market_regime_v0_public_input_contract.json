@@ -1,0 +1,47 @@
+{
+  "schema_version": "market-regime-v0-public-input-contract-v1",
+  "product_id": "MARKET_REGIME_V0_BROAD_INDEX_INPUT",
+  "status": "PUBLIC_RAW_INPUT_ONLY_NO_MODEL_OUTPUT",
+  "purpose": "Provide four official public A-share index price rails for a private, non-predictive current-state market regime classifier.",
+  "index_universe": {
+    "000985": "CSI All Share primary broad-market anchor",
+    "000300": "CSI 300 large-cap confirmation",
+    "000905": "CSI 500 mid-cap confirmation",
+    "399006": "ChiNext Index growth confirmation"
+  },
+  "minimum_history_sessions": 121,
+  "price_adjustment": "NONE",
+  "required_columns": [
+    "date",
+    "index_code",
+    "open",
+    "close",
+    "high",
+    "low",
+    "volume",
+    "amount",
+    "pct_chg",
+    "provider"
+  ],
+  "authority": {
+    "contains_model_output": false,
+    "contains_private_evidence": false,
+    "may_promote_evidence": false,
+    "may_change_evidence_eligibility": false,
+    "may_change_model_factor_threshold_signal": false,
+    "may_change_production": false,
+    "may_authorize_trading": false,
+    "public_handoff_ready_grants_private_qualification": false
+  },
+  "pit_semantics": {
+    "latest_row_must_not_exceed_requested_as_of_date": true,
+    "future_rows_allowed": false,
+    "historical_backfill_is_public_input_materialization_not_outcome_read": true
+  },
+  "update_policy": {
+    "producer": "scripts/materialize_market_regime_v0_public_input.py",
+    "workflow": null,
+    "automatic_trigger": false,
+    "manual_only": true
+  }
+}
