@@ -58,8 +58,7 @@
   "workflows": [
     {
       "crons": [
-        "45 15 * * *",
-        "15,45 16-23 * * *",
+        "15,45 7-23 * * *",
         "15,45 0 * * *",
         "15 1,2,4,6 * * *"
       ],
@@ -69,6 +68,7 @@
         "actions: write",
         "contents: write"
       ],
+      "schedule_intent": "15:15 Asia/Shanghai post-close start; 30-minute retries through 08:45; sparse late recovery thereafter.",
       "triggers": [
         "workflow_dispatch",
         "schedule"

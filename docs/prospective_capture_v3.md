@@ -43,7 +43,9 @@ without its archive fails closed, and any byte conflict fails closed.
 
 ## Scheduling
 
-The scheduled GitHub-hosted collector starts at 23:45 Asia/Shanghai, retries
+The scheduled GitHub-hosted collector starts at 15:15 Asia/Shanghai, fifteen minutes after the market-session close, and retries every 30 minutes through the 08:45 formal source cutoff. It also retains sparse post-cutoff late-recovery attempts. This earlier start reduces unobserved post-close publication time without changing decision eligibility semantics.
+
+The collector retries
 through the morning decision window, and continues low-frequency late recovery
 through 14:15. Manual dispatch may provide an exact T/T+1 pair after that window.
 
