@@ -14,7 +14,10 @@ on:
   schedule:
     # 15:15 Asia/Shanghai onward: persist source availability close to publication.
     - cron: "15,45 7-23 * * *"
-    - cron: "15,45 0 * * *"
+    # Near the 08:45 eligibility cutoff, observe every five minutes.
+    - cron: "15,20,25,30,35,40,45 0 * * *"
+    # The 08:45 dispatch is late-recovery only unless source-fetch completion itself
+    # is still no later than the immutable 08:45 eligibility cutoff.
     # Late-recovery capture continues after the 08:45 eligibility cutoff.
     - cron: "15 1,2,4,6 * * *"
 

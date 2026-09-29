@@ -94,7 +94,7 @@ def test_formal_v3_public_automatic_surface_is_explicit() -> None:
     assert primary["lifecycle_class"] == "ACTIVE_FORMAL_PRIMARY_SOURCE_COLLECTOR"
     assert sorted(primary["crons"]) == sorted([
         "15,45 7-23 * * *",
-        "15,45 0 * * *",
+        "15,20,25,30,35,40,45 0 * * *",
         "15 1,2,4,6 * * *",
     ])
     fallback = next(

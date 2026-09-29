@@ -27,7 +27,7 @@ def test_v3_workflow_collects_after_0530_for_formal_capture_without_source_level
     ).read_text(encoding="utf-8")
     assert "prospective-public-continuous-collector-v3" in text
     assert 'cron: "15,45 7-23 * * *"' in text
-    assert 'cron: "15,45 0 * * *"' in text
+    assert 'cron: "15,20,25,30,35,40,45 0 * * *"' in text
     assert 'cron: "15 1,2,4,6 * * *"' in text
     assert "time(14, 30)" in text
     assert "05:30" not in text
@@ -98,6 +98,11 @@ def test_v3_contract_registers_transport_diversity_without_self_hosted() -> None
     primary = automation["automatic_workflows"]["prospective-public-continuous-collector-v3.yml"]
     assert primary["crons_utc"] == [
         "15,45 7-23 * * *",
-        "15,45 0 * * *",
+        "15,20,25,30,35,40,45 0 * * *",
         "15 1,2,4,6 * * *",
     ]
+    assert primary["near_cutoff_observation_asia_shanghai"] == [
+        "08:15", "08:20", "08:25", "08:30", "08:35", "08:40"
+    ]
+    assert primary["cutoff_dispatch_asia_shanghai"] == "08:45"
+    assert primary["cutoff_dispatch_does_not_relax_source_fetch_completion_cutoff"] is True

@@ -59,7 +59,7 @@
     {
       "crons": [
         "15,45 7-23 * * *",
-        "15,45 0 * * *",
+        "15,20,25,30,35,40,45 0 * * *",
         "15 1,2,4,6 * * *"
       ],
       "file": "prospective-public-continuous-collector-v3.yml",
@@ -68,7 +68,7 @@
         "actions: write",
         "contents: write"
       ],
-      "schedule_intent": "15:15 Asia/Shanghai post-close start; 30-minute retries through 08:45; sparse late recovery thereafter.",
+      "schedule_intent": "15:15 post-close start; 30-minute baseline retries; 5-minute observation at 08:15-08:40; 08:45 late-recovery dispatch without cutoff relaxation; sparse post-cutoff late recovery.",
       "triggers": [
         "workflow_dispatch",
         "schedule"
