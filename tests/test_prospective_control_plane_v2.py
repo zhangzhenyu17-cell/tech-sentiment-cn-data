@@ -82,8 +82,8 @@ def test_formal_v3_public_automatic_surface_is_explicit() -> None:
         [
             "45 15 * * *",
             "0,15,30,45 16-23 * * *",
-            "0,15,30,45 0 * * *",
-            "0 1 * * *",
+            "0,15,30,35,40,45,50,55 0 * * *",
+            "0,5 1 * * *",
         ]
     )
     primary = next(

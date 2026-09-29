@@ -52,6 +52,10 @@ through 14:15. Manual dispatch may provide an exact T/T+1 pair after that window
 The 05:30 time is no longer a capture hard wall in V3. It remains historical V2
 semantics and may still be reported as an operational SLA comparison.
 
+## Formal assembly cadence
+
+The compatibility assembler remains separate from source observation. Its wrapper uses a baseline 15-minute cadence and increases to five-minute checks from 08:30 through 09:05. This does not expand the evidence window: every formal source package must still have `SOURCE_FETCH_COMPLETION_TIME <= 08:45`, and the compatibility raw artifact must still complete by 09:15. The extra checks only reduce scheduler-delay risk between a near-cutoff source publication and deterministic assembly.
+
 ## Transport diversity
 
 The source observation receipt records `transport_origin` and `runner_name`.

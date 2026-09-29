@@ -5,8 +5,10 @@ on:
   schedule:
     - cron: "45 15 * * *"
     - cron: "0,15,30,45 16-23 * * *"
-    - cron: "0,15,30,45 0 * * *"
-    - cron: "0 1 * * *"
+    # Increase wrapper density once source publication historically approaches cutoff.
+    - cron: "0,15,30,35,40,45,50,55 0 * * *"
+    # Final pre-deadline assembly opportunities. The raw builder still enforces 09:15.
+    - cron: "0,5 1 * * *"
 
 permissions:
   actions: write

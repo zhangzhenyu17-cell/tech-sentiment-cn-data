@@ -6,8 +6,8 @@
       "cron_utc": [
         "45 15 * * *",
         "0,15,30,45 16-23 * * *",
-        "0,15,30,45 0 * * *",
-        "0 1 * * *"
+        "0,15,30,35,40,45,50,55 0 * * *",
+        "0,5 1 * * *"
       ],
       "intended_time_asia_shanghai": [
         "23:45",
@@ -46,10 +46,15 @@
         "08:00",
         "08:15",
         "08:30",
+        "08:35",
+        "08:40",
         "08:45",
-        "09:00"
+        "08:50",
+        "08:55",
+        "09:00",
+        "09:05"
       ],
-      "necessity": "Formal V3 capture replacement: retry the lightweight wrapper every 15 minutes through the 08:45 source-eligibility cutoff, with one final 09:00 assembly-dispatch opportunity. The wrapper requests the V3 collector when source packages are incomplete and dispatches the compatibility raw assembler only when all four immutable source observations are complete, source-fetch-completion timestamped, and first observed by 08:45 Asia/Shanghai. The aggregate artifact must complete by 09:15; late V3 observations remain captured but never become retroactively decision-eligible.",
+      "necessity": "Formal V3 capture replacement: baseline wrapper retries through the night, then 5-minute checks from 08:30 through 09:05 so source packages first observed near the immutable 08:45 cutoff can be assembled with redundancy before the 09:15 artifact deadline. The wrapper never relaxes source eligibility: all four source-fetch-completion timestamps must be <=08:45. Late V3 observations remain captured but never retroactively qualify.",
       "triggers": [
         "schedule"
       ]
@@ -64,7 +69,10 @@
     "forward_outcome_read_allowed": false,
     "historical_backfill_allowed": false,
     "intervening_non_trading_days_preserve_active_window": true,
-    "last_wrapper_opportunity_asia_shanghai": "09:00",
+    "last_wrapper_opportunity_asia_shanghai": "09:05",
+    "near_cutoff_wrapper_cadence_minutes": 5,
+    "near_cutoff_wrapper_does_not_relax_source_cutoff": true,
+    "near_cutoff_wrapper_window_asia_shanghai": "08:30-09:05",
     "non_trading_day_outside_active_window_noop": true,
     "private_evidence_allowed": false,
     "private_model_material_allowed": false,

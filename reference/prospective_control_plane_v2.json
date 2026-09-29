@@ -92,8 +92,8 @@
       "crons": [
         "45 15 * * *",
         "0,15,30,45 16-23 * * *",
-        "0,15,30,45 0 * * *",
-        "0 1 * * *"
+        "0,15,30,35,40,45,50,55 0 * * *",
+        "0,5 1 * * *"
       ],
       "file": "prospective-public-daily-orchestrator-v1.yml",
       "lifecycle_class": "ACTIVE_FORMAL_V3_ASSEMBLY_ORCHESTRATOR",
@@ -101,6 +101,7 @@
         "actions: write",
         "contents: read"
       ],
+      "schedule_intent": "Baseline wrapper retries plus 5-minute near-cutoff assembly checks from 08:30 through 09:05; source cutoff remains 08:45 and artifact completion remains <=09:15.",
       "triggers": [
         "workflow_dispatch",
         "schedule"
