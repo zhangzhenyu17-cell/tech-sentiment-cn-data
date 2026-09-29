@@ -26,6 +26,7 @@ from .v4c03_szse_etf_shares import (
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 SOURCE_KEYS = ("SSE_588000", "SZSE_159915", "SSE_TURNOVER", "SZSE_TURNOVER")
+ALLOWED_TRANSPORT_ORIGINS = ("GITHUB_HOSTED", "GITHUB_HOSTED_MACOS_FALLBACK")
 
 
 @dataclass(frozen=True)
@@ -129,6 +130,8 @@ def capture_capital_source_observations_v3(
     attempt_started_at = observed_at or clock_fn()
     if attempt_started_at.tzinfo is None:
         raise ValueError("observed_at must be timezone-aware")
+    if transport_origin not in ALLOWED_TRANSPORT_ORIGINS:
+        raise ValueError(f"unsupported V3 transport origin: {transport_origin}")
     if client is None:
         import akshare as ak  # type: ignore
         client = ak

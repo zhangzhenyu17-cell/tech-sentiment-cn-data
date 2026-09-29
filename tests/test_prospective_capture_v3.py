@@ -107,7 +107,7 @@ def test_source_observations_persist_successes_independently(tmp_path: Path) -> 
         output_root=tmp_path / "obs",
         observed_at=_dt("2026-09-29T09:45:00"),
         client=_CalendarClient(),
-        transport_origin="TEST",
+        transport_origin="GITHUB_HOSTED",
         runner_name="test-runner",
         sse_etf_fetcher=lambda **_: sse,
         szse_etf_fetcher=lambda **_: szse,
@@ -155,7 +155,7 @@ def test_source_first_observed_uses_fetch_completion_not_attempt_start(tmp_path:
         output_root=tmp_path / "obs",
         observed_at=_dt("2026-09-29T08:44:50"),
         client=_CalendarClient(),
-        transport_origin="TEST",
+        transport_origin="GITHUB_HOSTED",
         runner_name="test-runner",
         sse_etf_fetcher=lambda **_: sse,
         source_keys=("SSE_588000",),
@@ -167,3 +167,58 @@ def test_source_first_observed_uses_fetch_completion_not_attempt_start(tmp_path:
     assert receipt["first_observed_at_asia_shanghai"].endswith("08:45:01+08:00")
     assert receipt["observation_timestamp_semantics"] == "SOURCE_FETCH_COMPLETION_TIME"
     assert receipt["shadow_decision_eligible"] is False
+
+def test_v3_rejects_unregistered_transport_origin(tmp_path: Path) -> None:
+    try:
+        capture_capital_source_observations_v3(
+            market_session_date="2026-09-28",
+            decision_date="2026-09-29",
+            source_commit="abc",
+            output_root=tmp_path / "obs",
+            observed_at=_dt("2026-09-29T08:30:00"),
+            client=_CalendarClient(),
+            transport_origin="UNREGISTERED_TRANSPORT",
+            source_keys=("SSE_588000",),
+        )
+    except ValueError as exc:
+        assert "unsupported V3 transport origin" in str(exc)
+    else:
+        raise AssertionError("expected transport-origin rejection")
+
+
+def test_v3_sidecars_heal_from_exact_archive(tmp_path: Path) -> None:
+    import importlib.util
+    import json
+    from tech_sentiment.prospective_source_observation_v3 import SourceObservation
+
+    script = Path(__file__).resolve().parents[1] / "scripts/heal_prospective_source_observation_v3.py"
+    spec = importlib.util.spec_from_file_location("heal_prospective_source_observation_v3", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    heal_sidecars = module.heal_sidecars
+
+    root = tmp_path / "SSE_588000"
+    root.mkdir()
+    receipt = {
+        "schema_version": "prospective-source-observation-v3",
+        "source_key": "SSE_588000",
+        "state": "COMPLETE",
+        "market_session_date": "2026-09-28",
+        "decision_date": "2026-09-29",
+        "first_observed_at_asia_shanghai": "2026-09-29T08:30:00+08:00",
+        "observation_timestamp_semantics": "SOURCE_FETCH_COMPLETION_TIME",
+        "shadow_decision_eligible": True,
+    }
+    (root / "SOURCE_OBSERVATION_RECEIPT.json").write_text(
+        json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (root / "data.csv").write_text("date,value\n2026-09-28,1\n", encoding="utf-8")
+    observation = SourceObservation("SSE_588000", "COMPLETE", root, receipt)
+    original = package_complete_source_observation_v3(
+        observation, output_dir=tmp_path / "original"
+    )
+    archive = tmp_path / "original" / f"{original['release_tag']}.tar.gz"
+    healed = heal_sidecars(archive, tmp_path / "healed")
+    assert healed == original

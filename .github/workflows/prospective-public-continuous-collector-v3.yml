@@ -124,7 +124,7 @@ jobs:
           )
           PY
 
-      - name: Resolve missing immutable source observations
+      - name: Resolve and heal immutable source observations
         if: steps.pair.outputs.should_run == 'true'
         id: missing
         env:
@@ -134,24 +134,53 @@ jobs:
           set -euo pipefail
           SOURCES=(SSE_588000 SZSE_159915 SSE_TURNOVER SZSE_TURNOVER)
           missing=()
+          mkdir -p existing-v3 healed-v3
           for SOURCE in "${SOURCES[@]}"; do
             TAG="prospective-source-observation-v3-${MARKET_SESSION_DATE}-${SOURCE}"
-            if gh release view "$TAG" >/dev/null 2>&1; then
-              ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
-              complete=true
-              for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
-                if ! grep -Fxq "$REQUIRED" <<<"$ASSETS"; then
-                  complete=false
-                fi
-              done
-              if [ "$complete" = "true" ]; then
-                echo "Immutable V3 source already complete: $TAG"
-                continue
-              fi
-              echo "PARTIAL_IMMUTABLE_V3_SOURCE_RELEASE_REQUIRES_REVIEW: $TAG" >&2
+            if ! gh release view "$TAG" >/dev/null 2>&1; then
+              missing+=("$SOURCE")
+              continue
+            fi
+            ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+            ARCHIVE="$TAG.tar.gz"
+            CHECKSUM="$TAG.sha256"
+            MANIFEST="$TAG.manifest.json"
+            complete=true
+            for REQUIRED in "$ARCHIVE" "$CHECKSUM" "$MANIFEST"; do
+              grep -Fxq "$REQUIRED" <<<"$ASSETS" || complete=false
+            done
+            if [ "$complete" = "true" ]; then
+              echo "Immutable V3 source already complete: $TAG"
+              continue
+            fi
+            if ! grep -Fxq "$ARCHIVE" <<<"$ASSETS"; then
+              echo "V3_PARTIAL_RELEASE_WITHOUT_ARCHIVE: $TAG" >&2
               exit 1
             fi
-            missing+=("$SOURCE")
+            rm -rf existing-v3/* healed-v3/*
+            gh release download "$TAG" --pattern "$ARCHIVE" --dir existing-v3
+            python scripts/heal_prospective_source_observation_v3.py \
+              --archive "existing-v3/$ARCHIVE" \
+              --output-dir healed-v3
+            for LOCAL in "healed-v3/$CHECKSUM" "healed-v3/$MANIFEST"; do
+              NAME="$(basename "$LOCAL")"
+              if grep -Fxq "$NAME" <<<"$ASSETS"; then
+                gh release download "$TAG" --pattern "$NAME" --dir existing-v3
+                cmp --silent "$LOCAL" "existing-v3/$NAME" || {
+                  echo "V3_IMMUTABLE_SOURCE_RELEASE_CONFLICT: $TAG/$NAME" >&2
+                  exit 1
+                }
+              else
+                gh release upload "$TAG" "$LOCAL"
+              fi
+            done
+            FINAL="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+            for REQUIRED in "$ARCHIVE" "$CHECKSUM" "$MANIFEST"; do
+              grep -Fxq "$REQUIRED" <<<"$FINAL" || {
+                echo "V3_SOURCE_RELEASE_INCOMPLETE_AFTER_HEAL: $TAG/$REQUIRED" >&2
+                exit 1
+              }
+            done
           done
           CSV="$(IFS=,; echo "${missing[*]-}")"
           echo "sources=$CSV" >> "$GITHUB_OUTPUT"
@@ -181,6 +210,7 @@ jobs:
           set -euo pipefail
           ROOT="dist/prospective_source_observation_packages_v3"
           shopt -s nullglob
+          mkdir -p existing-publish-v3
           for MANIFEST in "$ROOT"/*.manifest.json; do
             TAG="$(python - "$MANIFEST" <<'PY'
           import json, sys
@@ -189,22 +219,34 @@ jobs:
             )"
             ARCHIVE="$ROOT/$TAG.tar.gz"
             CHECKSUM="$ROOT/$TAG.sha256"
-            if gh release view "$TAG" >/dev/null 2>&1; then
-              echo "V3 source release appeared concurrently; verifying complete identity surface: $TAG"
-              ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
-              for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
-                grep -Fxq "$REQUIRED" <<<"$ASSETS" || {
-                  echo "CONCURRENT_V3_SOURCE_RELEASE_INCOMPLETE: $TAG/$REQUIRED" >&2
+            if ! gh release view "$TAG" >/dev/null 2>&1; then
+              gh release create "$TAG" \
+                --target "$GITHUB_SHA" \
+                --title "Prospective source observation V3 $TAG" \
+                --notes "Shadow-only immutable public source observation. first_observed_at is preserved in the receipt. No formal evidence handoff, historical backfill, outcome read, Production change, or trading authority."
+            fi
+            ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+            for LOCAL in "$ARCHIVE" "$CHECKSUM" "$MANIFEST"; do
+              NAME="$(basename "$LOCAL")"
+              if grep -Fxq "$NAME" <<<"$ASSETS"; then
+                rm -f "existing-publish-v3/$NAME"
+                gh release download "$TAG" --pattern "$NAME" --dir existing-publish-v3
+                cmp --silent "$LOCAL" "existing-publish-v3/$NAME" || {
+                  echo "V3_IMMUTABLE_SOURCE_RELEASE_CONFLICT: $TAG/$NAME" >&2
                   exit 1
                 }
-              done
-              continue
-            fi
-            gh release create "$TAG" \
-              "$ARCHIVE" "$CHECKSUM" "$MANIFEST" \
-              --target "$GITHUB_SHA" \
-              --title "Prospective source observation V3 $TAG" \
-              --notes "Shadow-only immutable public source observation. first_observed_at is preserved in the receipt. No formal evidence handoff, historical backfill, outcome read, Production change, or trading authority."
+              else
+                gh release upload "$TAG" "$LOCAL"
+              fi
+              ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+            done
+            FINAL="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+            for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+              grep -Fxq "$REQUIRED" <<<"$FINAL" || {
+                echo "V3_SOURCE_RELEASE_INCOMPLETE_AFTER_PUBLISH: $TAG/$REQUIRED" >&2
+                exit 1
+              }
+            done
           done
 
       - name: Upload V3 shadow attempt diagnostics
