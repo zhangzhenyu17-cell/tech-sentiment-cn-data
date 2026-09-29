@@ -1,6 +1,7 @@
 {
   "activation_mode": "SHADOW_ONLY_NO_FORMAL_EVIDENCE_HANDOFF",
   "automation": {
+    "automatic_resolution_scope": "LATEST_CLOSED_SESSION_ONLY",
     "automatic_workflows": {
       "prospective-public-continuous-collector-v3-macos-fallback.yml": {
         "crons_utc": [
@@ -23,6 +24,7 @@
       }
     },
     "formal_consumer_dispatch_allowed": false,
+    "older_session_recovery_requires_explicit_exact_pair": true,
     "shared_concurrency_group": "prospective-public-continuous-collector-v3"
   },
   "contract_id": "prospective_capture_timing_v3",

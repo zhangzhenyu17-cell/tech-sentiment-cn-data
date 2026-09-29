@@ -31,7 +31,14 @@ The active shadow collector treats the four capital inputs independently:
 
 A successful source is packaged and published independently under an immutable
 source-specific release. Later retries request only still-missing sources.
-This prevents an SSE failure from discarding already successful SZSE observations.\n\nPublication is archive-first. If an interrupted GitHub run leaves a partial\nrelease with the archive present, the next collector heals checksum/manifest\nsidecars from that exact archive instead of recapturing the source. This\npreserves the original `first_observed_at_asia_shanghai`. A partial release\nwithout its archive fails closed, and any byte conflict fails closed.\n
+This prevents an SSE failure from discarding already successful SZSE observations.
+
+Publication is archive-first. If an interrupted GitHub run leaves a partial
+release with the archive present, the next collector heals checksum/manifest
+sidecars from that exact archive instead of recapturing the source. This
+preserves the original `first_observed_at_asia_shanghai`. A partial release
+without its archive fails closed, and any byte conflict fails closed.
+
 ## Scheduling
 
 The scheduled GitHub-hosted collector starts at 23:45 Asia/Shanghai, retries
@@ -48,7 +55,9 @@ Two public-only GitHub-hosted transport origins are active in shadow mode:
 `GITHUB_HOSTED` (Ubuntu primary) and `GITHUB_HOSTED_MACOS_FALLBACK`.
 They share the same official source identities, normalization semantics,
 immutable release tags, and one concurrency group. The macOS rail is lower
-frequency and attempts only source observations that remain missing.
+frequency and attempts only source observations that remain missing. Automatic
+macOS resolution is restricted to the latest closed session; older sessions
+require an explicit exact T/T+1 manual dispatch.
 
 The contract remains ready for a future isolated `SELF_HOSTED_PUBLIC_DATA`
 transport, but self-hosted infrastructure is **not connected** and still

@@ -36,6 +36,9 @@ def test_v3_workflow_collects_after_0530_without_formal_handoff() -> None:
     assert "workflow_run:" not in text
     assert "pull_request:" not in text
     assert "push:" not in text
+    assert "heal_prospective_source_observation_v3.py" in text
+    assert "V3_PARTIAL_RELEASE_WITHOUT_ARCHIVE" in text
+    assert "V3_SOURCE_RELEASE_INCOMPLETE_AFTER_HEAL" in text
 
 
 def test_v3_macos_fallback_is_public_only_and_shared_identity() -> None:
@@ -54,6 +57,9 @@ def test_v3_macos_fallback_is_public_only_and_shared_identity() -> None:
     assert "production change" in text.lower()
     assert "trading authority" in text.lower()
     assert "SELF_HOSTED" not in text
+    assert "[-5:]" not in text
+    assert "reversed(closed)" not in text
+    assert "V3_FALLBACK_MANUAL_PAIR_REQUIRES_BOTH_OR_NEITHER" in text
     assert "pull_request:" not in text
     assert "push:" not in text
 
@@ -72,3 +78,6 @@ def test_v3_contract_registers_transport_diversity_without_self_hosted() -> None
     assert transport["shared_immutable_release_identity"] is True
     assert transport["self_hosted_public_data_connected"] is False
     assert transport["self_hosted_requires_separate_security_audit"] is True
+    automation = contract["automation"]
+    assert automation["automatic_resolution_scope"] == "LATEST_CLOSED_SESSION_ONLY"
+    assert automation["older_session_recovery_requires_explicit_exact_pair"] is True

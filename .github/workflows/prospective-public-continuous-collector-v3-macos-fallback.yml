@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       market_session_date:
-        description: Exact market session T; optional for automatic backlog resolution
+        description: Exact market session T; optional for latest-session automatic resolution
         required: false
         type: string
       decision_date:
@@ -73,12 +73,13 @@ jobs:
               closed = [
                   value for value in dates
                   if datetime.combine(value, time(15, 0), tzinfo=zone) <= now
-              ][-5:]
-              pairs = []
-              for s in reversed(closed):
-                  later = [value for value in dates if value > s]
-                  if later:
-                      pairs.append((s, later[0]))
+              ]
+              if not closed:
+                  pairs = []
+              else:
+                  latest = closed[-1]
+                  later = [value for value in dates if value > latest]
+                  pairs = [(latest, later[0])] if later else []
           for s, d in pairs:
               if s not in dates or d not in dates:
                   raise SystemExit("V3_FALLBACK_PAIR_NOT_CONFIRMED_TRADING_DAYS")
@@ -123,7 +124,7 @@ jobs:
 
           if [ -z "$CHOSEN_SESSION" ]; then
             echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "No incomplete V3 source pair in recent backlog."
+            echo "No incomplete V3 source in the latest closed session."
           else
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             echo "market_session_date=$CHOSEN_SESSION" >> "$GITHUB_OUTPUT"
@@ -189,4 +190,4 @@ jobs:
 
       - name: Record fallback no-op
         if: steps.pair.outputs.should_run != 'true'
-        run: echo "V3 macOS fallback no-op; recent source backlog is complete."
+        run: echo "V3 macOS fallback no-op; latest closed session is complete."
