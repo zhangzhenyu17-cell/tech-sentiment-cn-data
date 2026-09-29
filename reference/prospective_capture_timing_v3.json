@@ -13,14 +13,14 @@
       },
       "prospective-public-continuous-collector-v3.yml": {
         "crons_utc": [
-          "45 15 * * *",
-          "15,45 16-23 * * *",
+          "15,45 7-23 * * *",
           "15,45 0 * * *",
           "15 1,2,4,6 * * *"
         ],
         "python_version": "3.11.16",
         "role": "PRIMARY_PUBLIC_SOURCE_COLLECTION",
-        "runner": "ubuntu-24.04"
+        "runner": "ubuntu-24.04",
+        "schedule_intent": "BEGIN_15_MINUTES_AFTER_SESSION_CLOSE_THEN_30_MINUTE_RETRY_THROUGH_0845_WITH_SPARSE_LATE_RECOVERY"
       }
     },
     "formal_consumer_dispatch_allowed": true,

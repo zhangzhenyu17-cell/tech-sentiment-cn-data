@@ -92,6 +92,11 @@ def test_formal_v3_public_automatic_surface_is_explicit() -> None:
         if item["file"] == "prospective-public-continuous-collector-v3.yml"
     )
     assert primary["lifecycle_class"] == "ACTIVE_FORMAL_PRIMARY_SOURCE_COLLECTOR"
+    assert sorted(primary["crons"]) == sorted([
+        "15,45 7-23 * * *",
+        "15,45 0 * * *",
+        "15 1,2,4,6 * * *",
+    ])
     fallback = next(
         item
         for item in payload["workflows"]

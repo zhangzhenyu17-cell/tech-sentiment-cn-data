@@ -12,9 +12,10 @@ on:
         required: false
         type: string
   schedule:
-    - cron: "45 15 * * *"
-    - cron: "15,45 16-23 * * *"
+    # 15:15 Asia/Shanghai onward: persist source availability close to publication.
+    - cron: "15,45 7-23 * * *"
     - cron: "15,45 0 * * *"
+    # Late-recovery capture continues after the 08:45 eligibility cutoff.
     - cron: "15 1,2,4,6 * * *"
 
 permissions:
