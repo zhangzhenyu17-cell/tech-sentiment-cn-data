@@ -1,0 +1,44 @@
+{
+  "activation_mode": "SHADOW_ONLY_NO_FORMAL_EVIDENCE_HANDOFF",
+  "contract_id": "prospective_capture_timing_v3",
+  "contract_version": 3,
+  "date": "2026-09-29",
+  "eligibility": {
+    "decision_eligible_only_if_first_observed_at_or_before_cutoff": true,
+    "decision_eligible_only_if_source_complete": true,
+    "event_date_alone_never_implies_availability": true,
+    "formal_evidence_handoff": false,
+    "late_observation_never_retroactively_eligible": true
+  },
+  "privacy_and_research_firewall": {
+    "evidence_tier_allowed": false,
+    "forward_outcomes_allowed": false,
+    "portfolio_or_holdings_data_allowed": false,
+    "private_model_semantics_allowed": false,
+    "private_thresholds_or_signals_allowed": false,
+    "production_changed": false,
+    "research_result_allowed": false,
+    "trading_authority_changed": false
+  },
+  "purpose": "Decouple public-data acquisition time from decision eligibility. Permit exact market-session observations to arrive after the former 05:30 operational freeze while preserving first-observed-time provenance and prohibiting retroactive evidence qualification.",
+  "semantics": {
+    "first_observed_at_required": true,
+    "forward_outcomes_allowed": false,
+    "historical_backfill_allowed": false,
+    "retroactive_evidence_qualification_allowed": false,
+    "source_level_persistence": true,
+    "source_observation_immutable": true
+  },
+  "status": "FROZEN_SHADOW_ONLY",
+  "timing": {
+    "capture_after_decision_cutoff_allowed": true,
+    "capture_after_former_0530_allowed": true,
+    "decision_date": "IMMEDIATE_NEXT_A_SHARE_TRADING_DAY_AFTER_T",
+    "first_eligible_execution_asia_shanghai": "09:30",
+    "former_preopen_sla_asia_shanghai": "05:30",
+    "manual_late_recovery_after_session_roll_allowed": true,
+    "market_session_date": "T",
+    "session_close_asia_shanghai": "15:00",
+    "shadow_decision_cutoff_asia_shanghai": "08:45"
+  }
+}
