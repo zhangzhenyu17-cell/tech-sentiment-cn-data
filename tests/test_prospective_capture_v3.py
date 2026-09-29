@@ -1,0 +1,130 @@
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pandas as pd
+
+from tech_sentiment.capital_input_data import ExchangeTurnoverFetchResult, EtfShareFetchResult
+from tech_sentiment.prospective_capture_timing_v3 import validate_capture_pair_v3
+from tech_sentiment.prospective_source_observation_v3 import (
+    capture_capital_source_observations_v3,
+    package_complete_source_observation_v3,
+)
+from tech_sentiment.v4c03_szse_etf_shares import SzseEtfShareFetchResult
+
+
+class _CalendarClient:
+    def tool_trade_date_hist_sina(self):
+        return pd.DataFrame(
+            {"trade_date": ["2026-09-25", "2026-09-28", "2026-09-29", "2026-09-30"]}
+        )
+
+
+def _dt(value: str) -> datetime:
+    return datetime.fromisoformat(value).replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+
+
+def test_v3_allows_after_0530_but_marks_cutoff_eligibility() -> None:
+    before_cutoff = validate_capture_pair_v3(
+        market_session_date="2026-09-28",
+        decision_date="2026-09-29",
+        observed_at=_dt("2026-09-29T08:30:00"),
+        client=_CalendarClient(),
+    )
+    assert before_cutoff["capture_allowed"] is True
+    assert before_cutoff["shadow_decision_eligible_by_time"] is True
+    assert before_cutoff["timing_class"] == "LATE_PREOPEN_BEFORE_SHADOW_DECISION_CUTOFF"
+
+    after_cutoff = validate_capture_pair_v3(
+        market_session_date="2026-09-28",
+        decision_date="2026-09-29",
+        observed_at=_dt("2026-09-29T09:45:00"),
+        client=_CalendarClient(),
+    )
+    assert after_cutoff["capture_allowed"] is True
+    assert after_cutoff["shadow_decision_eligible_by_time"] is False
+    assert after_cutoff["timing_class"] == "POST_EXECUTION_LATE_RECOVERY"
+
+
+def test_v3_rejects_before_market_close() -> None:
+    try:
+        validate_capture_pair_v3(
+            market_session_date="2026-09-28",
+            decision_date="2026-09-29",
+            observed_at=_dt("2026-09-28T14:59:59"),
+            client=_CalendarClient(),
+        )
+    except ValueError as exc:
+        assert "before market-session close" in str(exc)
+    else:
+        raise AssertionError("expected before-close rejection")
+
+
+def test_source_observations_persist_successes_independently(tmp_path: Path) -> None:
+    session = pd.Timestamp("2026-09-28")
+    sse = EtfShareFetchResult(
+        data=pd.DataFrame(
+            [{
+                "date": session,
+                "fund_code": "588000",
+                "fund_shares": 1.0,
+                "unit": "share",
+                "source_identity": "SSE",
+                "source_url": "https://query.sse.com.cn/",
+                "provider_interface": "commonQuery",
+                "evidence_available_date": session,
+            }]
+        ),
+        errors=pd.DataFrame(columns=["date", "error"]),
+    )
+    szse = SzseEtfShareFetchResult(
+        data=pd.DataFrame(
+            [{
+                "date": session,
+                "fund_code": "159915",
+                "fund_shares": 2.0,
+                "unit": "share",
+                "source_identity": "SZSE",
+                "provider": "SZSE",
+                "evidence_available_date": session,
+            }]
+        ),
+        errors=pd.DataFrame(columns=["chunk_start", "chunk_end", "error"]),
+    )
+    turnover = ExchangeTurnoverFetchResult(
+        sse=pd.DataFrame([{"date": session, "amount": 3.0}]),
+        szse=pd.DataFrame(columns=["date", "amount"]),
+        combined=pd.DataFrame(columns=["date", "amount"]),
+        errors=pd.DataFrame(
+            [{"date": "2026-09-28", "exchange": "SZSE", "error": "temporary"}]
+        ),
+    )
+
+    observations = capture_capital_source_observations_v3(
+        market_session_date="2026-09-28",
+        decision_date="2026-09-29",
+        source_commit="abc",
+        output_root=tmp_path / "obs",
+        observed_at=_dt("2026-09-29T09:45:00"),
+        client=_CalendarClient(),
+        transport_origin="TEST",
+        runner_name="test-runner",
+        sse_etf_fetcher=lambda **_: sse,
+        szse_etf_fetcher=lambda **_: szse,
+        turnover_fetcher=lambda **_: turnover,
+    )
+
+    assert observations["SSE_588000"].state == "COMPLETE"
+    assert observations["SZSE_159915"].state == "COMPLETE"
+    assert observations["SSE_TURNOVER"].state == "COMPLETE"
+    assert observations["SZSE_TURNOVER"].state == "SOURCE_FAILURE_OR_INCOMPLETE"
+    assert observations["SSE_588000"].receipt["shadow_decision_eligible"] is False
+    assert observations["SSE_588000"].receipt["formal_evidence_handoff"] is False
+
+    manifest = package_complete_source_observation_v3(
+        observations["SSE_588000"], output_dir=tmp_path / "packages"
+    )
+    assert manifest["release_tag"].endswith("2026-09-28-SSE_588000")
+    assert manifest["shadow_decision_eligible"] is False
+    assert manifest["formal_evidence_handoff"] is False
+    assert (tmp_path / "packages" / f"{manifest['release_tag']}.tar.gz").is_file()

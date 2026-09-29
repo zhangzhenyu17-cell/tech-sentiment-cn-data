@@ -1,0 +1,224 @@
+name: prospective-public-continuous-collector-v3
+
+on:
+  workflow_dispatch:
+    inputs:
+      market_session_date:
+        description: Exact market session T; optional for scheduled-style resolution
+        required: false
+        type: string
+      decision_date:
+        description: Immediate next A-share trading day T+1; optional with market_session_date
+        required: false
+        type: string
+  schedule:
+    - cron: "45 15 * * *"
+    - cron: "15,45 16-23 * * *"
+    - cron: "15,45 0 * * *"
+    - cron: "15 1,2,4,6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prospective-public-continuous-collector-v3
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.16"
+          cache: pip
+
+      - name: Install frozen shadow collection environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "akshare==1.18.94" "pandas==3.0.5"
+          python -m pip install -e ".[data]"
+          python -m pip check
+
+      - name: Resolve exact V3 capture pair
+        id: pair
+        env:
+          INPUT_SESSION: ${{ inputs.market_session_date }}
+          INPUT_DECISION: ${{ inputs.decision_date }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python - <<'PY'
+          from datetime import datetime, time
+          import os
+          from zoneinfo import ZoneInfo
+          import akshare as ak
+          import pandas as pd
+
+          zone = ZoneInfo("Asia/Shanghai")
+          now = datetime.now(zone)
+          raw = ak.tool_trade_date_hist_sina()
+          col = "trade_date" if "trade_date" in raw.columns else raw.columns[0]
+          dates = (
+              pd.to_datetime(raw[col], errors="raise")
+              .dt.normalize()
+              .drop_duplicates()
+              .sort_values()
+              .dt.date.tolist()
+          )
+          session = (os.environ.get("INPUT_SESSION") or "").strip()
+          decision = (os.environ.get("INPUT_DECISION") or "").strip()
+          event = os.environ["EVENT_NAME"]
+          should_run = True
+          reason = "EXPLICIT_V3_PAIR"
+
+          if bool(session) != bool(decision):
+              raise SystemExit("V3_MANUAL_PAIR_REQUIRES_BOTH_SESSION_AND_DECISION")
+
+          if not session:
+              local_clock = now.time().replace(tzinfo=None)
+              if event == "schedule" and not (
+                  local_clock >= time(23, 45) or local_clock <= time(14, 30)
+              ):
+                  should_run = False
+                  reason = "OUTSIDE_V3_SCHEDULED_COLLECTION_RUNTIME"
+              if should_run:
+                  closed = [
+                      value
+                      for value in dates
+                      if datetime.combine(value, time(15, 0), tzinfo=zone) <= now
+                  ]
+                  if not closed:
+                      should_run = False
+                      reason = "NO_CLOSED_A_SHARE_SESSION"
+                  else:
+                      s = closed[-1]
+                      later = [value for value in dates if value > s]
+                      if not later:
+                          raise SystemExit("V3_TRADING_CALENDAR_HAS_NO_NEXT_SESSION")
+                      session = s.isoformat()
+                      decision = later[0].isoformat()
+                      reason = "RESOLVED_LATEST_CLOSED_SESSION"
+
+          if should_run:
+              s = datetime.fromisoformat(session).date()
+              d = datetime.fromisoformat(decision).date()
+              if s not in dates or d not in dates:
+                  raise SystemExit("V3_PAIR_NOT_CONFIRMED_A_SHARE_TRADING_DAYS")
+              later = [value for value in dates if value > s]
+              if not later or later[0] != d:
+                  raise SystemExit("V3_DECISION_NOT_IMMEDIATE_NEXT_A_SHARE_TRADING_DAY")
+              if now < datetime.combine(s, time(15, 0), tzinfo=zone):
+                  raise SystemExit("V3_CAPTURE_BEFORE_SESSION_CLOSE")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as h:
+              h.write(f"should_run={'true' if should_run else 'false'}\n")
+              h.write(f"market_session_date={session}\n")
+              h.write(f"decision_date={decision}\n")
+              h.write(f"reason={reason}\n")
+          print(
+              f"should_run={should_run} session={session} decision={decision} "
+              f"reason={reason} now={now.isoformat()}"
+          )
+          PY
+
+      - name: Resolve missing immutable source observations
+        if: steps.pair.outputs.should_run == 'true'
+        id: missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKET_SESSION_DATE: ${{ steps.pair.outputs.market_session_date }}
+        run: |
+          set -euo pipefail
+          SOURCES=(SSE_588000 SZSE_159915 SSE_TURNOVER SZSE_TURNOVER)
+          missing=()
+          for SOURCE in "${SOURCES[@]}"; do
+            TAG="prospective-source-observation-v3-${MARKET_SESSION_DATE}-${SOURCE}"
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+              complete=true
+              for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+                if ! grep -Fxq "$REQUIRED" <<<"$ASSETS"; then
+                  complete=false
+                fi
+              done
+              if [ "$complete" = "true" ]; then
+                echo "Immutable V3 source already complete: $TAG"
+                continue
+              fi
+              echo "PARTIAL_IMMUTABLE_V3_SOURCE_RELEASE_REQUIRES_REVIEW: $TAG" >&2
+              exit 1
+            fi
+            missing+=("$SOURCE")
+          done
+          CSV="$(IFS=,; echo "${missing[*]-}")"
+          echo "sources=$CSV" >> "$GITHUB_OUTPUT"
+          if [ -z "$CSV" ]; then
+            echo "all_complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "all_complete=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Missing V3 sources: ${CSV:-none}"
+
+      - name: Capture only missing public source observations
+        if: steps.pair.outputs.should_run == 'true' && steps.missing.outputs.all_complete != 'true'
+        env:
+          PROSPECTIVE_TRANSPORT_ORIGIN: GITHUB_HOSTED
+        run: |
+          python scripts/capture_prospective_public_sources_v3.py \
+            --market-session-date "${{ steps.pair.outputs.market_session_date }}" \
+            --decision-date "${{ steps.pair.outputs.decision_date }}" \
+            --source-commit "$GITHUB_SHA" \
+            --sources "${{ steps.missing.outputs.sources }}"
+
+      - name: Publish each successful source observation immutably
+        if: steps.pair.outputs.should_run == 'true' && steps.missing.outputs.all_complete != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT="dist/prospective_source_observation_packages_v3"
+          shopt -s nullglob
+          for MANIFEST in "$ROOT"/*.manifest.json; do
+            TAG="$(python - "$MANIFEST" <<'PY'
+          import json, sys
+          print(json.load(open(sys.argv[1], encoding="utf-8"))["release_tag"])
+          PY
+            )"
+            ARCHIVE="$ROOT/$TAG.tar.gz"
+            CHECKSUM="$ROOT/$TAG.sha256"
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "V3 source release appeared concurrently; verifying complete identity surface: $TAG"
+              ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+              for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+                grep -Fxq "$REQUIRED" <<<"$ASSETS" || {
+                  echo "CONCURRENT_V3_SOURCE_RELEASE_INCOMPLETE: $TAG/$REQUIRED" >&2
+                  exit 1
+                }
+              done
+              continue
+            fi
+            gh release create "$TAG" \
+              "$ARCHIVE" "$CHECKSUM" "$MANIFEST" \
+              --target "$GITHUB_SHA" \
+              --title "Prospective source observation V3 $TAG" \
+              --notes "Shadow-only immutable public source observation. first_observed_at is preserved in the receipt. No formal evidence handoff, historical backfill, outcome read, Production change, or trading authority."
+          done
+
+      - name: Upload V3 shadow attempt diagnostics
+        if: steps.pair.outputs.should_run == 'true' && steps.missing.outputs.all_complete != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospective-public-source-observation-v3-${{ steps.pair.outputs.market_session_date }}-${{ github.run_id }}
+          path: |
+            dist/prospective_source_observations_v3/
+            dist/prospective_source_observation_packages_v3/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record scheduled no-op
+        if: steps.pair.outputs.should_run != 'true'
+        run: |
+          echo "V3 shadow collector no-op: ${{ steps.pair.outputs.reason }}"
