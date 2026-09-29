@@ -112,6 +112,7 @@ def test_source_observations_persist_successes_independently(tmp_path: Path) -> 
         sse_etf_fetcher=lambda **_: sse,
         szse_etf_fetcher=lambda **_: szse,
         turnover_fetcher=lambda **_: turnover,
+        clock=lambda: _dt("2026-09-29T09:45:01"),
     )
 
     assert observations["SSE_588000"].state == "COMPLETE"
@@ -128,3 +129,41 @@ def test_source_observations_persist_successes_independently(tmp_path: Path) -> 
     assert manifest["shadow_decision_eligible"] is False
     assert manifest["formal_evidence_handoff"] is False
     assert (tmp_path / "packages" / f"{manifest['release_tag']}.tar.gz").is_file()
+
+
+def test_source_first_observed_uses_fetch_completion_not_attempt_start(tmp_path: Path) -> None:
+    session = pd.Timestamp("2026-09-28")
+    sse = EtfShareFetchResult(
+        data=pd.DataFrame(
+            [{
+                "date": session,
+                "fund_code": "588000",
+                "fund_shares": 1.0,
+                "unit": "share",
+                "source_identity": "SSE",
+                "source_url": "https://query.sse.com.cn/",
+                "provider_interface": "commonQuery",
+                "evidence_available_date": session,
+            }]
+        ),
+        errors=pd.DataFrame(columns=["date", "error"]),
+    )
+    observations = capture_capital_source_observations_v3(
+        market_session_date="2026-09-28",
+        decision_date="2026-09-29",
+        source_commit="abc",
+        output_root=tmp_path / "obs",
+        observed_at=_dt("2026-09-29T08:44:50"),
+        client=_CalendarClient(),
+        transport_origin="TEST",
+        runner_name="test-runner",
+        sse_etf_fetcher=lambda **_: sse,
+        source_keys=("SSE_588000",),
+        clock=lambda: _dt("2026-09-29T08:45:01"),
+    )
+    receipt = observations["SSE_588000"].receipt
+    assert receipt["observation_attempt_at_asia_shanghai"].endswith("08:44:50+08:00")
+    assert receipt["source_fetch_completed_at_asia_shanghai"].endswith("08:45:01+08:00")
+    assert receipt["first_observed_at_asia_shanghai"].endswith("08:45:01+08:00")
+    assert receipt["observation_timestamp_semantics"] == "SOURCE_FETCH_COMPLETION_TIME"
+    assert receipt["shadow_decision_eligible"] is False

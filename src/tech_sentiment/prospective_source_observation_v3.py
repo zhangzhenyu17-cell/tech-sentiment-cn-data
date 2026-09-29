@@ -66,6 +66,7 @@ def _receipt(
     market_session_date: str,
     decision_date: str,
     observed_at: datetime,
+    attempt_started_at: datetime,
     timing: dict[str, object],
     source_commit: str,
     transport_origin: str,
@@ -83,7 +84,9 @@ def _receipt(
         "first_observed_at_asia_shanghai": (
             observed_at.astimezone(SHANGHAI).isoformat() if complete else None
         ),
-        "observation_attempt_at_asia_shanghai": observed_at.astimezone(SHANGHAI).isoformat(),
+        "observation_timestamp_semantics": "SOURCE_FETCH_COMPLETION_TIME",
+        "observation_attempt_at_asia_shanghai": attempt_started_at.astimezone(SHANGHAI).isoformat(),
+        "source_fetch_completed_at_asia_shanghai": observed_at.astimezone(SHANGHAI).isoformat(),
         "source_available_at": None,
         "source_available_at_status": "UNVERIFIED",
         "transport_origin": transport_origin,
@@ -120,9 +123,11 @@ def capture_capital_source_observations_v3(
     szse_etf_fetcher: Callable[..., SzseEtfShareFetchResult] = fetch_szse_etf_share_history,
     turnover_fetcher: Callable[..., ExchangeTurnoverFetchResult] = fetch_sse_szse_a_share_turnover_history,
     source_keys: tuple[str, ...] | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> dict[str, SourceObservation]:
-    now = observed_at or datetime.now(SHANGHAI)
-    if now.tzinfo is None:
+    clock_fn = clock or (lambda: datetime.now(SHANGHAI))
+    attempt_started_at = observed_at or clock_fn()
+    if attempt_started_at.tzinfo is None:
         raise ValueError("observed_at must be timezone-aware")
     if client is None:
         import akshare as ak  # type: ignore
@@ -130,7 +135,7 @@ def capture_capital_source_observations_v3(
     timing = validate_capture_pair_v3(
         market_session_date=market_session_date,
         decision_date=decision_date,
-        observed_at=now,
+        observed_at=attempt_started_at,
         client=client,
     )
     target = pd.DatetimeIndex([pd.Timestamp(market_session_date).normalize()])
@@ -142,12 +147,14 @@ def capture_capital_source_observations_v3(
         return {}
 
     specs: dict[str, tuple[pd.DataFrame, pd.DataFrame]] = {}
+    source_observed_at: dict[str, datetime] = {}
     if "SSE_588000" in selected:
         sse = sse_etf_fetcher(
             trading_dates=target,
             fund_codes=["588000"],
             sleep_seconds=0,
         )
+        source_observed_at["SSE_588000"] = clock_fn()
         sse_rows = _date_rows(sse.data, market_session_date)
         if "fund_code" in sse_rows.columns:
             sse_rows = sse_rows[
@@ -164,6 +171,7 @@ def capture_capital_source_observations_v3(
             sleep_seconds=0,
             client=client,
         )
+        source_observed_at["SZSE_159915"] = clock_fn()
         szse_rows = _date_rows(szse.data, market_session_date)
         if "fund_code" in szse_rows.columns:
             szse_rows = szse_rows[
@@ -176,6 +184,11 @@ def capture_capital_source_observations_v3(
             trading_dates=target,
             sleep_seconds=0,
         )
+        turnover_completed_at = clock_fn()
+        if "SSE_TURNOVER" in selected:
+            source_observed_at["SSE_TURNOVER"] = turnover_completed_at
+        if "SZSE_TURNOVER" in selected:
+            source_observed_at["SZSE_TURNOVER"] = turnover_completed_at
         turnover_errors = turnover.errors.copy()
         sse_errors = (
             turnover_errors[turnover_errors["exchange"].astype(str).eq("SSE")].copy()
@@ -201,13 +214,21 @@ def capture_capital_source_observations_v3(
         root.mkdir(parents=True, exist_ok=True)
         _write_frame(data, root / "data.csv")
         _write_frame(errors, root / "errors.csv")
+        observed = source_observed_at[source_key]
+        source_timing = validate_capture_pair_v3(
+            market_session_date=market_session_date,
+            decision_date=decision_date,
+            observed_at=observed,
+            client=client,
+        )
         receipt = _receipt(
             source_key=source_key,
             state=state,
             market_session_date=market_session_date,
             decision_date=decision_date,
-            observed_at=now,
-            timing=timing,
+            observed_at=observed,
+            attempt_started_at=attempt_started_at,
+            timing=source_timing,
             source_commit=source_commit,
             transport_origin=transport_origin,
             runner_name=runner_name,
@@ -230,8 +251,9 @@ def capture_capital_source_observations_v3(
         "activation_mode": "SHADOW_ONLY_NO_FORMAL_EVIDENCE_HANDOFF",
         "market_session_date": market_session_date,
         "decision_date": decision_date,
-        "observed_at_asia_shanghai": now.astimezone(SHANGHAI).isoformat(),
-        "timing": timing,
+        "attempt_started_at_asia_shanghai": attempt_started_at.astimezone(SHANGHAI).isoformat(),
+        "attempt_timing": timing,
+        "observation_timestamp_semantics": "SOURCE_FETCH_COMPLETION_TIME",
         "requested_source_keys": list(selected),
         "source_states": {key: observations[key].state for key in selected},
         "complete_source_count": sum(
@@ -298,6 +320,7 @@ def package_complete_source_observation_v3(
         "archive_sha256": checksum,
         "receipt_sha256": _sha256(receipt_path),
         "first_observed_at_asia_shanghai": receipt["first_observed_at_asia_shanghai"],
+        "observation_timestamp_semantics": receipt["observation_timestamp_semantics"],
         "shadow_decision_eligible": receipt["shadow_decision_eligible"],
         "formal_evidence_handoff": False,
         "historical_backfill_allowed": False,
