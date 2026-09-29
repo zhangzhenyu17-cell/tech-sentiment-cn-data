@@ -1,0 +1,192 @@
+name: prospective-public-continuous-collector-v3-macos-fallback
+
+on:
+  workflow_dispatch:
+    inputs:
+      market_session_date:
+        description: Exact market session T; optional for automatic backlog resolution
+        required: false
+        type: string
+      decision_date:
+        description: Immediate next A-share trading day T+1; optional with market_session_date
+        required: false
+        type: string
+  schedule:
+    - cron: "30 0,10,20 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prospective-public-continuous-collector-v3
+  cancel-in-progress: false
+
+jobs:
+  collect-fallback:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.16"
+          cache: pip
+
+      - name: Install frozen V3 fallback environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "akshare==1.18.94" "pandas==3.0.5"
+          python -m pip install -e ".[data]"
+          python -m pip check
+
+      - name: Resolve most recent incomplete exact V3 pair
+        id: pair
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_SESSION: ${{ inputs.market_session_date }}
+          INPUT_DECISION: ${{ inputs.decision_date }}
+        run: |
+          set -euo pipefail
+          python - <<'PY' > /tmp/v3-candidates.txt
+          from datetime import datetime, time
+          import os
+          from zoneinfo import ZoneInfo
+          import akshare as ak
+          import pandas as pd
+
+          zone = ZoneInfo("Asia/Shanghai")
+          now = datetime.now(zone)
+          raw = ak.tool_trade_date_hist_sina()
+          col = "trade_date" if "trade_date" in raw.columns else raw.columns[0]
+          dates = (
+              pd.to_datetime(raw[col], errors="raise")
+              .dt.normalize().drop_duplicates().sort_values().dt.date.tolist()
+          )
+          session = (os.environ.get("INPUT_SESSION") or "").strip()
+          decision = (os.environ.get("INPUT_DECISION") or "").strip()
+          if bool(session) != bool(decision):
+              raise SystemExit("V3_FALLBACK_MANUAL_PAIR_REQUIRES_BOTH_OR_NEITHER")
+          if session:
+              pairs = [(datetime.fromisoformat(session).date(), datetime.fromisoformat(decision).date())]
+          else:
+              closed = [
+                  value for value in dates
+                  if datetime.combine(value, time(15, 0), tzinfo=zone) <= now
+              ][-5:]
+              pairs = []
+              for s in reversed(closed):
+                  later = [value for value in dates if value > s]
+                  if later:
+                      pairs.append((s, later[0]))
+          for s, d in pairs:
+              if s not in dates or d not in dates:
+                  raise SystemExit("V3_FALLBACK_PAIR_NOT_CONFIRMED_TRADING_DAYS")
+              later = [value for value in dates if value > s]
+              if not later or later[0] != d:
+                  raise SystemExit("V3_FALLBACK_DECISION_NOT_IMMEDIATE_NEXT_TRADING_DAY")
+              if now < datetime.combine(s, time(15, 0), tzinfo=zone):
+                  raise SystemExit("V3_FALLBACK_CAPTURE_BEFORE_SESSION_CLOSE")
+              print(f"{s.isoformat()}|{d.isoformat()}")
+          PY
+
+          CHOSEN_SESSION=""
+          CHOSEN_DECISION=""
+          CHOSEN_SOURCES=""
+          while IFS='|' read -r SESSION DECISION; do
+            test -n "$SESSION" || continue
+            missing=()
+            for SOURCE in SSE_588000 SZSE_159915 SSE_TURNOVER SZSE_TURNOVER; do
+              TAG="prospective-source-observation-v3-${SESSION}-${SOURCE}"
+              if gh release view "$TAG" >/dev/null 2>&1; then
+                ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+                complete=true
+                for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+                  if ! grep -Fxq "$REQUIRED" <<<"$ASSETS"; then
+                    echo "PARTIAL_IMMUTABLE_V3_SOURCE_RELEASE_REQUIRES_REVIEW: $TAG" >&2
+                    exit 1
+                  fi
+                done
+                if [ "$complete" = true ]; then
+                  continue
+                fi
+              fi
+              missing+=("$SOURCE")
+            done
+            if [ "${#missing[@]}" -gt 0 ]; then
+              CHOSEN_SESSION="$SESSION"
+              CHOSEN_DECISION="$DECISION"
+              CHOSEN_SOURCES="$(IFS=,; echo "${missing[*]}")"
+              break
+            fi
+          done < /tmp/v3-candidates.txt
+
+          if [ -z "$CHOSEN_SESSION" ]; then
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "No incomplete V3 source pair in recent backlog."
+          else
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "market_session_date=$CHOSEN_SESSION" >> "$GITHUB_OUTPUT"
+            echo "decision_date=$CHOSEN_DECISION" >> "$GITHUB_OUTPUT"
+            echo "sources=$CHOSEN_SOURCES" >> "$GITHUB_OUTPUT"
+            echo "V3 macOS fallback selected: $CHOSEN_SESSION -> $CHOSEN_DECISION; missing=$CHOSEN_SOURCES"
+          fi
+
+      - name: Capture only missing sources through macOS fallback
+        if: steps.pair.outputs.should_run == 'true'
+        env:
+          PROSPECTIVE_TRANSPORT_ORIGIN: GITHUB_HOSTED_MACOS_FALLBACK
+        run: |
+          python scripts/capture_prospective_public_sources_v3.py \
+            --market-session-date "${{ steps.pair.outputs.market_session_date }}" \
+            --decision-date "${{ steps.pair.outputs.decision_date }}" \
+            --source-commit "$GITHUB_SHA" \
+            --sources "${{ steps.pair.outputs.sources }}"
+
+      - name: Publish successful fallback source observations immutably
+        if: steps.pair.outputs.should_run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ROOT="dist/prospective_source_observation_packages_v3"
+          shopt -s nullglob
+          for MANIFEST in "$ROOT"/*.manifest.json; do
+            TAG="$(python - "$MANIFEST" <<'PY'
+          import json, sys
+          print(json.load(open(sys.argv[1], encoding="utf-8"))["release_tag"])
+          PY
+            )"
+            ARCHIVE="$ROOT/$TAG.tar.gz"
+            CHECKSUM="$ROOT/$TAG.sha256"
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+              for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+                grep -Fxq "$REQUIRED" <<<"$ASSETS" || {
+                  echo "CONCURRENT_V3_SOURCE_RELEASE_INCOMPLETE: $TAG/$REQUIRED" >&2
+                  exit 1
+                }
+              done
+              continue
+            fi
+            gh release create "$TAG" \
+              "$ARCHIVE" "$CHECKSUM" "$MANIFEST" \
+              --target "$GITHUB_SHA" \
+              --title "Prospective source observation V3 $TAG" \
+              --notes "Shadow-only immutable public source observation from GitHub-hosted macOS fallback. Same official source identity and normalization; no formal evidence handoff, historical backfill, outcome read, Production change, or trading authority."
+          done
+
+      - name: Upload fallback diagnostics
+        if: steps.pair.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prospective-public-source-observation-v3-macos-${{ steps.pair.outputs.market_session_date }}-${{ github.run_id }}
+          path: |
+            dist/prospective_source_observations_v3/
+            dist/prospective_source_observation_packages_v3/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record fallback no-op
+        if: steps.pair.outputs.should_run != 'true'
+        run: echo "V3 macOS fallback no-op; recent source backlog is complete."
