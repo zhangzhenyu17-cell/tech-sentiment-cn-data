@@ -205,6 +205,16 @@
       "registration_state": "ADAPTER_READY_REAL_OFFICIAL_SNAPSHOT_PENDING",
       "public_workflow_success_grants_private_qualification": false,
       "may_promote_evidence": false
+    },
+    {
+      "product_id": "MARKET_REGIME_V0_BROAD_INDEX_INPUT",
+      "contract_path": "reference/market_regime_v0_public_input_contract.json",
+      "producer_path": "scripts/materialize_market_regime_v0_public_input.py",
+      "logical_dataset": "market regime v0 four-index public raw price input",
+      "private_consumer_boundary": "Market Regime V0 current-state classifier only; no prediction, Production or trading authority",
+      "registration_state": "NEW_PUBLIC_RAW_PRODUCT_MANUAL_ONLY",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
     }
   ],
   "ci_enforcement": {

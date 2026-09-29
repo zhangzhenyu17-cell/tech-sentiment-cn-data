@@ -7,14 +7,20 @@ import pandas as pd
 
 
 _TENCENT_INDEX_SYMBOLS = {
+    "000300": "sh000300",  # CSI 300 / large-cap benchmark
     "000688": "sh000688",  # STAR 50
+    "000905": "sh000905",  # CSI 500 / mid-cap benchmark
     "000985": "sh000985",  # CSI All Share / broad-A benchmark
+    "399006": "sz399006",  # ChiNext Index / growth benchmark
     "399673": "sz399673",  # ChiNext 50
 }
 
 _DIRECT_EASTMONEY_SECIDS = {
+    "000300": "1.000300",  # CSI 300, Shanghai
     "000688": "1.000688",  # STAR 50, Shanghai
+    "000905": "1.000905",  # CSI 500, Shanghai
     "000985": "1.000985",  # CSI All Share, Shanghai
+    "399006": "0.399006",  # ChiNext Index, Shenzhen
     "399673": "0.399673",  # ChiNext 50, Shenzhen
 }
 
@@ -233,7 +239,7 @@ def fetch_index_history(
 ) -> pd.DataFrame:
     """Fetch and normalize an official A-share index daily price rail.
 
-    Formal STAR 50, CSI All Share and ChiNext 50 rails use Tencent first because
+    Formal broad-market and domain index rails use Tencent first because
     that channel has been more reliable in GitHub Actions than Eastmoney's dynamic
     market-code discovery call. A fixed-secid Eastmoney request is retained only
     as fallback.
