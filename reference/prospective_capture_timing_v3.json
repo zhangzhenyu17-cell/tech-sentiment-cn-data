@@ -7,7 +7,7 @@
           "30 0,10,20 * * *"
         ],
         "role": "LOW_FREQUENCY_NETWORK_PATH_FALLBACK",
-        "runner": "macos-15"
+        "runner": "macos-15-intel"
       },
       "prospective-public-continuous-collector-v3.yml": {
         "crons_utc": [

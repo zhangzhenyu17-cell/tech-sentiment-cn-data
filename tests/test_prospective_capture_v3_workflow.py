@@ -42,7 +42,7 @@ def test_v3_macos_fallback_is_public_only_and_shared_identity() -> None:
     text = (
         ROOT / ".github/workflows/prospective-public-continuous-collector-v3-macos-fallback.yml"
     ).read_text(encoding="utf-8")
-    assert "runs-on: macos-15" in text
+    assert "runs-on: macos-15-intel" in text
     assert 'cron: "30 0,10,20 * * *"' in text
     assert "group: prospective-public-continuous-collector-v3" in text
     assert "GITHUB_HOSTED_MACOS_FALLBACK" in text
