@@ -47,6 +47,8 @@
   },
   "purpose": "Decouple public-data acquisition time from decision eligibility. Permit exact market-session observations to arrive after the former 05:30 operational freeze while preserving first-observed-time provenance and prohibiting retroactive evidence qualification.",
   "semantics": {
+    "attempt_start_may_not_substitute_for_first_observed_at": true,
+    "first_observed_at_definition": "SOURCE_FETCH_COMPLETION_TIME",
     "first_observed_at_required": true,
     "forward_outcomes_allowed": false,
     "historical_backfill_allowed": false,
