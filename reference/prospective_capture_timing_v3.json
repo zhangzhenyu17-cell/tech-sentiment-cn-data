@@ -6,6 +6,7 @@
         "crons_utc": [
           "30 0,10,20 * * *"
         ],
+        "python_version": "3.11.9",
         "role": "LOW_FREQUENCY_NETWORK_PATH_FALLBACK",
         "runner": "macos-15-intel"
       },
@@ -16,6 +17,7 @@
           "15,45 0 * * *",
           "15 1,2,4,6 * * *"
         ],
+        "python_version": "3.11.16",
         "role": "PRIMARY_PUBLIC_SOURCE_COLLECTION",
         "runner": "ubuntu-24.04"
       }
