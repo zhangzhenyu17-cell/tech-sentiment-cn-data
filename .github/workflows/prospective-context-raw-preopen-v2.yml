@@ -116,11 +116,34 @@ jobs:
       - name: Assemble formal V3-backed previous-session public raw inputs
         id: capture
         run: |
-          python scripts/build_prospective_context_raw_preopen_v2.py \
-            --market-session-date "${{ inputs.market_session_date }}" \
-            --decision-date "${{ inputs.decision_date }}" \
-            --source-commit "$GITHUB_SHA" \
-            --v3-package-root formal-v3-packages
+          set -euo pipefail
+          BUDGET_SECONDS="$(python - <<'PY'
+          from datetime import datetime, time
+          from zoneinfo import ZoneInfo
+          import os
+
+          zone = ZoneInfo("Asia/Shanghai")
+          now = datetime.now(zone)
+          decision = datetime.strptime(os.environ["DECISION_DATE"], "%Y-%m-%d").date()
+          checkpoint_handoff = datetime.combine(decision, time(9, 10), tzinfo=zone)
+          remaining = int((checkpoint_handoff - now).total_seconds())
+          budget = min(30 * 60, remaining)
+          if budget <= 0:
+              raise SystemExit(
+                  "FORMAL_V3_RAW_ASSEMBLY_CHECKPOINT_HANDOFF_DEADLINE_PASSED_0910"
+              )
+          print(budget)
+          PY
+          )"
+          echo "Formal V3 raw assembly budget: ${BUDGET_SECONDS}s; checkpoint handoff reserved before 09:10 Asia/Shanghai."
+          timeout --signal=TERM --kill-after=60s "${BUDGET_SECONDS}s" \
+            python scripts/build_prospective_context_raw_preopen_v2.py \
+              --market-session-date "${{ inputs.market_session_date }}" \
+              --decision-date "${{ inputs.decision_date }}" \
+              --source-commit "$GITHUB_SHA" \
+              --v3-package-root formal-v3-packages
+        env:
+          DECISION_DATE: ${{ inputs.decision_date }}
 
       - name: Package every completed reusable checkpoint
         id: checkpoint_package
