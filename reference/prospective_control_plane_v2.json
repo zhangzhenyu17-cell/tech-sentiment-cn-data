@@ -90,7 +90,7 @@
     },
     {
       "crons": [
-        "45 15 * * *",
+        "15,45 7-15 * * *",
         "0,15,30,45 16-23 * * *",
         "0,15,30,35,40,45,50,55 0 * * *",
         "0,5 1 * * *"
@@ -101,7 +101,7 @@
         "actions: write",
         "contents: read"
       ],
-      "schedule_intent": "Baseline wrapper retries plus 5-minute near-cutoff assembly checks from 08:30 through 09:05; source cutoff remains 08:45 and artifact completion remains <=09:15.",
+      "schedule_intent": "Post-close redundancy starts 15:15 Asia/Shanghai; baseline wrapper retries continue overnight; 5-minute near-cutoff assembly checks run 08:30-09:05. Source cutoff remains 08:45 and artifact completion remains <=09:15.",
       "triggers": [
         "workflow_dispatch",
         "schedule"

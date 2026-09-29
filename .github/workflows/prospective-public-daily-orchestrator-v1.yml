@@ -3,7 +3,8 @@ name: prospective-public-daily-orchestrator-v1
 on:
   workflow_dispatch:
   schedule:
-    - cron: "45 15 * * *"
+    # Post-close redundancy begins at 15:15 Asia/Shanghai.
+    - cron: "15,45 7-15 * * *"
     - cron: "0,15,30,45 16-23 * * *"
     # Increase wrapper density once source publication historically approaches cutoff.
     - cron: "0,15,30,35,40,45,50,55 0 * * *"
@@ -65,12 +66,12 @@ jobs:
           # GitHub scheduled workflows can be delivered substantially later than
           # their cron slot. The cron is an invocation allowlist, not permission
           # to dispatch at arbitrary runtime. The formal V3 wrapper may run from
-          # 23:45 through 09:00 Asia/Shanghai. Source eligibility is independently
+          # 15:15 through 09:05 Asia/Shanghai. Source eligibility is independently
           # frozen at first_observed_at <= 08:45 and the aggregate artifact has a
           # 09:15 completion deadline.
           local_clock = now.time().replace(tzinfo=None)
           runtime_allowlisted = (
-              local_clock >= time(23, 45) or local_clock <= time(9, 0)
+              local_clock >= time(15, 15) or local_clock <= time(9, 5)
           )
           if not runtime_allowlisted:
               reason = "OUTSIDE_EXPLICIT_WRAPPER_ALLOWLIST"
@@ -89,7 +90,7 @@ jobs:
                           session_date, time(15, 0), tzinfo=zone
                       )
                       dispatch_deadline = datetime.combine(
-                          decision_date, time(9, 0), tzinfo=zone
+                          decision_date, time(9, 5), tzinfo=zone
                       )
                       if session_close <= now <= dispatch_deadline:
                           session = session_date.isoformat()
