@@ -66,6 +66,7 @@
       "file": "prospective-public-continuous-collector-v3.yml",
       "lifecycle_class": "ACTIVE_FORMAL_PRIMARY_SOURCE_COLLECTOR",
       "permissions": [
+        "actions: write",
         "contents: write"
       ],
       "triggers": [

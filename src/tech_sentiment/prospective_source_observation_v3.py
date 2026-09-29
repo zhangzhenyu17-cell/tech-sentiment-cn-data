@@ -29,6 +29,45 @@ SOURCE_KEYS = ("SSE_588000", "SZSE_159915", "SSE_TURNOVER", "SZSE_TURNOVER")
 ALLOWED_TRANSPORT_ORIGINS = ("GITHUB_HOSTED", "GITHUB_HOSTED_MACOS_FALLBACK")
 
 
+PENDING_PUBLICATION_MARKERS = (
+    "NO_MATCHING_ETF_ROW",
+    "ETF SOURCE RETURNED NO ROWS",
+)
+TRANSPORT_FAILURE_MARKERS = (
+    "CONNECTION",
+    "TIMED OUT",
+    "TIMEOUT",
+    "NETWORK",
+    "PROXY",
+    "SSL",
+    "TLS",
+    "DNS",
+    "NAME RESOLUTION",
+    "REMOTE END CLOSED",
+    "CONNECTION RESET",
+    "HTTP 403",
+    "HTTP 429",
+    "STATUS CODE 403",
+    "STATUS CODE 429",
+)
+
+
+def classify_source_incomplete_v3(data: pd.DataFrame, errors: pd.DataFrame) -> str:
+    if len(data) > 0 and errors.empty:
+        return "COMPLETE"
+    if errors.empty:
+        return "SOURCE_NOT_YET_PUBLISHED"
+    text = " ".join(
+        str(value)
+        for value in errors.astype(str).fillna("").to_numpy().ravel().tolist()
+    ).upper()
+    if any(marker in text for marker in PENDING_PUBLICATION_MARKERS):
+        return "SOURCE_NOT_YET_PUBLISHED"
+    if any(marker in text for marker in TRANSPORT_FAILURE_MARKERS):
+        return "TRANSPORT_FAILURE"
+    return "SOURCE_DATA_ERROR_REQUIRES_REVIEW"
+
+
 @dataclass(frozen=True)
 class SourceObservation:
     source_key: str
@@ -74,6 +113,7 @@ def _receipt(
     runner_name: str,
     row_count: int,
     error_count: int,
+    failure_class: str,
 ) -> dict[str, Any]:
     complete = state == "COMPLETE"
     return {
@@ -95,6 +135,16 @@ def _receipt(
         "producer_git_sha": source_commit,
         "row_count": int(row_count),
         "error_count": int(error_count),
+        "failure_class": failure_class,
+        "retry_disposition": (
+            "NONE"
+            if complete
+            else "WAIT_FOR_PUBLICATION"
+            if failure_class == "SOURCE_NOT_YET_PUBLISHED"
+            else "ESCALATE_TRANSPORT"
+            if failure_class == "TRANSPORT_FAILURE"
+            else "REVIEW_REQUIRED"
+        ),
         "timing_class": timing["timing_class"],
         "shadow_decision_eligible": bool(
             complete and timing["shadow_decision_eligible_by_time"]
@@ -212,7 +262,8 @@ def capture_capital_source_observations_v3(
     observations: dict[str, SourceObservation] = {}
     for source_key in selected:
         data, errors = specs[source_key]
-        state = "COMPLETE" if len(data) > 0 and errors.empty else "SOURCE_FAILURE_OR_INCOMPLETE"
+        failure_class = classify_source_incomplete_v3(data, errors)
+        state = "COMPLETE" if failure_class == "COMPLETE" else "SOURCE_FAILURE_OR_INCOMPLETE"
         root = output_root / source_key
         root.mkdir(parents=True, exist_ok=True)
         _write_frame(data, root / "data.csv")
@@ -237,6 +288,7 @@ def capture_capital_source_observations_v3(
             runner_name=runner_name,
             row_count=len(data),
             error_count=len(errors),
+            failure_class=failure_class,
         )
         (root / "SOURCE_OBSERVATION_RECEIPT.json").write_text(
             json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -259,6 +311,21 @@ def capture_capital_source_observations_v3(
         "observation_timestamp_semantics": "SOURCE_FETCH_COMPLETION_TIME",
         "requested_source_keys": list(selected),
         "source_states": {key: observations[key].state for key in selected},
+        "source_failure_classes": {
+            key: observations[key].receipt["failure_class"] for key in selected
+        },
+        "transport_failure_sources": [
+            key for key in selected
+            if observations[key].receipt["failure_class"] == "TRANSPORT_FAILURE"
+        ],
+        "publication_pending_sources": [
+            key for key in selected
+            if observations[key].receipt["failure_class"] == "SOURCE_NOT_YET_PUBLISHED"
+        ],
+        "review_required_sources": [
+            key for key in selected
+            if observations[key].receipt["failure_class"] == "SOURCE_DATA_ERROR_REQUIRES_REVIEW"
+        ],
         "complete_source_count": sum(
             observation.state == "COMPLETE" for observation in observations.values()
         ),
@@ -340,6 +407,7 @@ def package_complete_source_observation_v3(
 __all__ = [
     "SOURCE_KEYS",
     "SourceObservation",
+    "classify_source_incomplete_v3",
     "capture_capital_source_observations_v3",
     "package_complete_source_observation_v3",
 ]
