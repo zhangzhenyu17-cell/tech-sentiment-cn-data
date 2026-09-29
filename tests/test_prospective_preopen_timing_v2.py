@@ -154,7 +154,11 @@ def test_preopen_workflow_is_manual_only_and_formal_v3_backed() -> None:
     assert '"pandas==3.0.5"' in text
     assert '"pytest==8.4.2"' in text
     assert "python -m pip check" in text
+    assert "Upload contemporaneous pre-open raw capture artifact" in text
     assert "Publish, heal, or exact-verify immutable pre-open public raw capture" in text
+    assert text.index("Upload contemporaneous pre-open raw capture artifact") < text.index(
+        "Publish, heal, or exact-verify immutable pre-open public raw capture"
+    )
     assert "IMMUTABLE_PREOPEN_PUBLIC_RAW_CAPTURE_INCOMPLETE_AFTER_HEAL" in text
 
     builder = (root / "scripts/build_prospective_context_raw_preopen_v2.py").read_text(
