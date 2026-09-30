@@ -2,6 +2,11 @@ name: prospective-public-daily-orchestrator-v1
 
 on:
   workflow_dispatch:
+    inputs:
+      trigger_source:
+        description: Audit-only trigger origin; no effect on T/T+1 or evidence semantics
+        required: false
+        type: string
   schedule:
     # Post-close redundancy begins at 15:15 Asia/Shanghai.
     - cron: "15,45 7-15 * * *"
@@ -30,6 +35,14 @@ jobs:
         with:
           python-version: "3.11.16"
           cache: pip
+
+      - name: Record invocation provenance
+        env:
+          TRIGGER_SOURCE: ${{ inputs.trigger_source || github.event_name }}
+        run: |
+          echo "trigger_source=${TRIGGER_SOURCE}"
+          echo "event_name=${GITHUB_EVENT_NAME}"
+          echo "No trigger source may override exact T/T+1 resolution or evidence qualification."
 
       - name: Install exact trading-calendar environment
         run: |
