@@ -190,6 +190,20 @@ def test_external_patterns_are_adapted_without_runtime_dependencies() -> None:
                 "NO_EVIDENCE_PROMOTION"
             ),
         },
+        {
+            "path": ".github/workflows/cross-sector-fundamental-expansion-shard-b-recovery-v1.yml",
+            "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+            "automatic_triggers_allowed": False,
+            "necessity": (
+                "Recover the frozen 218-entity CSRM Fundamental PIT Shard B by combining the "
+                "pinned 31 successful original work-unit artifacts with the pinned repaired unit "
+                "12 artifact, without recomputation."
+            ),
+            "research_boundary": (
+                "OUTCOME_BLIND_SHARD_B_RECOVERY_ONLY_NO_FINAL_A_B_INTEGRATION_NO_PAIRWISE_"
+                "NO_EVIDENCE_PROMOTION"
+            ),
+        },
     ]
     assert ci["audit_entrypoint"] == "scripts/audit_public_tree.py"
     assert ci["pytest_contract"] == "tests/test_public_data_governance_control_plane.py"

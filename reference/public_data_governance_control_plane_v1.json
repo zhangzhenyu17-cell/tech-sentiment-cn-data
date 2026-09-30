@@ -259,6 +259,16 @@
       "registration_state": "NEW_MANUAL_ONLY_PUBLIC_MATERIALIZATION_EXPLICITLY_ALLOWLISTED",
       "public_workflow_success_grants_private_qualification": false,
       "may_promote_evidence": false
+    },
+    {
+      "product_id": "CROSS_SECTOR_FUNDAMENTAL_EXPANSION_SHARD_B_RECOVERY_V1",
+      "contract_path": "reference/cross_sector_fundamental_expansion_shard_b_recovery_v1.json",
+      "producer_path": ".github/workflows/cross-sector-fundamental-expansion-shard-b-recovery-v1.yml",
+      "logical_dataset": "CSRM Shard B exact recovery from pinned original and repair work-unit artifacts",
+      "private_consumer_boundary": "Shard B exact artifact intake/readiness only; no A+B integration, pairwise builder, evidence promotion, Production or trading authority",
+      "registration_state": "NEW_MANUAL_ONLY_PUBLIC_RECOVERY_EXPLICITLY_ALLOWLISTED",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
     }
   ],
   "ci_enforcement": {
@@ -290,6 +300,13 @@
         "automatic_triggers_allowed": false,
         "necessity": "Materialize the frozen 218-entity CSRM Fundamental PIT expansion Shard B with resumable work units and a 2026-09-29 decision-date boundary.",
         "research_boundary": "OUTCOME_BLIND_SHARD_B_INPUT_ONLY_NO_FINAL_INTEGRATION_NO_PAIRWISE_NO_EVIDENCE_PROMOTION"
+      },
+      {
+        "path": ".github/workflows/cross-sector-fundamental-expansion-shard-b-recovery-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": false,
+        "necessity": "Recover the frozen 218-entity CSRM Fundamental PIT Shard B by combining the pinned 31 successful original work-unit artifacts with the pinned repaired unit 12 artifact, without recomputation.",
+        "research_boundary": "OUTCOME_BLIND_SHARD_B_RECOVERY_ONLY_NO_FINAL_A_B_INTEGRATION_NO_PAIRWISE_NO_EVIDENCE_PROMOTION"
       }
     ]
   }

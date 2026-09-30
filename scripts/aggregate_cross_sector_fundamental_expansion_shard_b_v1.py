@@ -50,6 +50,7 @@ def main() -> int:
     parser.add_argument("--scope-contract", type=Path, required=True)
     parser.add_argument("--work-unit-root", type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--recovery-contract", type=Path)
     parser.add_argument("--out-dir", type=Path, required=True)
     args = parser.parse_args()
 
@@ -63,7 +64,25 @@ def main() -> int:
         raise ValueError("Shard B id drift")
     expected = set(scope["entity_id"].astype(str))
 
+    recovery = None
+    recovery_receipt = None
+    if args.recovery_contract is not None:
+        recovery = json.loads(args.recovery_contract.read_text(encoding="utf-8"))
+        if recovery.get("contract_id") != "CROSS_SECTOR_FUNDAMENTAL_EXPANSION_SHARD_B_RECOVERY_V1":
+            raise ValueError("Shard B recovery contract id drift")
+        if recovery.get("shard_id") != SHARD_ID or recovery.get("decision_date") != DECISION_DATE:
+            raise ValueError("Shard B recovery identity drift")
+        if recovery.get("scope_csv_sha256") != _sha256(args.scope_csv):
+            raise ValueError("Shard B recovery scope checksum drift")
+        if any(value is not False for value in recovery.get("authority", {}).values()):
+            raise ValueError("Shard B recovery authority drift")
+        recovery_receipt_path = args.work_unit_root / "recovery_receipt.json"
+        recovery_receipt = json.loads(recovery_receipt_path.read_text(encoding="utf-8"))
+        if recovery_receipt.get("contract_id") != recovery["contract_id"]:
+            raise ValueError("Shard B recovery receipt contract drift")
+
     manifests = []
+    work_unit_source_commits: dict[int, str] = {}
     observed: set[str] = set()
     duplicate_observed: set[str] = set()
     for path in sorted(args.work_unit_root.rglob("stage_manifest.json")):
@@ -82,6 +101,16 @@ def main() -> int:
             raise ValueError("fundamental state contract drift")
         if item.get("fundamental_state_formula_version") != FUNDAMENTAL_STATE_FORMULA_VERSION:
             raise ValueError("fundamental state formula drift")
+        unit = int(item.get("work_unit_index", -1))
+        if unit in work_unit_source_commits:
+            raise ValueError(f"duplicate work-unit index: {unit}")
+        work_unit_source_commits[unit] = str(item.get("source_commit") or "")
+        if recovery is not None:
+            expected_artifact = recovery["work_unit_artifacts"].get(str(unit))
+            if not isinstance(expected_artifact, dict):
+                raise ValueError(f"recovery work-unit provenance missing: {unit}")
+            if item.get("source_commit") != expected_artifact.get("source_commit"):
+                raise ValueError(f"recovery work-unit source commit drift: {unit}")
         for entity_id in item.get("entity_ids", []):
             if entity_id in observed:
                 duplicate_observed.add(entity_id)
@@ -91,6 +120,13 @@ def main() -> int:
         raise ValueError(f"duplicate work-unit entities: {sorted(duplicate_observed)[:10]}")
     if observed - expected:
         raise ValueError(f"work-unit scope contains extras: {sorted(observed - expected)[:10]}")
+    if recovery is not None:
+        if set(work_unit_source_commits) != set(range(int(recovery["work_unit_count"]))):
+            raise ValueError("recovery work-unit index set incomplete")
+        if observed != expected:
+            raise ValueError("recovery work-unit entity accounting incomplete")
+        if len(manifests) != int(recovery["work_unit_count"]):
+            raise ValueError("recovery work-unit manifest accounting incomplete")
 
     evidence_parts = _read_many(args.work_unit_root, "fundamental_state_evidence.csv")
     coverage_parts = _read_many(args.work_unit_root, "fundamental_state_coverage.csv")
@@ -174,6 +210,15 @@ def main() -> int:
     }
     for name, frame in outputs.items():
         frame.to_csv(out / name, index=False)
+    if recovery is not None:
+        (out / "recovery_receipt.json").write_text(
+            json.dumps(recovery_receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        (out / "recovery_contract.json").write_text(
+            json.dumps(recovery, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     terminal = (
         "SHARD_READY_FOR_FINAL_INTEGRATION"
@@ -192,6 +237,12 @@ def main() -> int:
         "domain_new_coverage_contribution": contributions,
         "decision_date": DECISION_DATE,
         "source_commit": args.source_commit,
+        "aggregation_source_commit": args.source_commit,
+        "work_unit_source_commits": sorted(set(work_unit_source_commits.values())),
+        "shard_recovery_integration_run": recovery is not None,
+        "recovery_contract_id": recovery["contract_id"] if recovery is not None else None,
+        "recovery_original_run_id": recovery["original_run_id"] if recovery is not None else None,
+        "recovery_repair_run_id": recovery["repair_run_id"] if recovery is not None else None,
         "outcome_read": False,
         "historical_outcome_read": False,
         "prospective_outcome_read": False,
@@ -223,15 +274,53 @@ def main() -> int:
         "scope_contract_path": args.scope_contract.as_posix(),
         "scope_contract_sha256": _sha256(args.scope_contract),
         "source_commit": args.source_commit,
-        "parser_identity": f"tech_sentiment.filing_materialization@{args.source_commit}",
+        "aggregation_source_commit": args.source_commit,
+        "work_unit_source_commits": sorted(set(work_unit_source_commits.values())),
+        "parser_identity": (
+            "RECOVERED_PINNED_WORK_UNIT_SET"
+            if recovery is not None
+            else f"tech_sentiment.filing_materialization@{args.source_commit}"
+        ),
+        "parser_identities": (
+            sorted(
+                {
+                    f"tech_sentiment.filing_materialization@{commit}"
+                    for commit in work_unit_source_commits.values()
+                }
+            )
+            if recovery is not None
+            else [f"tech_sentiment.filing_materialization@{args.source_commit}"]
+        ),
         "filing_materializer_version": FILING_MATERIALIZER_VERSION,
         "filing_parser_version": FILING_PARSER_VERSION,
-        "state_builder_identity": f"tech_sentiment.fundamental_pit_state@{args.source_commit}",
+        "state_builder_identity": (
+            "RECOVERED_PINNED_WORK_UNIT_SET"
+            if recovery is not None
+            else f"tech_sentiment.fundamental_pit_state@{args.source_commit}"
+        ),
+        "state_builder_identities": (
+            sorted(
+                {
+                    f"tech_sentiment.fundamental_pit_state@{commit}"
+                    for commit in work_unit_source_commits.values()
+                }
+            )
+            if recovery is not None
+            else [f"tech_sentiment.fundamental_pit_state@{args.source_commit}"]
+        ),
         "fundamental_state_contract_id": FUNDAMENTAL_STATE_CONTRACT_ID,
         "fundamental_state_formula_version": FUNDAMENTAL_STATE_FORMULA_VERSION,
         "decision_date": DECISION_DATE,
         "exact_entity_ids": scope.sort_values("entity_id")["entity_id"].astype(str).tolist(),
         "domain_new_coverage_contribution": contributions,
+        "shard_recovery_integration_run": recovery is not None,
+        "recovery_contract_id": recovery["contract_id"] if recovery is not None else None,
+        "recovery_contract_sha256": (
+            _sha256(args.recovery_contract) if args.recovery_contract is not None else None
+        ),
+        "recovery_original_run_id": recovery["original_run_id"] if recovery is not None else None,
+        "recovery_repair_run_id": recovery["repair_run_id"] if recovery is not None else None,
+        "recovery_repair_unit": recovery["repair_unit"] if recovery is not None else None,
         "files": files,
         "authority": {
             "outcome_read": False,
