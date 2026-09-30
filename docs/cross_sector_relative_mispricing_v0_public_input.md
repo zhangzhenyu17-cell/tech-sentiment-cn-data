@@ -11,7 +11,7 @@
 - Defense：399973；
 - Core Beta：000510（CSI A500）。
 
-来源统一使用中证指数有限公司官网的 `index-perf` 日级接口。原始响应中的 `rolling_pe` 现在与价格字段一起保留；公开仓不解释其高低，也不进行跨行业原始 P/E 比较。
+来源遵循 benchmark operator 官方源优先：000688 / 931152 / 399973 / 000510 使用中证指数有限公司官网 `index-perf`；399673 使用国证指数网官方 daily market API。中证官方响应中的 `rolling_pe` 与价格字段一起保留。国证 399673 官方历史行情接口不暴露历史指数 P/E，因此该 rail 的 `rolling_pe` 明确保留为空，不用当前 P/E 回填历史，也不引入第三方估值。公开仓不解释估值高低，也不进行跨行业原始 P/E 比较。
 
 ## 运行
 
@@ -38,3 +38,10 @@ python scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py \
 - 不含私有阈值、信号、持仓或证据结论；
 - public materialization 成功不等于 private qualification；
 - private 侧必须独立验证 exact commit、CSV hash、PIT、coverage、freshness 与 normalization contract。
+
+
+## 多官方源日期对齐
+
+当不同官方 operator 的发布节奏不同，public materializer 使用 **latest common official market date**，即取所有 benchmark 已实际发布日线的共同最新日期并截断到该日。禁止 forward-fill，也禁止把较早的官方观测标成较晚日期。
+
+manifest 同时保留每条 benchmark 的实际 latest available market date。private consumer 必须独立应用 freshness gate；因此 requested as-of date 晚于共同日期时，公开数据仍可用于 coverage/materialization feasibility，但不得伪装成 same-date operational input。
