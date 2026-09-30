@@ -24,7 +24,7 @@ def _fake_fetcher(
     retry_backoff_seconds: float,
     timeout_seconds: float,
 ) -> pd.DataFrame:
-    dates = pd.bdate_range("2025-01-02", periods=330)
+    dates = pd.bdate_range("2025-01-02", periods=480)
     base = 1000.0 + int(code[-2:])
     frame = pd.DataFrame(
         {
@@ -62,12 +62,12 @@ def test_public_builder_materializes_exact_five_benchmark_price_and_pe_rails(
 
     assert manifest["schema_version"] == SCHEMA_VERSION
     assert manifest["product_id"] == PRODUCT_ID
-    assert manifest["row_count"] == 330 * len(BENCHMARK_SPECS)
+    assert manifest["row_count"] == 480 * len(BENCHMARK_SPECS)
     assert set(manifest["rows_by_benchmark"]) == {
         spec["benchmark_id"] for spec in BENCHMARK_SPECS
     }
     assert all(
-        n == 330 for n in manifest["positive_rolling_pe_rows_by_benchmark"].values()
+        n == 480 for n in manifest["positive_rolling_pe_rows_by_benchmark"].values()
     )
     assert manifest["contains_forward_outcomes"] is False
     assert manifest["public_handoff_ready_grants_private_qualification"] is False
@@ -113,7 +113,7 @@ def test_public_builder_fails_closed_when_official_pe_column_is_missing(
 def test_public_builder_requires_history_floor_and_aligned_latest_date(
     tmp_path: Path,
 ) -> None:
-    assert MINIMUM_HISTORY_SESSIONS == 313
+    assert MINIMUM_HISTORY_SESSIONS == 451
 
     def short(code: str, **kwargs) -> pd.DataFrame:
         return _fake_fetcher(code, **kwargs).iloc[:200].copy()
