@@ -53,6 +53,8 @@ def _normalise_csindex_rows(data: list[Any], code: str) -> pd.DataFrame:
             "pct_chg",
             "volume",
             "amount",
+            "sample_count",
+            "rolling_pe",
         ]].copy()
     elif isinstance(first, dict):
         raw = pd.DataFrame(data)
@@ -66,12 +68,14 @@ def _normalise_csindex_rows(data: list[Any], code: str) -> pd.DataFrame:
             "pct_chg": ("pctChange", "涨跌幅"),
             "volume": ("volume", "成交量"),
             "amount": ("turnover", "amount", "成交金额"),
+            "sample_count": ("sampleCount", "sample_count", "样本数"),
+            "rolling_pe": ("rollingPE", "rolling_pe", "滚动市盈率"),
         }
         selected: dict[str, pd.Series] = {}
         for target, candidates in aliases.items():
             source = next((name for name in candidates if name in raw.columns), None)
             if source is None:
-                if target in {"open", "high", "low", "pct_chg", "volume", "amount"}:
+                if target in {"open", "high", "low", "pct_chg", "volume", "amount", "sample_count", "rolling_pe"}:
                     continue
                 raise ValueError(
                     f"CSI history for {code} is missing required {target}; columns={list(raw.columns)}"
@@ -87,7 +91,7 @@ def _normalise_csindex_rows(data: list[Any], code: str) -> pd.DataFrame:
     out["index_code"] = out["index_code"].astype(str).str.strip().str.zfill(6)
     if set(out["index_code"]) != {code}:
         raise ValueError(f"CSI history returned unexpected index codes: {sorted(set(out['index_code']))}")
-    for column in ("open", "high", "low", "close", "pct_chg", "volume", "amount"):
+    for column in ("open", "high", "low", "close", "pct_chg", "volume", "amount", "sample_count", "rolling_pe"):
         if column in out.columns:
             out[column] = pd.to_numeric(out[column], errors="coerce")
     if out["close"].isna().any():
