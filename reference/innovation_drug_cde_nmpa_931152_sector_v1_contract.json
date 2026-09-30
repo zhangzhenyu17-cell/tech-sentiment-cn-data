@@ -1,0 +1,91 @@
+{
+  "authority": {
+    "automatic_execution": false,
+    "bottom_v1_changed": false,
+    "evidence_qualification_changed": false,
+    "high_v1_changed": false,
+    "historical_outcome_read": false,
+    "model_training": false,
+    "parameter_search": false,
+    "production_permission": "NONE",
+    "prospective_outcome_read": false,
+    "real_percentage_mapping": false,
+    "threshold_search": false,
+    "trading_authority": false,
+    "weight_search": false
+  },
+  "capture_scope": {
+    "affiliate_completeness_claimed": false,
+    "company_query_count": 86,
+    "completeness_semantics": "ALL_FROZEN_MEMBER_COMPANY_QUERIES_EXHAUSTIVE_PAGINATION",
+    "full_source_category_completeness_claimed": false,
+    "historical_legal_name_alias_completeness_claimed": false,
+    "index_code": "931152",
+    "kind": "OFFICIAL_931152_FROZEN_MEMBER_LISTED_ISSUER_QUERY_SET",
+    "membership_interval_rows": 155,
+    "membership_unique_symbols": 86,
+    "query_identity": "CURRENT_OFFICIAL_LISTED_ISSUER_LEGAL_NAME_EXACT"
+  },
+  "contract_id": "INNOVATION_DRUG_CDE_NMPA_931152_SECTOR_V1",
+  "contract_revision": "1.0",
+  "date": "2026-09-30",
+  "domain_id": "INNOVATION_DRUG",
+  "entity_mapping": {
+    "affiliate_inference_allowed": false,
+    "fuzzy_matching_allowed": false,
+    "historical_legal_name_alias_completeness_claimed": false,
+    "listed_issuer_exact_rows": 86,
+    "multi_entity_exact_fanout_allowed": true,
+    "registry_path": "reference/innovation_drug_cde_nmpa_931152_entity_mapping_v1.json",
+    "registry_sha256": "7e185e97a0cbbe99a97c35848cebe277e224c27156572d93270da45111350a35",
+    "substring_matching_allowed": false,
+    "whole_field_or_delimited_legal_name_token_only": true
+  },
+  "index_code": "931152",
+  "interpretation_boundary": {
+    "absence_of_event_may_imply_negative_or_positive_state": false,
+    "clinical_stage_weight_defined": false,
+    "company_score_defined": false,
+    "event_count_as_score_allowed": false,
+    "event_identity_is_direction": false,
+    "event_weight_defined": false,
+    "formal_sector_kpi_state": "DATA_INSUFFICIENT",
+    "sector_score_defined": false,
+    "supportive_or_adverse_state_defined": false
+  },
+  "issuer_identity": {
+    "official_exchange_sources": [
+      "SSE_OFFICIAL_COMPANY_LIST_API",
+      "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API"
+    ],
+    "registry_path": "reference/innovation_drug_931152_issuer_identity_v1.json",
+    "registry_sha256": "5b90421add03617542f3ad0effa8a9fdb9cbb571c1ab214e1064f357c9854afb",
+    "resolved_issuer_rows": 86,
+    "unresolved_issuer_rows": 0
+  },
+  "membership": {
+    "current_constituent_backfill_allowed": false,
+    "interval_rows": 155,
+    "post_2026_09_11_membership_claimed": false,
+    "scope_end": "2026-09-11",
+    "scope_path": "data/reference/sector_931152_kpi_membership_scope_v1.csv",
+    "scope_sha256": "fbefdb032cd799d76c250b4f4add3c8e5106fbc41d27bf702ae6c0924b9dce3d",
+    "scope_start": "2019-04-22",
+    "unique_symbols": 86
+  },
+  "pit_semantics": {
+    "date_only_timestamp_delayed_to_next_real_trading_session": true,
+    "events_after_qualified_membership_scope_end_may_enter_current_sector_context": false,
+    "explicit_official_publication_or_approval_date_historical_reconstruction_allowed": true,
+    "first_observed_historical_backfill_allowed": false,
+    "missing_record_date_first_observed_only": true,
+    "pit_member_filter_uses_evidence_available_date": true
+  },
+  "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
+  "source_identity_semantics": {
+    "cross_source_cninfo_cde_deduplication_applied": false,
+    "source_event_rows_may_be_interpreted_as_unique_economic_events": false,
+    "source_record_may_project_to_multiple_exact_listed_entities": true
+  },
+  "status": "FROZEN_OUTCOME_BLIND_931152_LISTED_ISSUER_QUERY_SET_RAW_COVERAGE"
+}

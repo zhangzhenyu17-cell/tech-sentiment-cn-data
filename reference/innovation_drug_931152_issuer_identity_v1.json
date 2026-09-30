@@ -1,0 +1,885 @@
+{
+  "captured_at": "2026-09-30T19:09:58+08:00",
+  "date": "2026-09-30",
+  "index_code": "931152",
+  "issuers": [
+    {
+      "entity_id": "000513.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "丽珠医药集团股份有限公司",
+      "security_short_name": "丽珠集团",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=000513&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=000513",
+      "symbol": "000513"
+    },
+    {
+      "entity_id": "000661.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "长春高新技术产业（集团）股份有限公司",
+      "security_short_name": "长春高新",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=000661&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=000661",
+      "symbol": "000661"
+    },
+    {
+      "entity_id": "000766.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "通化金马药业集团股份有限公司",
+      "security_short_name": "通化金马",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=000766&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=000766",
+      "symbol": "000766"
+    },
+    {
+      "entity_id": "000963.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "华东医药股份有限公司",
+      "security_short_name": "华东医药",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=000963&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=000963",
+      "symbol": "000963"
+    },
+    {
+      "entity_id": "002007.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "华兰生物工程股份有限公司",
+      "security_short_name": "华兰生物",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002007&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002007",
+      "symbol": "002007"
+    },
+    {
+      "entity_id": "002019.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "亿帆医药股份有限公司",
+      "security_short_name": "亿帆医药",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002019&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002019",
+      "symbol": "002019"
+    },
+    {
+      "entity_id": "002020.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "浙江京新药业股份有限公司",
+      "security_short_name": "京新药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002020&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002020",
+      "symbol": "002020"
+    },
+    {
+      "entity_id": "002038.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "北京双鹭药业股份有限公司",
+      "security_short_name": "双鹭药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002038&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002038",
+      "symbol": "002038"
+    },
+    {
+      "entity_id": "002099.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "浙江海翔药业股份有限公司",
+      "security_short_name": "海翔药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002099&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002099",
+      "symbol": "002099"
+    },
+    {
+      "entity_id": "002262.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "江苏恩华药业股份有限公司",
+      "security_short_name": "恩华药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002262&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002262",
+      "symbol": "002262"
+    },
+    {
+      "entity_id": "002294.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "深圳信立泰药业股份有限公司",
+      "security_short_name": "信立泰",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002294&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002294",
+      "symbol": "002294"
+    },
+    {
+      "entity_id": "002317.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "广东众生药业股份有限公司",
+      "security_short_name": "众生药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002317&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002317",
+      "symbol": "002317"
+    },
+    {
+      "entity_id": "002399.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "深圳市海普瑞药业集团股份有限公司",
+      "security_short_name": "海普瑞",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002399&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002399",
+      "symbol": "002399"
+    },
+    {
+      "entity_id": "002422.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "四川科伦药业股份有限公司",
+      "security_short_name": "科伦药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002422&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002422",
+      "symbol": "002422"
+    },
+    {
+      "entity_id": "002603.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "石家庄以岭药业股份有限公司",
+      "security_short_name": "以岭药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002603&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002603",
+      "symbol": "002603"
+    },
+    {
+      "entity_id": "002653.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "海思科医药集团股份有限公司",
+      "security_short_name": "海思科",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002653&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002653",
+      "symbol": "002653"
+    },
+    {
+      "entity_id": "002675.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "烟台东诚药业集团股份有限公司",
+      "security_short_name": "东诚药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002675&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002675",
+      "symbol": "002675"
+    },
+    {
+      "entity_id": "002755.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "北京奥赛康药业股份有限公司",
+      "security_short_name": "奥赛康",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002755&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002755",
+      "symbol": "002755"
+    },
+    {
+      "entity_id": "002773.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "成都康弘药业集团股份有限公司",
+      "security_short_name": "康弘药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002773&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002773",
+      "symbol": "002773"
+    },
+    {
+      "entity_id": "002793.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "罗欣药业集团股份有限公司",
+      "security_short_name": "罗欣药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002793&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002793",
+      "symbol": "002793"
+    },
+    {
+      "entity_id": "002821.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "凯莱英医药集团（天津）股份有限公司",
+      "security_short_name": "凯莱英",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=002821&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=002821",
+      "symbol": "002821"
+    },
+    {
+      "entity_id": "300003.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "乐普（北京）医疗器械股份有限公司",
+      "security_short_name": "乐普医疗",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300003&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300003",
+      "symbol": "300003"
+    },
+    {
+      "entity_id": "300009.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "安徽安科生物工程(集团)股份有限公司",
+      "security_short_name": "安科生物",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300009&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300009",
+      "symbol": "300009"
+    },
+    {
+      "entity_id": "300122.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "重庆智飞生物制品股份有限公司",
+      "security_short_name": "智飞生物",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300122&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300122",
+      "symbol": "300122"
+    },
+    {
+      "entity_id": "300142.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "云南沃森生物技术股份有限公司",
+      "security_short_name": "沃森生物",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300142&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300142",
+      "symbol": "300142"
+    },
+    {
+      "entity_id": "300149.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "睿智医药科技股份有限公司",
+      "security_short_name": "睿智医药",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300149&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300149",
+      "symbol": "300149"
+    },
+    {
+      "entity_id": "300181.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "浙江佐力药业股份有限公司",
+      "security_short_name": "佐力药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300181&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300181",
+      "symbol": "300181"
+    },
+    {
+      "entity_id": "300199.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "深圳翰宇药业股份有限公司",
+      "security_short_name": "翰宇药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300199&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300199",
+      "symbol": "300199"
+    },
+    {
+      "entity_id": "300238.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "冠昊生物科技股份有限公司",
+      "security_short_name": "冠昊生物",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300238&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300238",
+      "symbol": "300238"
+    },
+    {
+      "entity_id": "300347.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "杭州泰格医药科技股份有限公司",
+      "security_short_name": "泰格医药",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300347&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300347",
+      "symbol": "300347"
+    },
+    {
+      "entity_id": "300357.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "浙江我武生物科技股份有限公司",
+      "security_short_name": "我武生物",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300357&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300357",
+      "symbol": "300357"
+    },
+    {
+      "entity_id": "300363.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "重庆博腾制药科技股份有限公司",
+      "security_short_name": "博腾股份",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300363&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300363",
+      "symbol": "300363"
+    },
+    {
+      "entity_id": "300404.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "博济医药科技股份有限公司",
+      "security_short_name": "博济医药",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300404&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300404",
+      "symbol": "300404"
+    },
+    {
+      "entity_id": "300558.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "贝达药业股份有限公司",
+      "security_short_name": "贝达药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300558&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300558",
+      "symbol": "300558"
+    },
+    {
+      "entity_id": "300601.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "深圳康泰生物制品股份有限公司",
+      "security_short_name": "康泰生物",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300601&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300601",
+      "symbol": "300601"
+    },
+    {
+      "entity_id": "300725.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "南京药石科技股份有限公司",
+      "security_short_name": "药石科技",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300725&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300725",
+      "symbol": "300725"
+    },
+    {
+      "entity_id": "300759.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "康龙化成（北京）新药技术股份有限公司",
+      "security_short_name": "康龙化成",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=300759&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=300759",
+      "symbol": "300759"
+    },
+    {
+      "entity_id": "301201.SZ",
+      "exchange": "SZSE",
+      "listed_issuer_legal_name": "诚达药业股份有限公司",
+      "security_short_name": "诚达药业",
+      "source_api_url": "https://www.szse.cn/api/report/index/companyGeneralization?secCode=301201&random=0.931152",
+      "source_kind": "SZSE_OFFICIAL_COMPANY_GENERALIZATION_API",
+      "source_url": "https://www.szse.cn/certificate/individual/index.html?code=301201",
+      "symbol": "301201"
+    },
+    {
+      "entity_id": "600079.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "人福医药集团股份公司",
+      "security_short_name": "ST人福",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600079&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600079",
+      "symbol": "600079"
+    },
+    {
+      "entity_id": "600196.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "上海复星医药(集团)股份有限公司",
+      "security_short_name": "复星医药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600196&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600196",
+      "symbol": "600196"
+    },
+    {
+      "entity_id": "600211.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "西藏诺迪康药业股份有限公司",
+      "security_short_name": "西藏药业",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600211&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600211",
+      "symbol": "600211"
+    },
+    {
+      "entity_id": "600216.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "浙江医药股份有限公司",
+      "security_short_name": "浙江医药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600216&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600216",
+      "symbol": "600216"
+    },
+    {
+      "entity_id": "600267.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "浙江海正药业股份有限公司",
+      "security_short_name": "海正药业",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600267&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600267",
+      "symbol": "600267"
+    },
+    {
+      "entity_id": "600276.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "江苏恒瑞医药股份有限公司",
+      "security_short_name": "恒瑞医药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600276&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600276",
+      "symbol": "600276"
+    },
+    {
+      "entity_id": "600285.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "河南羚锐制药股份有限公司",
+      "security_short_name": "羚锐制药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600285&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600285",
+      "symbol": "600285"
+    },
+    {
+      "entity_id": "600351.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "亚宝药业集团股份有限公司",
+      "security_short_name": "亚宝药业",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600351&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600351",
+      "symbol": "600351"
+    },
+    {
+      "entity_id": "600380.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "健康元药业集团股份有限公司",
+      "security_short_name": "健康元",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600380&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600380",
+      "symbol": "600380"
+    },
+    {
+      "entity_id": "600521.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "浙江华海药业股份有限公司",
+      "security_short_name": "华海药业",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600521&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600521",
+      "symbol": "600521"
+    },
+    {
+      "entity_id": "600535.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "天士力医药集团股份有限公司",
+      "security_short_name": "天士力",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600535&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600535",
+      "symbol": "600535"
+    },
+    {
+      "entity_id": "600566.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "湖北济川药业股份有限公司",
+      "security_short_name": "济川药业",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600566&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600566",
+      "symbol": "600566"
+    },
+    {
+      "entity_id": "600673.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "广东东阳光科技控股股份有限公司",
+      "security_short_name": "东阳光",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600673&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600673",
+      "symbol": "600673"
+    },
+    {
+      "entity_id": "600721.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "新疆百花村医药集团股份有限公司",
+      "security_short_name": "百花医药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600721&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600721",
+      "symbol": "600721"
+    },
+    {
+      "entity_id": "600812.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "华北制药股份有限公司",
+      "security_short_name": "华北制药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600812&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600812",
+      "symbol": "600812"
+    },
+    {
+      "entity_id": "600867.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "通化东宝药业股份有限公司",
+      "security_short_name": "通化东宝",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=600867&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=600867",
+      "symbol": "600867"
+    },
+    {
+      "entity_id": "601607.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "上海医药集团股份有限公司",
+      "security_short_name": "上海医药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=601607&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=601607",
+      "symbol": "601607"
+    },
+    {
+      "entity_id": "603087.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "甘李药业股份有限公司",
+      "security_short_name": "甘李药业",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=603087&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603087",
+      "symbol": "603087"
+    },
+    {
+      "entity_id": "603127.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "北京昭衍新药研究中心股份有限公司",
+      "security_short_name": "昭衍新药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=603127&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603127",
+      "symbol": "603127"
+    },
+    {
+      "entity_id": "603229.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "浙江奥翔药业股份有限公司",
+      "security_short_name": "奥翔药业",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=603229&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603229",
+      "symbol": "603229"
+    },
+    {
+      "entity_id": "603259.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "无锡药明康德新药开发股份有限公司",
+      "security_short_name": "药明康德",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=603259&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603259",
+      "symbol": "603259"
+    },
+    {
+      "entity_id": "603392.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "北京万泰生物药业股份有限公司",
+      "security_short_name": "万泰生物",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=603392&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603392",
+      "symbol": "603392"
+    },
+    {
+      "entity_id": "603456.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "浙江九洲药业股份有限公司",
+      "security_short_name": "九洲药业",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=603456&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603456",
+      "symbol": "603456"
+    },
+    {
+      "entity_id": "603858.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "山东步长制药股份有限公司",
+      "security_short_name": "步长制药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=1&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=603858&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=603858",
+      "symbol": "603858"
+    },
+    {
+      "entity_id": "688062.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "迈威(上海)生物科技股份有限公司",
+      "security_short_name": "迈威生物",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688062&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688062",
+      "symbol": "688062"
+    },
+    {
+      "entity_id": "688131.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "上海皓元医药股份有限公司",
+      "security_short_name": "皓元医药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688131&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688131",
+      "symbol": "688131"
+    },
+    {
+      "entity_id": "688166.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "博瑞生物医药(苏州)股份有限公司",
+      "security_short_name": "博瑞医药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688166&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688166",
+      "symbol": "688166"
+    },
+    {
+      "entity_id": "688177.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "百奥泰生物制药股份有限公司",
+      "security_short_name": "百奥泰",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688177&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688177",
+      "symbol": "688177"
+    },
+    {
+      "entity_id": "688180.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "上海君实生物医药科技股份有限公司",
+      "security_short_name": "君实生物",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688180&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688180",
+      "symbol": "688180"
+    },
+    {
+      "entity_id": "688185.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "康希诺生物股份公司",
+      "security_short_name": "康希诺",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688185&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688185",
+      "symbol": "688185"
+    },
+    {
+      "entity_id": "688192.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "迪哲(江苏)医药股份有限公司",
+      "security_short_name": "迪哲医药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688192&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688192",
+      "symbol": "688192"
+    },
+    {
+      "entity_id": "688202.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "上海美迪西生物医药股份有限公司",
+      "security_short_name": "美迪西",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688202&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688202",
+      "symbol": "688202"
+    },
+    {
+      "entity_id": "688222.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "成都先导药物开发股份有限公司",
+      "security_short_name": "成都先导",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688222&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688222",
+      "symbol": "688222"
+    },
+    {
+      "entity_id": "688235.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "百济神州有限公司",
+      "security_short_name": "百济神州",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688235&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688235",
+      "symbol": "688235"
+    },
+    {
+      "entity_id": "688238.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "上海和元生物技术(集团)股份有限公司",
+      "security_short_name": "和元生物",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688238&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688238",
+      "symbol": "688238"
+    },
+    {
+      "entity_id": "688266.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "苏州泽璟生物制药股份有限公司",
+      "security_short_name": "泽璟制药",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688266&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688266",
+      "symbol": "688266"
+    },
+    {
+      "entity_id": "688278.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "厦门特宝生物工程股份有限公司",
+      "security_short_name": "特宝生物",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688278&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688278",
+      "symbol": "688278"
+    },
+    {
+      "entity_id": "688315.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "北京诺禾致源科技股份有限公司",
+      "security_short_name": "诺禾致源",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688315&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688315",
+      "symbol": "688315"
+    },
+    {
+      "entity_id": "688321.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "深圳微芯生物科技股份有限公司",
+      "security_short_name": "微芯生物",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688321&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688321",
+      "symbol": "688321"
+    },
+    {
+      "entity_id": "688331.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "荣昌生物制药(烟台)股份有限公司",
+      "security_short_name": "荣昌生物",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688331&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688331",
+      "symbol": "688331"
+    },
+    {
+      "entity_id": "688336.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "三生国健药业(上海)股份有限公司",
+      "security_short_name": "三生国健",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688336&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688336",
+      "symbol": "688336"
+    },
+    {
+      "entity_id": "688382.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "益方生物科技(上海)股份有限公司",
+      "security_short_name": "益方生物",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688382&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688382",
+      "symbol": "688382"
+    },
+    {
+      "entity_id": "688443.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "重庆智翔金泰生物制药股份有限公司",
+      "security_short_name": "智翔金泰",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688443&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688443",
+      "symbol": "688443"
+    },
+    {
+      "entity_id": "688505.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "上海复旦张江生物医药股份有限公司",
+      "security_short_name": "复旦张江",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688505&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688505",
+      "symbol": "688505"
+    },
+    {
+      "entity_id": "688506.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "四川百利天恒药业股份有限公司",
+      "security_short_name": "百利天恒",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688506&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688506",
+      "symbol": "688506"
+    },
+    {
+      "entity_id": "688520.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "北京神州细胞生物技术集团股份公司",
+      "security_short_name": "神州细胞",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688520&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688520",
+      "symbol": "688520"
+    },
+    {
+      "entity_id": "688578.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "上海艾力斯医药科技股份有限公司",
+      "security_short_name": "艾力斯",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688578&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688578",
+      "symbol": "688578"
+    },
+    {
+      "entity_id": "688658.SH",
+      "exchange": "SSE",
+      "listed_issuer_legal_name": "悦康药业集团股份有限公司",
+      "security_short_name": "悦康药业",
+      "source_api_url": "https://query.sse.com.cn/sseQuery/commonQuery.do?jsonCallBack=cb931152&STOCK_TYPE=8&REG_PROVINCE=&CSRC_CODE=&STOCK_CODE=688658&sqlId=COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L&COMPANY_STATUS=2%2C4%2C5%2C7%2C8&type=inParams&isPagination=true&pageHelp.cacheSize=1&pageHelp.beginPage=1&pageHelp.pageSize=10&pageHelp.pageNo=1",
+      "source_kind": "SSE_OFFICIAL_COMPANY_LIST_API",
+      "source_url": "https://www.sse.com.cn/assortment/stock/list/info/company/index.shtml?COMPANY_CODE=688658",
+      "symbol": "688658"
+    }
+  ],
+  "membership_scope_sha256": "fbefdb032cd799d76c250b4f4add3c8e5106fbc41d27bf702ae6c0924b9dce3d",
+  "membership_unique_symbols": 86,
+  "registry_id": "INNOVATION_DRUG_931152_ISSUER_IDENTITY_V1",
+  "resolved_issuer_rows": 86,
+  "safety": {
+    "affiliate_inference_used": false,
+    "direction_classified": false,
+    "evidence_qualification_changed": false,
+    "fuzzy_matching_used": false,
+    "outcome_read": false,
+    "predictive_weight_assigned": false,
+    "production_permission": "NONE",
+    "sector_score_defined": false,
+    "substring_matching_used": false,
+    "trading_authority": false
+  },
+  "status": "OFFICIAL_EXCHANGE_IDENTITY_RESOLVED_EXACT_ONLY",
+  "unresolved_issuer_rows": 0
+}

@@ -1,0 +1,104 @@
+{
+  "bundle_id": "INNOVATION_DRUG_CDE_NMPA_931152_RAW_BUNDLE_2026_09_30",
+  "contains_private_model_or_signal": false,
+  "date": "2026-09-30",
+  "evidence_qualification_changed": false,
+  "files": [
+    {
+      "path": "data/reference/innovation_drug_931152_issuer_identity_snapshot_2026-09-30/issuer_identity_registry.json",
+      "sha256": "5b90421add03617542f3ad0effa8a9fdb9cbb571c1ab214e1064f357c9854afb",
+      "size_bytes": 54068
+    },
+    {
+      "path": "data/reference/innovation_drug_931152_issuer_identity_snapshot_2026-09-30/issuer_identity_raw_responses.json",
+      "sha256": "4c4e3a69efdb0453821f143072ee8a3257e286f7ee4eb2251e7700fd8d8f9cff",
+      "size_bytes": 174155
+    },
+    {
+      "path": "data/reference/innovation_drug_931152_issuer_identity_snapshot_2026-09-30/cde_nmpa_931152_entity_mapping_v1.json",
+      "sha256": "7e185e97a0cbbe99a97c35848cebe277e224c27156572d93270da45111350a35",
+      "size_bytes": 71826
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/cde_nmpa_931152_raw_query_rows.csv",
+      "sha256": "539aa14d1fb21a9b33dc15da33fa6f00f092cd50bb7b988e220ba63db2ba0bfb",
+      "size_bytes": 777856
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/cde_nmpa_931152_official_raw_responses.json",
+      "sha256": "95c0dc947bdef142763293e3343bafb3a45872063344268913b2a6fca666220d",
+      "size_bytes": 820068
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/cde_nmpa_931152_official_detail_responses.json",
+      "sha256": "7c7e9dad59698558bbc68784e78d53ffe82d8587afb1ba0a98231c76a5b76b45",
+      "size_bytes": 239341
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/query_receipt.json",
+      "sha256": "60fd42ff7c4160388babfdd8068cd1f9598f0f40f77bceb05be6515c75bdc7b5",
+      "size_bytes": 30646
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/query_errors.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "size_bytes": 3
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/materialized/cde_nmpa_931152_exact_mapped_projection_rows.csv",
+      "sha256": "5c1cf5d822f054a668aa2bfc944f63b3bbec6ad6975887ad492a6d87073bdd1f",
+      "size_bytes": 3156724
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/materialized/cde_nmpa_931152_unmapped_source_rows.csv",
+      "sha256": "abfb210aaeafb95dab497af0ce017ef0aa853133862c181e8463803133611196",
+      "size_bytes": 10686
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/materialized/cde_nmpa_931152_duplicate_projection_rows.csv",
+      "sha256": "ad116d174a5917c341c7e2ac40d7c5320a326403f71a79a910336c8576e10340",
+      "size_bytes": 325
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/materialized/cde_nmpa_931152_all_mapped_raw_events.csv",
+      "sha256": "c6be0ae49fd232fa603d95be50bbbedec1b05eeb34a9dd37009b837e844b74d4",
+      "size_bytes": 3440448
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/materialized/cde_nmpa_931152_pit_member_raw_events.csv",
+      "sha256": "3b1829b36074b2a5545a2c9f6cd74dd95dd31e1bd926e4cfd2d43535d7dbeb54",
+      "size_bytes": 169696
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/materialized/cde_nmpa_931152_pit_excluded_raw_events.csv",
+      "sha256": "c8ab568f2e75f389e9cca21c81fde2c9662c5791d27dc897a1862256584512e3",
+      "size_bytes": 3368681
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/materialized/cde_nmpa_931152_snapshot_manifest.json",
+      "sha256": "59358e64eb2c3df47cfb50934433e3ad65845387a8e7b15c902dfcebfeb5c0fe",
+      "size_bytes": 2897
+    },
+    {
+      "path": "data/reference/innovation_drug_cde_nmpa_931152_snapshots/2026-09-30/materialized/cde_nmpa_931152_sector_summary.json",
+      "sha256": "745b7ae13bb39e358f93917f47f72c2d9aa3ae20c981bf95166c6fcfa47e7c90",
+      "size_bytes": 3516
+    },
+    {
+      "path": "reference/innovation_drug_cde_nmpa_931152_sector_v1_contract.json",
+      "sha256": "75471cd45a5ebf6d9d4ff70295872948135f61c5ad006bf6483c3a9da9ef6c56",
+      "size_bytes": 3802
+    },
+    {
+      "path": "reference/innovation_drug_cde_nmpa_931152_sector_v1_status.json",
+      "sha256": "90b17e1fbd997dfdd516e9148ad8b7035b4372cad54ed1df6f770be4074c640f",
+      "size_bytes": 3033
+    }
+  ],
+  "historical_outcomes_read": false,
+  "production_permission": "NONE",
+  "prospective_outcomes_read": false,
+  "public_only": true,
+  "sector_score_defined": false,
+  "trading_authority": false
+}
