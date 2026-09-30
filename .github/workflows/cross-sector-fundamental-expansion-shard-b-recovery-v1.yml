@@ -1,0 +1,118 @@
+name: Cross-Sector Fundamental Expansion Shard B Recovery V1
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  ORIGINAL_RUN_ID: "36739370288"
+  REPAIR_RUN_ID: "36752822055"
+  REPAIR_UNIT: "12"
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data,dev]"
+      - name: Audit and targeted recovery tests
+        run: |
+          python scripts/audit_public_tree.py
+          pytest -q \
+            tests/test_cross_sector_fundamental_expansion_shard_b_v1.py \
+            tests/test_cross_sector_fundamental_expansion_shard_b_recovery_v1.py \
+            tests/test_public_data_governance_control_plane.py
+      - name: Fetch pinned artifact metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p stage/metadata
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ORIGINAL_RUN_ID}/artifacts?per_page=100" \
+            > stage/metadata/original_artifacts.json
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${REPAIR_RUN_ID}/artifacts?per_page=100" \
+            > stage/metadata/repair_artifacts.json
+          python scripts/validate_cross_sector_fundamental_expansion_shard_b_recovery_artifacts_v1.py \
+            --contract reference/cross_sector_fundamental_expansion_shard_b_recovery_v1.json \
+            --original-json stage/metadata/original_artifacts.json \
+            --repair-json stage/metadata/repair_artifacts.json
+      - name: Download original successful work units
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.ORIGINAL_RUN_ID }}
+          pattern: csrm-fundamental-expansion-shard-b-unit-*
+          path: stage/original
+          merge-multiple: false
+      - name: Download repaired work unit
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.REPAIR_RUN_ID }}
+          name: csrm-fundamental-expansion-shard-b-unit-12
+          path: stage/repair/csrm-fundamental-expansion-shard-b-unit-12
+      - name: Assemble and validate exact 32-unit recovery set
+        run: |
+          rm -rf stage/original/csrm-fundamental-expansion-shard-b-unit-12
+          python scripts/recover_cross_sector_fundamental_expansion_shard_b_v1.py \
+            --scope-csv data/reference/cross_sector_fundamental_expansion_shard_b_scope.csv \
+            --recovery-contract reference/cross_sector_fundamental_expansion_shard_b_recovery_v1.json \
+            --original-root stage/original \
+            --repair-root stage/repair \
+            --out-root stage/work-units
+      - name: Aggregate recovered exact Shard B
+        run: |
+          python scripts/aggregate_cross_sector_fundamental_expansion_shard_b_v1.py \
+            --scope-csv data/reference/cross_sector_fundamental_expansion_shard_b_scope.csv \
+            --scope-contract reference/cross_sector_fundamental_expansion_shard_b_v1.json \
+            --work-unit-root stage/work-units \
+            --source-commit "$GITHUB_SHA" \
+            --recovery-contract reference/cross_sector_fundamental_expansion_shard_b_recovery_v1.json \
+            --out-dir stage/final
+          cp data/reference/cross_sector_fundamental_expansion_shard_b_scope.csv stage/final/
+          cp reference/cross_sector_fundamental_expansion_shard_b_v1.json stage/final/
+          cp reference/cross_sector_fundamental_expansion_shard_b_recovery_v1.json stage/final/
+      - name: Verify exact accounting
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s = json.loads(Path("stage/final/aggregate_summary.json").read_text())
+          assert s["scope_entities"] == 218
+          assert s["observed_work_unit_entities"] == 218
+          assert s["work_unit_manifests"] == 32
+          assert s["ready_entities"] + s["explicit_missing_entities"] == 218
+          assert s["ready_entities"] == 211
+          assert s["explicit_missing_entities"] == 7
+          assert s["shard_recovery_integration_run"] is True
+          assert s["final_integration_run"] is False
+          print(json.dumps(s, sort_keys=True))
+          PY
+      - name: Package deterministic recovered Shard B bundle
+        run: |
+          set -euo pipefail
+          mkdir -p stage/package
+          ARCHIVE="cross-sector-fundamental-expansion-shard-b-v1.tar.gz"
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+            -czf "stage/package/$ARCHIVE" -C stage/final .
+          sha256sum "stage/package/$ARCHIVE" > "stage/package/$ARCHIVE.sha256"
+          cp "stage/package/$ARCHIVE" "stage/final/$ARCHIVE"
+          cp "stage/package/$ARCHIVE.sha256" "stage/final/$ARCHIVE.sha256"
+          sha256sum stage/final/bundle_manifest.json > stage/final/bundle_manifest.json.sha256
+      - name: Upload immutable recovered Shard B bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-sector-fundamental-expansion-shard-b-v1
+          path: stage/final
+          if-no-files-found: error
+          retention-days: 90

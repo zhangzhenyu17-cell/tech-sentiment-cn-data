@@ -1,0 +1,254 @@
+{
+  "authority": {
+    "evidence_qualification_change": false,
+    "final_a_b_integration": false,
+    "forward_outcome_read": false,
+    "pairwise_builder": false,
+    "production_change": false,
+    "trading_authority_change": false
+  },
+  "contract_id": "CROSS_SECTOR_FUNDAMENTAL_EXPANSION_SHARD_B_RECOVERY_V1",
+  "contract_version": 1,
+  "date": "2026-10-01",
+  "decision_date": "2026-09-29",
+  "expected_filing_materializer_version": "cninfo-versioned-filing-materializer-v2-publication-order",
+  "expected_filing_parser_version": "official-filing-facts-v11-balance-sheet-parent-equity",
+  "expected_fundamental_state_contract_id": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1",
+  "expected_fundamental_state_formula_version": "fundamental-pit-state-v1",
+  "original_run_id": 36739370288,
+  "original_source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+  "repair_run_id": 36752822055,
+  "repair_source_commit": "5760854c070e288855208de921adf64ac348d287",
+  "repair_unit": 12,
+  "scope_csv_sha256": "ac5c79d75e55c3aa2e83a9a0dc5879cf8aad77a094fd43ca347bd6ffd2ef2496",
+  "scope_entities": 218,
+  "shard_id": "B",
+  "status": "FROZEN_OUTCOME_BLIND_SHARD_B_RECOVERY_ONLY",
+  "work_unit_artifacts": {
+    "0": {
+      "artifact_id": 11111340962,
+      "digest": "sha256:a1f46136616cb78fe6dbbd13b9019f1fabf6527d1cefd18182bd18eec30e6d0a",
+      "name": "csrm-fundamental-expansion-shard-b-unit-0",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "1": {
+      "artifact_id": 11111070104,
+      "digest": "sha256:0c484b5cd674b8d315f5ee7966c0bda54f6cf87d533027fd35f6506ec809c74a",
+      "name": "csrm-fundamental-expansion-shard-b-unit-1",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "10": {
+      "artifact_id": 11113630013,
+      "digest": "sha256:a087c0a982c5a4701402ec42cd2ae4f0fa2858a3832892dcffe3a5717e206542",
+      "name": "csrm-fundamental-expansion-shard-b-unit-10",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "11": {
+      "artifact_id": 11112149455,
+      "digest": "sha256:6bc696a6c41764cc1bd500e770adb3662664b19731f9a2fa702cb6286f30c9d9",
+      "name": "csrm-fundamental-expansion-shard-b-unit-11",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "12": {
+      "artifact_id": 11115828598,
+      "digest": "sha256:a28dace767d5a9151bde1834b9bf3b75661f8f60a27fc10fe897b573e8e752db",
+      "name": "csrm-fundamental-expansion-shard-b-unit-12",
+      "source_commit": "5760854c070e288855208de921adf64ac348d287",
+      "source_run_id": 36752822055
+    },
+    "13": {
+      "artifact_id": 11113462059,
+      "digest": "sha256:8999db76b7d3bd50fbb9223a1348c267da2b1ec69e1a7cd8c1b56179901484b7",
+      "name": "csrm-fundamental-expansion-shard-b-unit-13",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "14": {
+      "artifact_id": 11113554816,
+      "digest": "sha256:272f3eb1c8552e146d6b93ae40af6483dcc33c0376e1b4ecc6f8ab37c365482b",
+      "name": "csrm-fundamental-expansion-shard-b-unit-14",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "15": {
+      "artifact_id": 11114495605,
+      "digest": "sha256:94bb077f577b5d0d690ec8197f1746fffad92fa51e67b6e5218f466308242165",
+      "name": "csrm-fundamental-expansion-shard-b-unit-15",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "16": {
+      "artifact_id": 11113644475,
+      "digest": "sha256:9ccddaf51be3e8a46f4e271f75c10341c55d8c7920cc25e6a6a3b9125044e5c7",
+      "name": "csrm-fundamental-expansion-shard-b-unit-16",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "17": {
+      "artifact_id": 11113634552,
+      "digest": "sha256:6c4a31b23e30d230f66b22b0deb9db6edc95f1cf3583f481c9b7300af6e1f6ff",
+      "name": "csrm-fundamental-expansion-shard-b-unit-17",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "18": {
+      "artifact_id": 11113699892,
+      "digest": "sha256:9a5f24cd66ad9ab4c5c37489ad3e16d3a76718afdc40349e311a7af2520ef803",
+      "name": "csrm-fundamental-expansion-shard-b-unit-18",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "19": {
+      "artifact_id": 11114649188,
+      "digest": "sha256:513f2fa704e1a4278c683efbfae7376383b289244ecaa9c5f5180ed7a0564899",
+      "name": "csrm-fundamental-expansion-shard-b-unit-19",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "2": {
+      "artifact_id": 11110807968,
+      "digest": "sha256:3a471793e788da95408fef328703ee6d00d6429efdc025df263c461a117815b1",
+      "name": "csrm-fundamental-expansion-shard-b-unit-2",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "20": {
+      "artifact_id": 11114982824,
+      "digest": "sha256:d1f8de239828f46e752126bb6f93b3ad9a442f1cb15d1c6e29b4c9294893a85b",
+      "name": "csrm-fundamental-expansion-shard-b-unit-20",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "21": {
+      "artifact_id": 11114623338,
+      "digest": "sha256:a4570b656a44393f5ff2d83cd6bdf312e546ab11cfe68dd10e84a1856a84243f",
+      "name": "csrm-fundamental-expansion-shard-b-unit-21",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "22": {
+      "artifact_id": 11115956783,
+      "digest": "sha256:147b24ea0c8d11319118df774157c08840ff56f1688ab46f43e1583bc20f7bb0",
+      "name": "csrm-fundamental-expansion-shard-b-unit-22",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "23": {
+      "artifact_id": 11115219614,
+      "digest": "sha256:c8ed5b8fc68aeed5594ac85efe8718a0c0204ca48af6087bb2ee1982f7807f14",
+      "name": "csrm-fundamental-expansion-shard-b-unit-23",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "24": {
+      "artifact_id": 11115557670,
+      "digest": "sha256:09861d38a6e3c3cfca6268aefc26b58a1ed3631d2afba5ff6549becd6a213644",
+      "name": "csrm-fundamental-expansion-shard-b-unit-24",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "25": {
+      "artifact_id": 11116400776,
+      "digest": "sha256:01c514e3b18f56d4b0f26cbae6afd82b32f21abf4d031eaa70406caed3108e5c",
+      "name": "csrm-fundamental-expansion-shard-b-unit-25",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "26": {
+      "artifact_id": 11117040156,
+      "digest": "sha256:bfce0038a48a29192b3a1f8aa8fbf4894df11170184468ca09be56f148448407",
+      "name": "csrm-fundamental-expansion-shard-b-unit-26",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "27": {
+      "artifact_id": 11116521993,
+      "digest": "sha256:a1dd987931a94363de50fe2cfba9b7509cb9784063faa02513f3793072f84cbb",
+      "name": "csrm-fundamental-expansion-shard-b-unit-27",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "28": {
+      "artifact_id": 11115444746,
+      "digest": "sha256:a879f6c524750dfd6de4436afc5a202c321f23d8472453e695c12901e2ef52f4",
+      "name": "csrm-fundamental-expansion-shard-b-unit-28",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "29": {
+      "artifact_id": 11117845255,
+      "digest": "sha256:183d9013bb2bb22f6ee0913efe9f055d1a1d4072ce4c65662f63d9aa89240d41",
+      "name": "csrm-fundamental-expansion-shard-b-unit-29",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "3": {
+      "artifact_id": 11110423174,
+      "digest": "sha256:2aa60a4ef18e3175cb99b9dfc06e13d13a637d7047a58d0a262a98e2d440528b",
+      "name": "csrm-fundamental-expansion-shard-b-unit-3",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "30": {
+      "artifact_id": 11117555356,
+      "digest": "sha256:47711219ae224f62ea7ac922da6249e12bfa80cf5649e9c038bbe01b60ea13f6",
+      "name": "csrm-fundamental-expansion-shard-b-unit-30",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "31": {
+      "artifact_id": 11117796185,
+      "digest": "sha256:489f9132721f156a656d656db119a20115c123f0ba4000577f705188c40a3819",
+      "name": "csrm-fundamental-expansion-shard-b-unit-31",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "4": {
+      "artifact_id": 11111631418,
+      "digest": "sha256:b3b3003c052866ae54465ac258b6ef39f971471f4a9da517ebda980fb56fbbca",
+      "name": "csrm-fundamental-expansion-shard-b-unit-4",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "5": {
+      "artifact_id": 11112246011,
+      "digest": "sha256:6fff84820ae0ae3325d136f5a6ceb6c6b0538e97107fead73c5b35b4caac1f51",
+      "name": "csrm-fundamental-expansion-shard-b-unit-5",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "6": {
+      "artifact_id": 11112177853,
+      "digest": "sha256:677bbe062aa2189ace14c2aa15628a9f796f64caed3a3fa35fbc90d3fb8cf475",
+      "name": "csrm-fundamental-expansion-shard-b-unit-6",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "7": {
+      "artifact_id": 11111808960,
+      "digest": "sha256:e39413c56df8fcb81683f97c70436288b26eb1e600147ff2da9cfbcb324d7108",
+      "name": "csrm-fundamental-expansion-shard-b-unit-7",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "8": {
+      "artifact_id": 11112446612,
+      "digest": "sha256:96204d4766473738101f21102ade9593d51f58cea0c9f3d74ffa755d0122d0bb",
+      "name": "csrm-fundamental-expansion-shard-b-unit-8",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    },
+    "9": {
+      "artifact_id": 11112108662,
+      "digest": "sha256:2dfd022da021afd31b9ce9062caab6ae068cfe3782f1191463e2a1ac220dbf2b",
+      "name": "csrm-fundamental-expansion-shard-b-unit-9",
+      "source_commit": "a27478e56a76d978034d78fe32b6fe0e2fa666f3",
+      "source_run_id": 36739370288
+    }
+  },
+  "work_unit_count": 32
+}
