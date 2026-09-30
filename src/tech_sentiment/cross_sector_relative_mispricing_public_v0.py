@@ -178,13 +178,42 @@ def build_cross_sector_public_input(
         providers.update(str(x) for x in frame["provider"].dropna().unique())
         frames.append(frame)
 
-    aligned_dates = set(latest_dates.values())
-    if len(aligned_dates) != 1:
-        raise ValueError(f"benchmark latest dates are not aligned: {latest_dates}")
-    latest_market_date = next(iter(aligned_dates))
+    latest_market_date = min(latest_dates.values())
+    common_date = pd.Timestamp(latest_market_date)
+    aligned_frames = [
+        frame.loc[frame["date"] <= common_date].copy()
+        for frame in frames
+    ]
+    if any(frame.empty for frame in aligned_frames):
+        raise ValueError("latest common official market date produced an empty benchmark rail")
 
-    output = pd.concat(frames, ignore_index=True)
+    output = pd.concat(aligned_frames, ignore_index=True)
     output = output.sort_values(["benchmark_id", "date"]).reset_index(drop=True)
+    if output.groupby("benchmark_id")["date"].max().nunique() != 1:
+        raise ValueError("common-date alignment failed")
+
+    rows_by_benchmark = {
+        benchmark_id: int(len(group))
+        for benchmark_id, group in output.groupby("benchmark_id", sort=False)
+    }
+    pe_rows_by_benchmark = {
+        benchmark_id: int((group["rolling_pe"] > 0).sum())
+        for benchmark_id, group in output.groupby("benchmark_id", sort=False)
+    }
+    latest_pe_by_benchmark = {}
+    valuation_state_by_benchmark = {}
+    for benchmark_id, group in output.groupby("benchmark_id", sort=False):
+        latest_row = group.sort_values("date").iloc[-1]
+        latest_pe_by_benchmark[benchmark_id] = _json_number(latest_row["rolling_pe"])
+        valuation_state_by_benchmark[benchmark_id] = str(
+            latest_row["valuation_source_state"]
+        )
+
+    if any(count < MINIMUM_HISTORY_SESSIONS for count in rows_by_benchmark.values()):
+        raise ValueError(
+            f"common-date alignment violates history floor: {rows_by_benchmark}"
+        )
+
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     output.to_csv(output_csv, index=False, date_format="%Y-%m-%d")
 
@@ -198,10 +227,17 @@ def build_cross_sector_public_input(
         "status": (
             "PUBLIC_RAW_PIT_PRICE_VALUATION_INPUT_READY_NO_PRIVATE_QUALIFICATION"
             if valuation_complete
-            else "PUBLIC_RAW_PIT_PRICE_INPUT_READY_VALUATION_PARTIAL_NO_PRIVATE_QUALIFICATION"
+            else "PUBLIC_RAW_PIT_COMMON_DATE_PRICE_INPUT_READY_VALUATION_PARTIAL_NO_PRIVATE_QUALIFICATION"
         ),
         "requested_as_of_date": as_of_date,
         "latest_market_date": latest_market_date,
+        "latest_available_market_date_by_benchmark": latest_dates,
+        "alignment_policy": "LATEST_COMMON_OFFICIAL_MARKET_DATE_NO_FORWARD_FILL",
+        "lagging_benchmarks_vs_requested_as_of": {
+            benchmark_id: market_date
+            for benchmark_id, market_date in latest_dates.items()
+            if market_date < as_of_date
+        },
         "start_date": start_date,
         "minimum_history_sessions": MINIMUM_HISTORY_SESSIONS,
         "source_repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
