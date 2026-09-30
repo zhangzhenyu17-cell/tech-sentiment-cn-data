@@ -70,28 +70,41 @@ UNMAPPED_CAPTURE_OUTPUT_COLUMNS = BASE_CAPTURE_OUTPUT_COLUMNS + ("mapping_state"
 DUPLICATE_CAPTURE_OUTPUT_COLUMNS = MAPPED_CAPTURE_OUTPUT_COLUMNS + ("mapping_state", "duplicate_state")
 
 
-def _exact_mapping_match(
+def _exact_mapping_matches(
     applicant: str, mapping: dict[str, dict[str, object]]
-) -> tuple[dict[str, object] | None, str | None, str | None]:
+) -> list[tuple[dict[str, object], str, str]]:
     whole = mapping.get(applicant)
     if whole is not None:
-        return whole, str(whole["mapping_basis"]), applicant
-    tokens = []
+        return [(whole, str(whole["mapping_basis"]), applicant)]
+    tokens: list[str] = []
     for token in APPLICANT_TOKEN_SPLIT_RE.split(applicant):
         value = token.strip()
         if value and value not in tokens:
             tokens.append(value)
-    matches = [(token, mapping[token]) for token in tokens if token in mapping]
-    entity_ids = {str(item["entity_id"]) for _, item in matches}
-    if len(entity_ids) > 1:
+    matches = [(mapping[token], EXACT_MULTI_APPLICANT_TOKEN_BASIS, token) for token in tokens if token in mapping]
+    out: list[tuple[dict[str, object], str, str]] = []
+    seen_entities: set[str] = set()
+    for mapped, basis, token in matches:
+        entity_id = str(mapped["entity_id"])
+        if entity_id in seen_entities:
+            continue
+        seen_entities.add(entity_id)
+        out.append((mapped, basis, token))
+    return out
+
+
+def _exact_mapping_match(
+    applicant: str, mapping: dict[str, dict[str, object]]
+) -> tuple[dict[str, object] | None, str | None, str | None]:
+    matches = _exact_mapping_matches(applicant, mapping)
+    if len(matches) > 1:
         raise ValueError(
             "CDE/NMPA official multi-applicant row maps to multiple listed entities; "
             "fan-out semantics must be explicitly implemented before intake"
         )
     if not matches:
         return None, None, None
-    token, mapped = matches[0]
-    return mapped, EXACT_MULTI_APPLICANT_TOKEN_BASIS, token
+    return matches[0]
 
 
 def build_official_capture_manifest(
@@ -264,6 +277,8 @@ def _dedupe_source_rows(
     if frame.empty:
         return frame.reset_index(drop=True)
     identity = ["source_url", "category", "record_id"]
+    if "entity_id" in frame.columns:
+        identity.append("entity_id")
     keep_indexes: list[int] = []
     for key, group in frame.groupby(identity, sort=False, dropna=False):
         if len(group) == 1:
@@ -287,6 +302,7 @@ def normalize_official_capture_rows(
     manifest: dict[str, object],
     contract: dict[str, object],
     mapping_registry: dict[str, object],
+    allow_multi_entity_fanout: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, object]]:
     validate_cde_snapshot_manifest(manifest, contract=contract)
     capture_status = _validate_capture_status(manifest, contract)
@@ -353,33 +369,41 @@ def normalize_official_capture_rows(
             "capture_status": capture_status[(source_url, category)],
             "source_record_id": _text(row.get("source_record_id")),
         }
-        mapped, mapping_basis, matched_token = _exact_mapping_match(applicant, mapping)
-        if mapped is None:
+        matches = _exact_mapping_matches(applicant, mapping)
+        if not matches:
             unmapped.append({**base, "mapping_state": "UNMAPPED_EXACT_NAME_OR_TOKEN_REQUIRED"})
             continue
-        match_mode = (
-            "WHOLE_FIELD_EXACT"
-            if applicant == matched_token
-            else "DELIMITED_APPLICANT_TOKEN_EXACT"
-        )
-        mapping_evidence = {
-            "registry_evidence": mapped["evidence"],
-            "mapping_match_mode": match_mode,
-            "matched_applicant_token": matched_token,
-            "official_applicant_field": applicant,
-            "substring_matching_used": False,
-            "affiliate_inference_used": False,
-        }
-        normalized.append(
-            {
-                **base,
-                "entity_id": str(mapped["entity_id"]),
-                "entity_mapping_basis": str(mapping_basis),
+        if len(matches) > 1 and not allow_multi_entity_fanout:
+            raise ValueError(
+                "CDE/NMPA official multi-applicant row maps to multiple listed entities; "
+                "fan-out semantics must be explicitly implemented before intake"
+            )
+        for mapped, mapping_basis, matched_token in matches:
+            match_mode = (
+                "WHOLE_FIELD_EXACT"
+                if applicant == matched_token
+                else "DELIMITED_APPLICANT_TOKEN_EXACT"
+            )
+            mapping_evidence = {
+                "registry_evidence": mapped["evidence"],
                 "mapping_match_mode": match_mode,
                 "matched_applicant_token": matched_token,
-                "mapping_evidence": json.dumps(mapping_evidence, ensure_ascii=False, sort_keys=True),
+                "official_applicant_field": applicant,
+                "multi_entity_fanout_enabled": bool(allow_multi_entity_fanout),
+                "multi_entity_match_count": len(matches),
+                "substring_matching_used": False,
+                "affiliate_inference_used": False,
             }
-        )
+            normalized.append(
+                {
+                    **base,
+                    "entity_id": str(mapped["entity_id"]),
+                    "entity_mapping_basis": str(mapping_basis),
+                    "mapping_match_mode": match_mode,
+                    "matched_applicant_token": matched_token,
+                    "mapping_evidence": json.dumps(mapping_evidence, ensure_ascii=False, sort_keys=True),
+                }
+            )
 
     mapped_frame = pd.DataFrame(normalized, columns=MAPPED_CAPTURE_OUTPUT_COLUMNS)
     unmapped_frame = pd.DataFrame(unmapped, columns=UNMAPPED_CAPTURE_OUTPUT_COLUMNS)
@@ -401,6 +425,13 @@ def normalize_official_capture_rows(
         "capture_status_complete_categories": sum(v == "COMPLETE" for v in capture_status.values()),
         "capture_status_partial_categories": sum(v == "PARTIAL" for v in capture_status.values()),
         "source_completeness_inferred": False,
+        "multi_entity_fanout_enabled": bool(allow_multi_entity_fanout),
+        "multi_entity_fanout_source_rows": int(
+            mapped_frame.groupby(["source_url", "category", "record_id"], dropna=False)["entity_id"]
+            .nunique()
+            .gt(1)
+            .sum()
+        ) if not mapped_frame.empty else 0,
     }
     return mapped_frame, unmapped_frame, duplicate_frame, stats
 
@@ -412,12 +443,14 @@ def materialize_official_capture(
     contract: dict[str, object],
     mapping_registry: dict[str, object],
     trading_dates: Iterable[object],
+    allow_multi_entity_fanout: bool = False,
 ) -> OfficialIntakeResult:
     mapped, unmapped, duplicates, stats = normalize_official_capture_rows(
         raw,
         manifest=manifest,
         contract=contract,
         mapping_registry=mapping_registry,
+        allow_multi_entity_fanout=allow_multi_entity_fanout,
     )
     if mapped.empty:
         events = pd.DataFrame(columns=EVENT_COLUMNS)

@@ -1,0 +1,63 @@
+{
+  "capture_method": "BROWSER_RENDERED_OFFICIAL_TABLE_CAPTURE",
+  "capture_scope": {
+    "affiliate_completeness_claimed": false,
+    "company_query_count": 86,
+    "completeness_semantics": "ALL_FROZEN_MEMBER_COMPANY_QUERIES_EXHAUSTIVE_PAGINATION",
+    "full_source_category_completeness_claimed": false,
+    "historical_legal_name_alias_completeness_claimed": false,
+    "index_code": "931152",
+    "kind": "OFFICIAL_931152_FROZEN_MEMBER_LISTED_ISSUER_QUERY_SET",
+    "membership_interval_rows": 155,
+    "membership_unique_symbols": 86,
+    "query_identity": "CURRENT_OFFICIAL_LISTED_ISSUER_LEGAL_NAME_EXACT"
+  },
+  "captured_at": "2026-09-30T19:11:58+08:00",
+  "category_capture_status": [
+    {
+      "category": "纳入优先审评品种名单",
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/2f78f372d351c6851af7431c7710a731",
+      "status": "COMPLETE"
+    },
+    {
+      "category": "纳入突破性治疗品种名单",
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/da6efd086c099b7fc949121166f0130c",
+      "status": "COMPLETE"
+    },
+    {
+      "category": "临床试验默示许可",
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/4b5255eb0a84820cef4ca3e8b6bbe20c",
+      "status": "COMPLETE"
+    },
+    {
+      "category": "附条件批准品种",
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/c8d79e513a6df98adf05893281ace198",
+      "status": "COMPLETE"
+    }
+  ],
+  "current_constituent_backfill_used": false,
+  "current_page_presence_used_for_historical_backfill": false,
+  "direction_classified": false,
+  "entity_mapping_registry_sha256": "7e185e97a0cbbe99a97c35848cebe277e224c27156572d93270da45111350a35",
+  "evidence_qualification_changed": false,
+  "formal_sector_kpi_state": "DATA_INSUFFICIENT",
+  "fuzzy_entity_mapping_used": false,
+  "historical_outcome_read": false,
+  "issuer_identity_registry_sha256": "5b90421add03617542f3ad0effa8a9fdb9cbb571c1ab214e1064f357c9854afb",
+  "manifest_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_CAPTURE_V1",
+  "membership_scope_sha256": "fbefdb032cd799d76c250b4f4add3c8e5106fbc41d27bf702ae6c0924b9dce3d",
+  "multi_entity_exact_fanout_enabled": true,
+  "predictive_weight_assigned": false,
+  "prospective_outcome_read": false,
+  "publication_date_inferred": false,
+  "query_receipt_sha256": "60fd42ff7c4160388babfdd8068cd1f9598f0f40f77bceb05be6515c75bdc7b5",
+  "sector_score_computed": false,
+  "snapshot_id": "innovation-drug-cde-nmpa-931152-20260930T191158+0800",
+  "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
+  "source_urls": [
+    "https://www.cde.org.cn/main/xxgk/listpage/2f78f372d351c6851af7431c7710a731",
+    "https://www.cde.org.cn/main/xxgk/listpage/da6efd086c099b7fc949121166f0130c",
+    "https://www.cde.org.cn/main/xxgk/listpage/4b5255eb0a84820cef4ca3e8b6bbe20c",
+    "https://www.cde.org.cn/main/xxgk/listpage/c8d79e513a6df98adf05893281ace198"
+  ]
+}

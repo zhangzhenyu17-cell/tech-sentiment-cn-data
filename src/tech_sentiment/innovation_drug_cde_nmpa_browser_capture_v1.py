@@ -179,8 +179,10 @@ def _paged_records(
         if not isinstance(chunk, list):
             raise ValueError(f"CDE {name} records is not a list")
         if total is None:
-            total = int(data.get("total", len(chunk)))
-            pages = int(data.get("pages", 1))
+            total_raw = data.get("total")
+            pages_raw = data.get("pages")
+            total = int(total_raw) if str(total_raw or "").strip() else len(chunk)
+            pages = int(pages_raw) if str(pages_raw or "").strip() else (1 if chunk else 0)
         records.extend(dict(item) for item in chunk)
         if page_num >= int(pages or 1):
             break
@@ -206,6 +208,8 @@ def _paged_records(
 def normalize_cde_browser_capture_rows(
     raw_responses: Mapping[str, list[dict[str, Any]]],
     detail_responses: Mapping[str, Mapping[str, dict[str, Any]]],
+    *,
+    allow_empty: bool = False,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for item in raw_responses.get("priority", []):
@@ -279,8 +283,10 @@ def normalize_cde_browser_capture_rows(
                 }
             )
     frame = pd.DataFrame(rows, columns=RAW_COLUMNS)
-    if frame.empty:
+    if frame.empty and not allow_empty:
         raise ValueError("CDE browser capture produced no raw rows")
+    if frame.empty:
+        return frame
     return frame.sort_values(
         ["category", "publication_date", "approval_date", "source_record_id", "acceptance_no", "drug_name"]
     ).reset_index(drop=True)
@@ -292,6 +298,7 @@ def capture_cde_nmpa_via_browser(
     target_company: str = DEFAULT_TARGET_COMPANY,
     page_size: int = 500,
     captured_at: datetime | None = None,
+    allow_empty: bool = False,
 ) -> BrowserCaptureResult:
     runtime = _CdpRuntime(cdp_url)
     try:
@@ -337,13 +344,23 @@ def capture_cde_nmpa_via_browser(
     if when.tzinfo is None:
         raise ValueError("captured_at must be timezone-aware")
     when = when.astimezone(SHANGHAI)
-    frame = normalize_cde_browser_capture_rows(raw, details)
+    frame = normalize_cde_browser_capture_rows(raw, details, allow_empty=allow_empty)
     applicants = frame["applicant"].astype(str)
-    whole_exact = applicants.eq(target_company)
-    exact_token = applicants.map(
-        lambda value: target_company
-        in {token.strip() for token in re.split(r"[;；\n、]+", value) if token.strip()}
-    )
+    if frame.empty:
+        whole_exact_count = 0
+        multi_applicant_exact_token_count = 0
+        exact_token_count = 0
+        no_exact_token_count = 0
+    else:
+        whole_exact = applicants.eq(target_company)
+        exact_token = applicants.map(
+            lambda value: target_company
+            in {token.strip() for token in re.split(r"[;；\n、]+", value) if token.strip()}
+        ).astype(bool)
+        whole_exact_count = int(whole_exact.sum())
+        multi_applicant_exact_token_count = int((exact_token & ~whole_exact).sum())
+        exact_token_count = int(exact_token.sum())
+        no_exact_token_count = int((~exact_token).sum())
     report = {
         "captured_at": when.isoformat(timespec="seconds"),
         "capture_method": "BROWSER_RENDERED_OFFICIAL_TABLE_CAPTURE",
@@ -352,10 +369,10 @@ def capture_cde_nmpa_via_browser(
         "target_company_query": target_company,
         "sources": source_report,
         "raw_rows": int(len(frame)),
-        "whole_field_exact_applicant_rows": int(whole_exact.sum()),
-        "multi_applicant_exact_token_rows": int((exact_token & ~whole_exact).sum()),
-        "rows_with_exact_target_applicant_token": int(exact_token.sum()),
-        "rows_without_exact_target_applicant_token": int((~exact_token).sum()),
+        "whole_field_exact_applicant_rows": whole_exact_count,
+        "multi_applicant_exact_token_rows": multi_applicant_exact_token_count,
+        "rows_with_exact_target_applicant_token": exact_token_count,
+        "rows_without_exact_target_applicant_token": no_exact_token_count,
         "substring_matching_used": False,
         "affiliate_inference_used": False,
         "historical_outcomes_read": False,
