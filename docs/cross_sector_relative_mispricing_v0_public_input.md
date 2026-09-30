@@ -38,3 +38,10 @@ python scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py \
 - 不含私有阈值、信号、持仓或证据结论；
 - public materialization 成功不等于 private qualification；
 - private 侧必须独立验证 exact commit、CSV hash、PIT、coverage、freshness 与 normalization contract。
+
+
+## 多官方源日期对齐
+
+当不同官方 operator 的发布节奏不同，public materializer 使用 **latest common official market date**，即取所有 benchmark 已实际发布日线的共同最新日期并截断到该日。禁止 forward-fill，也禁止把较早的官方观测标成较晚日期。
+
+manifest 同时保留每条 benchmark 的实际 latest available market date。private consumer 必须独立应用 freshness gate；因此 requested as-of date 晚于共同日期时，公开数据仍可用于 coverage/materialization feasibility，但不得伪装成 same-date operational input。
