@@ -12,7 +12,7 @@ WATCHDOG_GAP_MINUTES = "25"
 DRY_RUN = "false"
 
 [secrets]
-required = ["GITHUB_TOKEN"]
+required = ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"]
 
 [triggers]
 crons = [
