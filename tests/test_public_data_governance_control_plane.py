@@ -149,7 +149,21 @@ def test_external_patterns_are_adapted_without_runtime_dependencies() -> None:
         assert source["adopted_concepts"]
 
     ci = payload["ci_enforcement"]
-    assert ci["existing_workflow_only"] is True
-    assert ci["new_workflow_added"] is False
+    assert ci["existing_workflow_only"] is False
+    assert ci["new_workflow_added"] is True
+    allowlist = ci["new_workflow_allowlist"]
+    assert allowlist == [
+        {
+            "path": ".github/workflows/cross-sector-current-fundamental-v1.yml",
+            "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+            "automatic_triggers_allowed": False,
+            "necessity": (
+                "Materialize current comparable Fundamental state gaps for the already-frozen "
+                "Technology/Innovation Drug/Defense/Core Beta cross-sector domains without "
+                "modifying the frozen V4-A Fundamental producer fingerprint."
+            ),
+            "research_boundary": "OUTCOME_BLIND_CURRENT_INPUT_ONLY_NO_PAIRWISE_NO_EVIDENCE_PROMOTION",
+        }
+    ]
     assert ci["audit_entrypoint"] == "scripts/audit_public_tree.py"
     assert ci["pytest_contract"] == "tests/test_public_data_governance_control_plane.py"
