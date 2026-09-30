@@ -1,7 +1,7 @@
 {
   "contract_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_V1",
-  "contract_revision": "1.1",
-  "date": "2026-09-26",
+  "contract_revision": "1.2",
+  "date": "2026-09-30",
   "status": "FROZEN_OUTCOME_BLIND_OFFICIAL_SNAPSHOT_ADAPTER_READY_DATA_PENDING",
   "domain_id": "INNOVATION_DRUG",
   "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
@@ -29,7 +29,7 @@
       ],
       "availability_semantics": "OFFICIAL_PUBLICATION_DATE",
       "availability_date_field": "publication_date",
-      "record_identity_rule": "ACCEPTANCE_NUMBER_REQUIRED",
+      "record_identity_rule": "OFFICIAL_ROW_CODE_PREFERRED_ACCEPTANCE_NUMBER_FALLBACK",
       "record_level_publication_date_available": true,
       "official_api_path": "/priority/getPriorityApprovalList",
       "http_method": "POST",
@@ -40,7 +40,8 @@
         "acceptid": "OPTIONAL",
         "drugname": "OPTIONAL",
         "company": "OPTIONAL"
-      }
+      },
+      "official_record_code_source_field": "pridCODE"
     },
     {
       "category_family": "BREAKTHROUGH_THERAPY",
@@ -51,7 +52,7 @@
       ],
       "availability_semantics": "OFFICIAL_PUBLICATION_DATE",
       "availability_date_field": "publication_date",
-      "record_identity_rule": "ACCEPTANCE_NUMBER_REQUIRED",
+      "record_identity_rule": "OFFICIAL_ROW_CODE_PREFERRED_ACCEPTANCE_NUMBER_FALLBACK",
       "record_level_publication_date_available": true,
       "official_api_path": "/breakthrough/getBreakthroughCureList",
       "http_method": "POST",
@@ -62,7 +63,8 @@
         "acceptid": "OPTIONAL",
         "drugname": "OPTIONAL",
         "company": "OPTIONAL"
-      }
+      },
+      "official_record_code_source_field": "bcnidCODE"
     },
     {
       "category_family": "IMPLIED_CLINICAL_TRIAL_LICENSE",
@@ -72,7 +74,7 @@
       ],
       "availability_semantics": "FIRST_OBSERVED_SNAPSHOT_ONLY",
       "availability_date_field": "snapshot_captured_at",
-      "record_identity_rule": "ACCEPTANCE_NUMBER_REQUIRED",
+      "record_identity_rule": "OFFICIAL_ROW_CODE_PREFERRED_ACCEPTANCE_NUMBER_FALLBACK",
       "record_level_publication_date_available": false,
       "official_api_path": "/xxgk/getCliniCalList",
       "http_method": "POST",
@@ -80,7 +82,8 @@
         "pageSize": "INTEGER",
         "pageNum": "INTEGER",
         "condition": "OPTIONAL"
-      }
+      },
+      "official_record_code_source_field": "nidCODE"
     },
     {
       "category_family": "CONDITIONAL_APPROVAL",
@@ -121,6 +124,7 @@
       "drug_name"
     ],
     "supported_columns": [
+      "source_record_id",
       "acceptance_no",
       "indication",
       "registration_class",
@@ -173,7 +177,8 @@
     "conflicting_rows_same_identity": "FAIL_CLOSED",
     "cross_source_cninfo_cde_deduplication_applied": false,
     "source_provenance_must_remain_separate": true,
-    "mutable_status_change_may_rewrite_inclusion_event_identity": false
+    "mutable_status_change_may_rewrite_inclusion_event_identity": false,
+    "official_row_code_preferred_when_published_by_source": true
   },
   "source_completeness": {
     "manifest_category_capture_status_required": true,
@@ -181,7 +186,10 @@
       "COMPLETE",
       "PARTIAL"
     ],
-    "adapter_may_infer_complete_from_row_count": false
+    "adapter_may_infer_complete_from_row_count": false,
+    "completeness_scope_must_be_explicit": true,
+    "query_scoped_complete_allowed": true,
+    "query_scoped_complete_does_not_imply_full_category_complete": true
   },
   "pit_semantics": {
     "official_publication_date_historical_reconstructable": true,

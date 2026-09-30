@@ -202,9 +202,13 @@
       "producer_path": "scripts/materialize_innovation_drug_cde_nmpa_official_intake_v1.py",
       "logical_dataset": "innovation drug CDE/NMPA official raw regulatory context v1",
       "private_consumer_boundary": "Innovation Drug Sector KPI Context source-layer intake only; no qualification, score, Production or trading authority",
-      "registration_state": "ADAPTER_READY_REAL_OFFICIAL_SNAPSHOT_PENDING",
+      "registration_state": "REAL_OFFICIAL_SNAPSHOT_MATERIALIZED_QUERY_SCOPED_MANUAL_BROWSER_SESSION",
       "public_workflow_success_grants_private_qualification": false,
-      "may_promote_evidence": false
+      "may_promote_evidence": false,
+      "current_snapshot_root": "data/reference/innovation_drug_cde_nmpa_snapshots/2026-09-30",
+      "capture_transport": "LOCAL_REAL_BROWSER_CDP_SAME_ORIGIN_OFFICIAL_ENDPOINTS",
+      "full_source_category_completeness_claimed": false,
+      "query_scoped_complete": true
     },
     {
       "product_id": "MARKET_REGIME_V0_BROAD_INDEX_INPUT",

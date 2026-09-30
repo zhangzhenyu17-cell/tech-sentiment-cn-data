@@ -1,0 +1,59 @@
+{
+  "adapter_version": "innovation-drug-cde-nmpa-snapshot-adapter-v1",
+  "capture_method": "BROWSER_RENDERED_OFFICIAL_TABLE_CAPTURE",
+  "capture_scope": {
+    "company_query": "江苏恒瑞医药股份有限公司",
+    "completeness_semantics": "QUERY_SCOPED_EXHAUSTIVE_PAGINATION",
+    "full_source_category_completeness_claimed": false,
+    "kind": "OFFICIAL_COMPANY_QUERY"
+  },
+  "capture_status_complete_categories": 4,
+  "capture_status_partial_categories": 0,
+  "captured_at": "2026-09-30T17:29:59+08:00",
+  "categories": [
+    "临床试验默示许可",
+    "纳入优先审评品种名单",
+    "纳入突破性治疗品种名单",
+    "附条件批准品种"
+  ],
+  "cninfo_provenance_merged": false,
+  "contract_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_V1",
+  "domain_id": "INNOVATION_DRUG",
+  "entities": [
+    "600276.SH"
+  ],
+  "event_count_as_score_allowed": false,
+  "event_identity_is_direction": false,
+  "event_weight_defined": false,
+  "evidence_qualification_changed": false,
+  "exact_mapped_rows": 268,
+  "formal_sector_kpi_state": "DATA_INSUFFICIENT",
+  "historical_outcomes_read": false,
+  "historical_reconstructable_rows": 53,
+  "identical_duplicate_rows_removed": 0,
+  "input_sha256": {
+    "contract_json": "597c5c7958fa4e9f90f950790047bb7539a3334a8b775a63fc7edbb0b1475244",
+    "manifest_json": "d600e25f1f73268730323b1bd2f9ec459efc261aa6bd2e84f0583573305887b6",
+    "mapping_registry_json": "08f50b1490e54c1f277d6f61919e96d1eac300809b9e0029300248b2b156e5f9",
+    "raw_snapshot_csv": "7c4f3297858e40aefac8c675d050b14b7432bb74557a06e6d6b649b8e344afae",
+    "trading_calendar_csv": "1d5ff82a6718fc4e19b95c98456813043b30aeaa1b452d591376b1d427c2b60d"
+  },
+  "mapped_event_rows": 268,
+  "production_permission": "NONE",
+  "prospective_first_observed_rows": 215,
+  "prospective_outcomes_read": false,
+  "raw_rows": 670,
+  "sector_score_defined": false,
+  "snapshot_id": "innovation-drug-cde-nmpa-20260930T172959+0800",
+  "source_completeness_inferred": false,
+  "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
+  "source_urls": [
+    "https://www.cde.org.cn/main/xxgk/listpage/2f78f372d351c6851af7431c7710a731",
+    "https://www.cde.org.cn/main/xxgk/listpage/4b5255eb0a84820cef4ca3e8b6bbe20c",
+    "https://www.cde.org.cn/main/xxgk/listpage/c8d79e513a6df98adf05893281ace198",
+    "https://www.cde.org.cn/main/xxgk/listpage/da6efd086c099b7fc949121166f0130c"
+  ],
+  "state": "CDE_NMPA_OFFICIAL_RAW_CONTEXT_AVAILABLE",
+  "trading_authority": false,
+  "unmapped_rows": 402
+}

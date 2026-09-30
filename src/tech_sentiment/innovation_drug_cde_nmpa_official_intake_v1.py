@@ -54,6 +54,7 @@ def build_official_capture_manifest(
     captured_at: str,
     capture_status: str = "PARTIAL",
     snapshot_id: str | None = None,
+    capture_query_company: str | None = None,
 ) -> dict[str, object]:
     allowed = set(contract["source_completeness"]["allowed_status"])
     if capture_status not in allowed:
@@ -78,7 +79,7 @@ def build_official_capture_manifest(
     if snapshot_id is None:
         stamp = timestamp.tz_convert("Asia/Shanghai").strftime("%Y%m%dT%H%M%S%z")
         snapshot_id = f"innovation-drug-cde-nmpa-{stamp}"
-    return {
+    payload: dict[str, object] = {
         "manifest_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_CAPTURE_V1",
         "snapshot_id": snapshot_id,
         "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
@@ -99,6 +100,14 @@ def build_official_capture_manifest(
         "evidence_qualification_changed": False,
         "formal_sector_kpi_state": "DATA_INSUFFICIENT",
     }
+    if capture_query_company:
+        payload["capture_scope"] = {
+            "kind": "OFFICIAL_COMPANY_QUERY",
+            "company_query": str(capture_query_company),
+            "completeness_semantics": "QUERY_SCOPED_EXHAUSTIVE_PAGINATION",
+            "full_source_category_completeness_claimed": False,
+        }
+    return payload
 
 
 def load_exact_entity_mapping_registry(path: Path) -> dict[str, object]:
@@ -171,6 +180,16 @@ def _validate_capture_status(manifest: dict[str, object], contract: dict[str, ob
 
 def _record_id(row: pd.Series, source: dict[str, object]) -> str:
     rule = str(source["record_identity_rule"])
+    if rule == "OFFICIAL_ROW_CODE_PREFERRED_ACCEPTANCE_NUMBER_FALLBACK":
+        source_record_id = _text(row.get("source_record_id"))
+        if source_record_id:
+            return "official:" + source_record_id
+        acceptance_no = _text(row.get("acceptance_no"))
+        if not acceptance_no:
+            raise ValueError(
+                "CDE/NMPA record requires source_record_id or acceptance_no"
+            )
+        return acceptance_no
     if rule == "ACCEPTANCE_NUMBER_REQUIRED":
         acceptance_no = _text(row.get("acceptance_no"))
         if not acceptance_no:
@@ -285,6 +304,7 @@ def normalize_official_capture_rows(
             "registration_class": _text(row.get("registration_class")),
             "status": _text(row.get("status")),
             "capture_status": capture_status[(source_url, category)],
+            "source_record_id": _text(row.get("source_record_id")),
         }
         mapped = mapping.get(applicant)
         if mapped is None:
@@ -354,6 +374,7 @@ def materialize_official_capture(
         **materialized.summary,
         "state": "CDE_NMPA_OFFICIAL_RAW_CONTEXT_AVAILABLE",
         "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
+        "capture_scope": manifest.get("capture_scope"),
         "cninfo_provenance_merged": False,
         "historical_outcomes_read": False,
         "prospective_outcomes_read": False,

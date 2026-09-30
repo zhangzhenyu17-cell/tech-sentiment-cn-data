@@ -1,14 +1,19 @@
 {
   "probe_id": "INNOVATION_DRUG_CDE_NMPA_SOURCE_PROBE_V1",
-  "date": "2026-09-26",
-  "state": "OFFICIAL_ENDPOINTS_IDENTIFIED_REAL_SNAPSHOT_NOT_MATERIALIZED",
+  "date": "2026-09-30",
+  "state": "REAL_OFFICIAL_SNAPSHOT_MATERIALIZED_VIA_LOCAL_REAL_BROWSER_CDP",
   "official_frontend_asset": "https://www.cde.org.cn/main/js/xxgk/list.js?v=20260922",
   "transport_observations": {
     "direct_python_page_request": "HTTP_202_WAF_CHALLENGE_HTML",
     "headless_chrome_dump_dom": "WAF_CHALLENGE_HTML",
     "browser_network_log": "OFFICIAL_DYNAMIC_ENDPOINTS_OBSERVED",
     "generic_rendered_tbody_capture": "EMPTY_OR_PROXY_ERROR",
-    "direct_requests_scraper_approved": false
+    "direct_requests_scraper_approved": false,
+    "local_real_browser_cdp_same_origin_official_endpoints": "VERIFIED_2026-09-30",
+    "waf_bypass_used": false,
+    "paid_cloud_browser_required": false,
+    "capture_scope": "OFFICIAL_COMPANY_QUERY_QUERY_SCOPED_EXHAUSTIVE_PAGINATION",
+    "capture_target_company": "江苏恒瑞医药股份有限公司"
   },
   "official_endpoints": {
     "priority_review_included": "/priority/getPriorityApprovalList noticeType=2 POST",
@@ -26,12 +31,22 @@
     "list[].state"
   ],
   "data_state": {
-    "real_official_snapshot_materialized": false,
-    "historical_reconstructable_rows": 0,
-    "prospective_first_observed_rows": 0,
-    "exact_mapped_rows": 0,
-    "unmapped_rows": 0,
-    "formal_sector_kpi_state": "DATA_INSUFFICIENT"
+    "real_official_snapshot_materialized": true,
+    "snapshot_capture_date": "2026-09-30",
+    "snapshot_captured_at": "2026-09-30T17:29:59+08:00",
+    "snapshot_root": "data/reference/innovation_drug_cde_nmpa_snapshots/2026-09-30",
+    "raw_rows": 670,
+    "historical_reconstructable_rows": 53,
+    "prospective_first_observed_rows": 215,
+    "exact_mapped_rows": 268,
+    "unmapped_rows": 402,
+    "full_source_category_completeness_claimed": false,
+    "query_scoped_complete_categories": 4,
+    "formal_sector_kpi_state": "DATA_INSUFFICIENT",
+    "snapshot_id": "innovation-drug-cde-nmpa-20260930T172959+0800",
+    "raw_snapshot_sha256": "7c4f3297858e40aefac8c675d050b14b7432bb74557a06e6d6b649b8e344afae",
+    "manifest_sha256": "d600e25f1f73268730323b1bd2f9ec459efc261aa6bd2e84f0583573305887b6",
+    "materialization_summary_sha256": "ede3d9e04d1d090c04e0580e34a2767c854296c3933627a2f15d1602ca8f7635"
   },
   "governance": {
     "historical_outcome_read": false,

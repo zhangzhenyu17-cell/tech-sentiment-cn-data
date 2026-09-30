@@ -28,6 +28,13 @@ def main() -> int:
         "--capture-status", choices=("COMPLETE", "PARTIAL"), default="PARTIAL"
     )
     parser.add_argument(
+        "--capture-query-company",
+        help=(
+            "Official company-query string when completeness applies only to exhaustive "
+            "pagination within that query scope, not to the full source category."
+        ),
+    )
+    parser.add_argument(
         "--contract-json",
         type=Path,
         default=Path("reference/innovation_drug_cde_nmpa_snapshot_v1_contract.json"),
@@ -53,6 +60,7 @@ def main() -> int:
             mapping_registry_sha256=mapping_sha,
             captured_at=args.captured_at,
             capture_status=args.capture_status,
+            capture_query_company=args.capture_query_company,
         )
         args.output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = args.output_dir / "cde_nmpa_snapshot_manifest.json"

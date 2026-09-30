@@ -109,6 +109,7 @@ def test_capture_manifest_builder_is_partial_by_default_and_fail_closed() -> Non
         contract=contract,
         mapping_registry_sha256=mapping_sha,
         captured_at="2026-09-30T16:30:00+08:00",
+        capture_query_company="江苏恒瑞医药股份有限公司",
     )
     assert manifest["entity_mapping_registry_sha256"] == mapping_sha
     assert len(manifest["source_urls"]) == 4
@@ -120,6 +121,12 @@ def test_capture_manifest_builder_is_partial_by_default_and_fail_closed() -> Non
     assert manifest["predictive_weight_assigned"] is False
     assert manifest["sector_score_computed"] is False
     assert manifest["formal_sector_kpi_state"] == "DATA_INSUFFICIENT"
+    assert manifest["capture_scope"] == {
+        "kind": "OFFICIAL_COMPANY_QUERY",
+        "company_query": "江苏恒瑞医药股份有限公司",
+        "completeness_semantics": "QUERY_SCOPED_EXHAUSTIVE_PAGINATION",
+        "full_source_category_completeness_claimed": False,
+    }
 
     with pytest.raises(ValueError, match="timezone-aware"):
         build_official_capture_manifest(
@@ -175,6 +182,25 @@ def test_raw_official_capture_maps_exact_name_preserves_unmapped_and_pit_semanti
     assert str(implied["evidence_available_date"].date()) == "2026-09-28"
     assert result.unmapped_rows.iloc[0]["applicant"] == "江苏恒瑞生物科技有限公司"
     assert result.unmapped_rows.iloc[0]["mapping_state"] == "UNMAPPED_EXACT_NAME_REQUIRED"
+
+
+def test_official_row_code_disambiguates_repeated_acceptance_number_publications() -> None:
+    contract = load_cde_snapshot_contract(CONTRACT)
+    registry = load_exact_entity_mapping_registry(MAPPING)
+    row = _raw_rows().iloc[[1]].copy()
+    row["source_record_id"] = "break-row-a"
+    other = row.copy()
+    other["source_record_id"] = "break-row-b"
+    other["publication_date"] = "2026-09-26"
+    raw = pd.concat([row, other], ignore_index=True)
+    mapped, unmapped, duplicates, stats = normalize_official_capture_rows(
+        raw, manifest=_manifest(), contract=contract, mapping_registry=registry
+    )
+    assert len(mapped) == 2
+    assert unmapped.empty
+    assert duplicates.empty
+    assert mapped["record_id"].tolist() == ["official:break-row-a", "official:break-row-b"]
+    assert stats["exact_mapped_rows"] == 2
 
 
 def test_identical_duplicate_is_reported_but_conflicting_revision_fails_closed() -> None:
@@ -257,21 +283,68 @@ def test_contract_freezes_official_endpoint_identity_without_requests_scraper() 
     catalog = {x["category_family"]: x for x in contract["official_source_catalog"]}
     assert catalog["PRIORITY_REVIEW"]["official_api_path"] == "/priority/getPriorityApprovalList"
     assert catalog["PRIORITY_REVIEW"]["request_params"]["noticeType"] == 2
+    assert catalog["PRIORITY_REVIEW"]["record_identity_rule"] == (
+        "OFFICIAL_ROW_CODE_PREFERRED_ACCEPTANCE_NUMBER_FALLBACK"
+    )
+    assert catalog["PRIORITY_REVIEW"]["official_record_code_source_field"] == "pridCODE"
     assert catalog["BREAKTHROUGH_THERAPY"]["official_api_path"] == "/breakthrough/getBreakthroughCureList"
     assert catalog["BREAKTHROUGH_THERAPY"]["request_params"]["noticeType"] == 1
+    assert catalog["BREAKTHROUGH_THERAPY"]["official_record_code_source_field"] == "bcnidCODE"
     assert catalog["IMPLIED_CLINICAL_TRIAL_LICENSE"]["official_api_path"] == "/xxgk/getCliniCalList"
+    assert catalog["IMPLIED_CLINICAL_TRIAL_LICENSE"]["official_record_code_source_field"] == "nidCODE"
     conditional = catalog["CONDITIONAL_APPROVAL"]
     assert conditional["official_api_path"] == "/xxgk/getFtjpzqdList"
     assert conditional["approval_date_source_field"] == "list[].bcftjpzDate"
 
 
+def test_committed_real_snapshot_is_query_scoped_auditable_and_non_predictive() -> None:
+    root = ROOT / "data/reference/innovation_drug_cde_nmpa_snapshots/2026-09-30"
+    summary = json.loads(
+        (root / "materialized/cde_nmpa_official_intake_summary.json").read_text()
+    )
+    manifest = json.loads(
+        (root / "materialized/cde_nmpa_snapshot_manifest.json").read_text()
+    )
+    report = json.loads((root / "capture_report.json").read_text())
+    assert summary["raw_rows"] == report["raw_rows"] == 670
+    assert summary["exact_mapped_rows"] == report["exact_applicant_rows"] == 268
+    assert summary["unmapped_rows"] == report["non_exact_applicant_rows"] == 402
+    assert summary["historical_reconstructable_rows"] == 53
+    assert summary["prospective_first_observed_rows"] == 215
+    assert summary["capture_scope"] == manifest["capture_scope"]
+    assert manifest["capture_scope"]["completeness_semantics"] == (
+        "QUERY_SCOPED_EXHAUSTIVE_PAGINATION"
+    )
+    assert manifest["capture_scope"]["full_source_category_completeness_claimed"] is False
+    assert set(row["status"] for row in manifest["category_capture_status"]) == {"COMPLETE"}
+    assert report["transport"] == "LOCAL_REAL_BROWSER_CDP_SAME_ORIGIN_OFFICIAL_ENDPOINTS"
+    assert all(
+        source["capture_status_scope"] == "QUERY_SCOPED_EXHAUSTIVE_PAGINATION"
+        for source in report["sources"].values()
+    )
+    assert summary["historical_outcomes_read"] is False
+    assert summary["prospective_outcomes_read"] is False
+    assert summary["event_identity_is_direction"] is False
+    assert summary["event_weight_defined"] is False
+    assert summary["sector_score_defined"] is False
+    assert summary["formal_sector_kpi_state"] == "DATA_INSUFFICIENT"
+    assert summary["production_permission"] == "NONE"
+    assert summary["trading_authority"] is False
+
+
 def test_source_probe_and_public_governance_remain_fail_closed() -> None:
     probe = json.loads((ROOT / "reference/innovation_drug_cde_nmpa_source_probe_v1.json").read_text())
-    assert probe["state"] == "OFFICIAL_ENDPOINTS_IDENTIFIED_REAL_SNAPSHOT_NOT_MATERIALIZED"
-    assert probe["data_state"]["real_official_snapshot_materialized"] is False
-    assert probe["data_state"]["historical_reconstructable_rows"] == 0
-    assert probe["data_state"]["prospective_first_observed_rows"] == 0
+    assert probe["state"] == "REAL_OFFICIAL_SNAPSHOT_MATERIALIZED_VIA_LOCAL_REAL_BROWSER_CDP"
+    assert probe["data_state"]["real_official_snapshot_materialized"] is True
+    assert probe["data_state"]["raw_rows"] == 670
+    assert probe["data_state"]["historical_reconstructable_rows"] == 53
+    assert probe["data_state"]["prospective_first_observed_rows"] == 215
+    assert probe["data_state"]["exact_mapped_rows"] == 268
+    assert probe["data_state"]["unmapped_rows"] == 402
+    assert probe["data_state"]["full_source_category_completeness_claimed"] is False
     assert probe["data_state"]["formal_sector_kpi_state"] == "DATA_INSUFFICIENT"
+    assert probe["transport_observations"]["waf_bypass_used"] is False
+    assert probe["transport_observations"]["paid_cloud_browser_required"] is False
     assert probe["governance"]["historical_outcome_read"] is False
     assert probe["governance"]["production_permission"] == "NONE"
     assert probe["governance"]["trading_authority"] is False
@@ -282,6 +355,11 @@ def test_source_probe_and_public_governance_remain_fail_closed() -> None:
         if x["product_id"] == "INNOVATION_DRUG_CDE_NMPA_OFFICIAL_RAW_CONTEXT_V1"
     )
     assert product["producer_path"] == "scripts/materialize_innovation_drug_cde_nmpa_official_intake_v1.py"
+    assert product["registration_state"] == (
+        "REAL_OFFICIAL_SNAPSHOT_MATERIALIZED_QUERY_SCOPED_MANUAL_BROWSER_SESSION"
+    )
+    assert product["query_scoped_complete"] is True
+    assert product["full_source_category_completeness_claimed"] is False
     assert product["public_workflow_success_grants_private_qualification"] is False
     assert product["may_promote_evidence"] is False
 
