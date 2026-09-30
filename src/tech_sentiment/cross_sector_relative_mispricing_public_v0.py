@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from .csindex_index_price import fetch_csindex_history
+from .csindex_index_price import fetch_csindex_history\nfrom .cnindex_index_price import fetch_cnindex_history
 
 
 SCHEMA_VERSION = "cross-sector-relative-mispricing-v0-public-input-v1"
@@ -85,11 +85,20 @@ def build_cross_sector_public_input(
     rows_by_benchmark: dict[str, int] = {}
     pe_rows_by_benchmark: dict[str, int] = {}
     latest_pe_by_benchmark: dict[str, float | None] = {}
+    valuation_state_by_benchmark: dict[str, str] = {}
+    source_identity_by_benchmark: dict[str, str] = {}
     providers: set[str] = set()
 
     for spec in BENCHMARK_SPECS:
         code = str(spec["index_code"])
-        frame = fetcher(
+        active_fetcher = fetcher
+        if active_fetcher is None:
+            active_fetcher = (
+                cnindex_fetcher
+                if spec["source_system"] == "CNINDEX_OFFICIAL_MARKET_DAILY"
+                else csindex_fetcher
+            )
+        frame = active_fetcher(
             code,
             start_date=start_date,
             end_date=as_of_date,
@@ -107,7 +116,7 @@ def build_cross_sector_public_input(
         }
         missing = required - set(frame.columns)
         if missing:
-            raise ValueError(f"{code} official CSI input missing columns: {sorted(missing)}")
+            raise ValueError(f"{code} official input missing columns: {sorted(missing)}")
         if frame.empty:
             raise ValueError(f"{code} official CSI input is empty")
 
@@ -127,6 +136,12 @@ def build_cross_sector_public_input(
         if frame["close"].isna().any() or (frame["close"] <= 0).any():
             raise ValueError(f"{code} contains invalid close values")
         frame["rolling_pe"] = pd.to_numeric(frame["rolling_pe"], errors="coerce")
+        if "valuation_source_state" not in frame.columns:
+            frame["valuation_source_state"] = (
+                "OFFICIAL_HISTORICAL_VALUATION_AVAILABLE"
+                if (frame["rolling_pe"] > 0).any()
+                else "OFFICIAL_HISTORICAL_VALUATION_UNAVAILABLE"
+            )
         if "sample_count" in frame.columns:
             frame["sample_count"] = pd.to_numeric(frame["sample_count"], errors="coerce")
 
@@ -144,6 +159,8 @@ def build_cross_sector_public_input(
         rows_by_benchmark[benchmark_id] = int(len(frame))
         pe_rows_by_benchmark[benchmark_id] = int((frame["rolling_pe"] > 0).sum())
         latest_pe_by_benchmark[benchmark_id] = _json_number(latest_row["rolling_pe"])
+        valuation_state_by_benchmark[benchmark_id] = str(latest_row["valuation_source_state"])
+        source_identity_by_benchmark[benchmark_id] = str(spec["source_system"])
         providers.update(str(x) for x in frame["provider"].dropna().unique())
         frames.append(frame)
 
@@ -160,19 +177,20 @@ def build_cross_sector_public_input(
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "product_id": PRODUCT_ID,
-        "status": "PUBLIC_RAW_PIT_PRICE_VALUATION_INPUT_READY_NO_PRIVATE_QUALIFICATION",
+        "status": "PUBLIC_RAW_PIT_PRICE_INPUT_READY_VALUATION_PARTIAL_NO_PRIVATE_QUALIFICATION",
         "requested_as_of_date": as_of_date,
         "latest_market_date": latest_market_date,
         "start_date": start_date,
         "minimum_history_sessions": MINIMUM_HISTORY_SESSIONS,
         "source_repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
         "source_commit": str(source_commit),
-        "source_identity": "CSI_OFFICIAL_INDEX_PERF",
+        "source_identity": "MULTI_OFFICIAL_INDEX_SOURCES",\n        "source_identities_by_benchmark": source_identity_by_benchmark,
         "benchmarks": [dict(spec) for spec in BENCHMARK_SPECS],
         "row_count": int(len(output)),
         "rows_by_benchmark": rows_by_benchmark,
         "positive_rolling_pe_rows_by_benchmark": pe_rows_by_benchmark,
         "latest_rolling_pe_by_benchmark": latest_pe_by_benchmark,
+        "valuation_source_state_by_benchmark": valuation_state_by_benchmark,
         "providers": sorted(providers),
         "csv_path": output_csv.as_posix(),
         "csv_sha256": _sha256(output_csv),
