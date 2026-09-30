@@ -120,7 +120,11 @@
     "positive_rolling_pe_coverage_is_reported_not_silently_imputed": true,
     "minimum_history_derivation": "252-session longest raw metric warmup + 200 valid observations for trailing-252 empirical percentile - 1 = 451 sessions",
     "official_price_required_for_every_benchmark": true,
-    "missing_official_historical_valuation_must_fail_closed_downstream": true
+    "missing_official_historical_valuation_must_fail_closed_downstream": true,
+    "alignment_policy": "LATEST_COMMON_OFFICIAL_MARKET_DATE_NO_FORWARD_FILL",
+    "provider_lag_may_be_reported_without_forward_fill": true,
+    "requested_as_of_date_need_not_equal_aligned_market_date": true,
+    "private_consumer_must_apply_freshness_gate": true
   },
   "authority": {
     "contains_model_output": false,
