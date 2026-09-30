@@ -1,0 +1,100 @@
+{
+  "authority": {
+    "evidence_qualification_change": false,
+    "forward_outcome_read": false,
+    "historical_outcome_read": false,
+    "ml": false,
+    "new_domain": false,
+    "pairwise_builder_allowed": false,
+    "parameter_search": false,
+    "production_change": false,
+    "prospective_outcome_read": false,
+    "threshold_search": false,
+    "trading_authority_change": false,
+    "weight_search": false
+  },
+  "counts": {
+    "baseline_missing_unique_entities": 437,
+    "core_beta_intersection_defense": 22,
+    "core_beta_intersection_innovation_drug": 26,
+    "core_beta_missing": 391,
+    "defense_missing": 42,
+    "innovation_drug_intersection_defense": 0,
+    "innovation_drug_missing": 37,
+    "official_union_unique_entities": 552,
+    "shard_b_core_beta_entities": 197,
+    "shard_b_defense_entities": 25,
+    "shard_b_entities": 218,
+    "shard_b_innovation_drug_entities": 13
+  },
+  "final_integration_allowed": false,
+  "frozen_implementation_versions": {
+    "filing_materializer_version": "cninfo-versioned-filing-materializer-v2-publication-order",
+    "filing_parser_version": "official-filing-facts-v11-balance-sheet-parent-equity",
+    "fundamental_state_contract_id": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1",
+    "fundamental_state_formula_version": "fundamental-pit-state-v1"
+  },
+  "frozen_v4a_fundamental_input": {
+    "artifact_id": 10596634296,
+    "artifact_name": "capital-pit-input-materialization",
+    "artifact_sha256": "0faffd88a611beee8412de8b5f4f23f5d0cfd0e3068f7c311206b4829fc7faac",
+    "coverage_semantics": "ENTITY_HAS_AT_LEAST_ONE_HISTORICAL_RECONSTRUCTABLE_FUNDAMENTAL_STATE_AVAILABLE_BY_2026_09_30",
+    "entity_identity_path": "data/reference/cross_sector_fundamental_expansion_shard_b_v4a_baseline_entities.csv",
+    "entity_identity_sha256": "e5e0fcad677dbb3805bbbf7fa58bebbd3ad730c4f658470a78c271a742a7fe0e",
+    "member_path": "pit_evidence_materialization/fundamental_state_evidence.csv",
+    "member_sha256": "b56e6a1e8bdf32890abe8234dfc7ea989780c8103eebe48d2e5cdec2a1a758d0",
+    "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+    "run_id": 35485765220,
+    "unique_entity_ids": 192
+  },
+  "fundamental_decision_date": "2026-09-29",
+  "materialization": {
+    "checkpoint_required": true,
+    "decision_end_date": "2026-09-29",
+    "filing_query_warmup_years": 2,
+    "max_parallel": 4,
+    "parser_and_state_semantics": "REUSE_EXISTING_V4A_OFFICIAL_FILING_MATERIALIZER_AND_FUNDAMENTAL_PIT_STATE_CONTRACT",
+    "target_start_date": "2026-01-01",
+    "work_unit_partition": "sorted(shard_b_symbols)[position % 32]"
+  },
+  "official_membership_witnesses": {
+    "CORE_BETA": {
+      "baseline_covered": 109,
+      "index_code": "000510",
+      "missing": 391,
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/core_beta_a500.csv",
+      "rows": 500,
+      "sha256": "035529237a142bbfea404804f6017a108cc77e0e110077deca53b45be7f9ecee",
+      "snapshot_role": "official_live_witness",
+      "snapshot_source": "csindex_cons_xls"
+    },
+    "DEFENSE": {
+      "baseline_covered": 8,
+      "index_code": "399973",
+      "missing": 42,
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/defense_399973.csv",
+      "rows": 50,
+      "sha256": "5e66da1ba1b0deec41987d655c31a38ac764fe39714d5a125bb495b4bb295e4e",
+      "snapshot_role": "official_live_witness",
+      "snapshot_source": "csindex_cons_xls"
+    },
+    "INNOVATION_DRUG": {
+      "baseline_covered": 13,
+      "index_code": "931152",
+      "missing": 37,
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/innovation_drug_931152.csv",
+      "rows": 50,
+      "sha256": "d31cd86223135f0165cb3bd9772823a733d054cbbd8d22b663442014ddc963a1",
+      "snapshot_role": "official_live_witness",
+      "snapshot_source": "csindex_cons_xls"
+    }
+  },
+  "schema_version": "cross-sector-fundamental-expansion-shard-b-v1",
+  "scope_csv_path": "data/reference/cross_sector_fundamental_expansion_shard_b_scope.csv",
+  "scope_csv_sha256": "ac5c79d75e55c3aa2e83a9a0dc5879cf8aad77a094fd43ca347bd6ffd2ef2496",
+  "scope_decision_date": "2026-09-30",
+  "shard_definition": "sorted(M)[1::2]",
+  "shard_id": "B",
+  "status": "FROZEN_SHARD_B_SCOPE_ENGINEERING_READY_NO_QUALIFICATION",
+  "terminal_state_not_claimed": true
+}
