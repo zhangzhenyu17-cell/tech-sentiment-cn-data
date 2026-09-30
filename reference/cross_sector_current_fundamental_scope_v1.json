@@ -1,0 +1,93 @@
+{
+  "schema_version": "cross-sector-current-fundamental-scope-v1",
+  "status": "FROZEN_PUBLIC_CURRENT_MEMBERSHIP_AND_MISSING_SCOPE_NO_QUALIFICATION",
+  "snapshot_date": "2026-09-30",
+  "captured_at_asia_shanghai": "2026-09-30T22:53:39+08:00",
+  "producer_source_commit": "4ca027025eaa343cea03b1e8e38fd928083d4110",
+  "baseline_fundamental": {
+    "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+    "run_id": 35485765220,
+    "artifact_id": 10596634296,
+    "artifact_name": "capital-pit-input-materialization",
+    "artifact_sha256": "0faffd88a611beee8412de8b5f4f23f5d0cfd0e3068f7c311206b4829fc7faac",
+    "member_path": "pit_evidence_materialization/fundamental_state_evidence.csv",
+    "member_sha256": "b56e6a1e8bdf32890abe8234dfc7ea989780c8103eebe48d2e5cdec2a1a758d0",
+    "coverage_semantics": "ENTITY_HAS_AT_LEAST_ONE_HISTORICAL_RECONSTRUCTABLE_FUNDAMENTAL_STATE_AVAILABLE_BY_2026_09_30"
+  },
+  "membership_snapshots": {
+    "INNOVATION_DRUG": {
+      "index_code": "931152",
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/innovation_drug_931152.csv",
+      "sha256": "d31cd86223135f0165cb3bd9772823a733d054cbbd8d22b663442014ddc963a1",
+      "rows": 50,
+      "baseline_covered": 13,
+      "missing": 37,
+      "snapshot_source": "csindex_cons_xls",
+      "snapshot_role": "official_live_witness"
+    },
+    "DEFENSE": {
+      "index_code": "399973",
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/defense_399973.csv",
+      "sha256": "5e66da1ba1b0deec41987d655c31a38ac764fe39714d5a125bb495b4bb295e4e",
+      "rows": 50,
+      "baseline_covered": 8,
+      "missing": 42,
+      "snapshot_source": "csindex_cons_xls",
+      "snapshot_role": "official_live_witness"
+    },
+    "CORE_BETA": {
+      "index_code": "000510",
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/core_beta_a500.csv",
+      "sha256": "035529237a142bbfea404804f6017a108cc77e0e110077deca53b45be7f9ecee",
+      "rows": 500,
+      "baseline_covered": 109,
+      "missing": 391,
+      "snapshot_source": "csindex_cons_xls",
+      "snapshot_role": "official_live_witness"
+    }
+  },
+  "materialization_scopes": {
+    "priority": {
+      "path": "data/reference/cross_sector_fundamental_scope_2026-09-30/priority_missing.csv",
+      "sha256": "fa36be5d349299c093d938a6b8ea338d29c4135e6fa72448a9f755d497418f75",
+      "symbols": 79,
+      "domains": [
+        "INNOVATION_DRUG",
+        "DEFENSE"
+      ]
+    },
+    "a500_remaining": {
+      "path": "data/reference/cross_sector_fundamental_scope_2026-09-30/a500_remaining_missing.csv",
+      "sha256": "26b624ef56881f897c89e428e200052a4e9660921b48bbeb38385911ecdd5abf",
+      "symbols": 358,
+      "domains": [
+        "CORE_BETA"
+      ],
+      "excludes_priority_overlap": true
+    }
+  },
+  "counts": {
+    "priority_unique_missing": 79,
+    "a500_remaining_missing_excluding_priority": 358,
+    "total_unique_new_symbols": 437
+  },
+  "target_current_state": {
+    "target_start_date": "2026-01-01",
+    "end_date": "2026-09-30",
+    "filing_query_warmup_years": 2,
+    "purpose": "LATEST_COMPARABLE_ACCOUNTING_STATE_ONLY_WITH_TWO_YEAR_QUERY_WARMUP_NOT_FULL_HISTORICAL_RESEARCH"
+  },
+  "outcome_read": false,
+  "historical_outcome_read": false,
+  "prospective_outcome_read": false,
+  "parameter_search": false,
+  "threshold_search": false,
+  "weight_search": false,
+  "ml": false,
+  "evidence_qualification_changed": false,
+  "production_changed": false,
+  "trading_authority_changed": false,
+  "scope_is_within_frozen_cross_sector_domains": true,
+  "new_domain_added": false,
+  "workflow_trigger_policy": "MANUAL_ONLY"
+}
