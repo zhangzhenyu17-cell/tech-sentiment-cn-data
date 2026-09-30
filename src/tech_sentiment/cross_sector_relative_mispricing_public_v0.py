@@ -1,0 +1,201 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+from typing import Any, Callable
+
+import pandas as pd
+
+from .csindex_index_price import fetch_csindex_history
+
+
+SCHEMA_VERSION = "cross-sector-relative-mispricing-v0-public-input-v1"
+PRODUCT_ID = "CROSS_SECTOR_RELATIVE_MISPRICING_V0_PUBLIC_INPUT"
+MINIMUM_HISTORY_SESSIONS = 313
+
+BENCHMARK_SPECS = (
+    {
+        "domain_id": "TECHNOLOGY",
+        "benchmark_id": "TECHNOLOGY_STAR50",
+        "benchmark_role": "DOMAIN_COMPONENT",
+        "index_code": "000688",
+        "index_name": "STAR50",
+    },
+    {
+        "domain_id": "TECHNOLOGY",
+        "benchmark_id": "TECHNOLOGY_CHINEXT50",
+        "benchmark_role": "DOMAIN_COMPONENT",
+        "index_code": "399673",
+        "index_name": "CHINEXT50",
+    },
+    {
+        "domain_id": "INNOVATION_DRUG",
+        "benchmark_id": "INNOVATION_DRUG_931152",
+        "benchmark_role": "DOMAIN_PRIMARY",
+        "index_code": "931152",
+        "index_name": "CSI_INNOVATIVE_DRUG_INDUSTRY",
+    },
+    {
+        "domain_id": "DEFENSE",
+        "benchmark_id": "DEFENSE_399973",
+        "benchmark_role": "DOMAIN_PRIMARY",
+        "index_code": "399973",
+        "index_name": "CSI_DEFENSE",
+    },
+    {
+        "domain_id": "CORE_BETA",
+        "benchmark_id": "CORE_BETA_A500",
+        "benchmark_role": "DOMAIN_PRIMARY",
+        "index_code": "000510",
+        "index_name": "CSI_A500",
+    },
+)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _json_number(value: object) -> float | None:
+    number = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if pd.isna(number):
+        return None
+    return float(number)
+
+
+def build_cross_sector_public_input(
+    *,
+    start_date: str,
+    as_of_date: str,
+    source_commit: str,
+    output_csv: Path,
+    output_manifest: Path,
+    fetcher: Callable[..., pd.DataFrame] = fetch_csindex_history,
+) -> dict[str, Any]:
+    if not source_commit or len(str(source_commit)) < 7:
+        raise ValueError("source_commit is required")
+    start = pd.Timestamp(start_date).normalize()
+    end = pd.Timestamp(as_of_date).normalize()
+    if start > end:
+        raise ValueError("start_date exceeds as_of_date")
+
+    frames: list[pd.DataFrame] = []
+    latest_dates: dict[str, str] = {}
+    rows_by_benchmark: dict[str, int] = {}
+    pe_rows_by_benchmark: dict[str, int] = {}
+    latest_pe_by_benchmark: dict[str, float | None] = {}
+    providers: set[str] = set()
+
+    for spec in BENCHMARK_SPECS:
+        code = str(spec["index_code"])
+        frame = fetcher(
+            code,
+            start_date=start_date,
+            end_date=as_of_date,
+            retries=2,
+            retry_backoff_seconds=0.5,
+            timeout_seconds=20.0,
+        ).copy()
+        required = {
+            "date",
+            "index_code",
+            "close",
+            "rolling_pe",
+            "provider",
+            "provider_identifier",
+        }
+        missing = required - set(frame.columns)
+        if missing:
+            raise ValueError(f"{code} official CSI input missing columns: {sorted(missing)}")
+        if frame.empty:
+            raise ValueError(f"{code} official CSI input is empty")
+
+        frame["date"] = pd.to_datetime(frame["date"], errors="raise").dt.normalize()
+        frame["index_code"] = frame["index_code"].astype(str).str.zfill(6)
+        if set(frame["index_code"]) != {code}:
+            raise ValueError(f"{code} index identity drift")
+        if frame["date"].duplicated().any():
+            raise ValueError(f"{code} duplicate market dates")
+        if (frame["date"] > end).any():
+            raise ValueError(f"{code} contains future rows")
+        if len(frame) < MINIMUM_HISTORY_SESSIONS:
+            raise ValueError(
+                f"{code} has insufficient history: {len(frame)} < {MINIMUM_HISTORY_SESSIONS}"
+            )
+        frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+        if frame["close"].isna().any() or (frame["close"] <= 0).any():
+            raise ValueError(f"{code} contains invalid close values")
+        frame["rolling_pe"] = pd.to_numeric(frame["rolling_pe"], errors="coerce")
+        if "sample_count" in frame.columns:
+            frame["sample_count"] = pd.to_numeric(frame["sample_count"], errors="coerce")
+
+        frame.insert(1, "domain_id", str(spec["domain_id"]))
+        frame.insert(2, "benchmark_id", str(spec["benchmark_id"]))
+        frame.insert(3, "benchmark_role", str(spec["benchmark_role"]))
+        frame.insert(4, "index_name", str(spec["index_name"]))
+        frame["point_in_time"] = True
+        frame["source_observation_date"] = frame["date"].dt.strftime("%Y-%m-%d")
+        frame["availability_semantics"] = "OFFICIAL_DAILY_OBSERVATION_DATE_NO_INTRADAY_TIMESTAMP_CLAIM"
+
+        benchmark_id = str(spec["benchmark_id"])
+        latest_row = frame.sort_values("date").iloc[-1]
+        latest_dates[benchmark_id] = latest_row["date"].date().isoformat()
+        rows_by_benchmark[benchmark_id] = int(len(frame))
+        pe_rows_by_benchmark[benchmark_id] = int((frame["rolling_pe"] > 0).sum())
+        latest_pe_by_benchmark[benchmark_id] = _json_number(latest_row["rolling_pe"])
+        providers.update(str(x) for x in frame["provider"].dropna().unique())
+        frames.append(frame)
+
+    aligned_dates = set(latest_dates.values())
+    if len(aligned_dates) != 1:
+        raise ValueError(f"benchmark latest dates are not aligned: {latest_dates}")
+    latest_market_date = next(iter(aligned_dates))
+
+    output = pd.concat(frames, ignore_index=True)
+    output = output.sort_values(["benchmark_id", "date"]).reset_index(drop=True)
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    output.to_csv(output_csv, index=False, date_format="%Y-%m-%d")
+
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "product_id": PRODUCT_ID,
+        "status": "PUBLIC_RAW_PIT_PRICE_VALUATION_INPUT_READY_NO_PRIVATE_QUALIFICATION",
+        "requested_as_of_date": as_of_date,
+        "latest_market_date": latest_market_date,
+        "start_date": start_date,
+        "minimum_history_sessions": MINIMUM_HISTORY_SESSIONS,
+        "source_repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+        "source_commit": str(source_commit),
+        "source_identity": "CSI_OFFICIAL_INDEX_PERF",
+        "benchmarks": [dict(spec) for spec in BENCHMARK_SPECS],
+        "row_count": int(len(output)),
+        "rows_by_benchmark": rows_by_benchmark,
+        "positive_rolling_pe_rows_by_benchmark": pe_rows_by_benchmark,
+        "latest_rolling_pe_by_benchmark": latest_pe_by_benchmark,
+        "providers": sorted(providers),
+        "csv_path": output_csv.as_posix(),
+        "csv_sha256": _sha256(output_csv),
+        "contains_model_output": False,
+        "contains_private_model_semantics": False,
+        "contains_forward_outcomes": False,
+        "contains_portfolio_or_holdings_data": False,
+        "historical_rows_are_public_observations_not_outcome_labels": True,
+        "public_handoff_ready_grants_private_qualification": False,
+        "automatic_trigger": False,
+    }
+    output_manifest.parent.mkdir(parents=True, exist_ok=True)
+    output_manifest.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+__all__ = [
+    "BENCHMARK_SPECS",
+    "MINIMUM_HISTORY_SESSIONS",
+    "PRODUCT_ID",
+    "SCHEMA_VERSION",
+    "build_cross_sector_public_input",
+]
