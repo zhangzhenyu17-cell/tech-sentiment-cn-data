@@ -57,8 +57,8 @@ def test_materialization_contract_is_current_only_and_outcome_blind() -> None:
     assert c["target_window"] == {
         "target_start_date": "2026-01-01",
         "end_date": "2026-09-30",
-        "filing_query_warmup_years": 1,
-        "semantic": "LATEST_COMPARABLE_ACCOUNTING_STATE_ONLY_NOT_FULL_HISTORICAL_RESEARCH",
+        "filing_query_warmup_years": 2,
+        "semantic": "LATEST_COMPARABLE_ACCOUNTING_STATE_ONLY_WITH_TWO_YEAR_QUERY_WARMUP_NOT_FULL_HISTORICAL_RESEARCH",
     }
     assert c["inherited_semantics"]["cross_sector_aggregation_coverage_threshold"] == 0.8
     assert c["inherited_semantics"]["parameter_or_threshold_search_allowed"] is False
