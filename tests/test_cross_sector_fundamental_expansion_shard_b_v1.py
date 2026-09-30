@@ -168,6 +168,9 @@ def test_shard_b_workflow_is_manual_only_and_bounded() -> None:
         assert trigger not in text
     assert 'WORK_UNITS: "32"' in text
     assert "max-parallel: 4" in text
+    assert "repair_unit:" in text
+    assert "unit: ${{ fromJSON(needs.preflight.outputs.units) }}" in text
+    assert "needs.preflight.outputs.repair_mode != 'true'" in text
     assert 'DECISION_DATE: "2026-09-29"' in text
     assert "cross_sector_fundamental_expansion_shard_b_scope.csv" in text
     assert "--scope-contract reference/cross_sector_fundamental_expansion_shard_b_v1.json" in text

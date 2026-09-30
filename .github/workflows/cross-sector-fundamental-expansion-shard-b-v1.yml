@@ -2,6 +2,12 @@ name: Cross-Sector Fundamental Expansion Shard B V1
 
 on:
   workflow_dispatch:
+    inputs:
+      repair_unit:
+        description: "Optional single work-unit index (0-31); leave blank for the full Shard B run"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -16,8 +22,39 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      units: ${{ steps.plan.outputs.units }}
+      repair_mode: ${{ steps.plan.outputs.repair_mode }}
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve full-run or single-unit repair plan
+        id: plan
+        env:
+          REPAIR_UNIT: ${{ inputs.repair_unit }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          raw = str(os.environ.get("REPAIR_UNIT", "")).strip()
+          if raw:
+              try:
+                  unit = int(raw)
+              except ValueError as exc:
+                  raise SystemExit("repair_unit must be an integer from 0 through 31") from exc
+              if not 0 <= unit < 32:
+                  raise SystemExit("repair_unit must be an integer from 0 through 31")
+              units = [unit]
+              repair_mode = "true"
+          else:
+              units = list(range(32))
+              repair_mode = "false"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"units={json.dumps(units, separators=(',', ':'))}\n")
+              handle.write(f"repair_mode={repair_mode}\n")
+          print(json.dumps({"units": units, "repair_mode": repair_mode}))
+          PY
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -56,7 +93,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        unit: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+        unit: ${{ fromJSON(needs.preflight.outputs.units) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -104,8 +141,8 @@ jobs:
           retention-days: 30
 
   aggregate:
-    needs: materialize
-    if: ${{ always() }}
+    needs: [preflight, materialize]
+    if: ${{ always() && needs.preflight.outputs.repair_mode != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

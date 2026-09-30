@@ -735,6 +735,19 @@ def test_official_pdf_title_classifies_summary_body_and_full_carriers():
     )
 
 
+def test_600115_2025_annual_summary_without_year_marker_is_classified_from_official_cover():
+    # CNINFO document 1225064850 renders the carrier as "2025 年度报告摘要".
+    # Whitespace compaction yields "2025年度报告摘要", which must remain
+    # distinguishable from the simultaneous full/canonical annual report.
+    text = """
+    2025 年度报告摘要
+    公司代码：600115 公司简称：中国东航
+    中国东方航空股份有限公司
+    2025 年度报告摘要
+    """
+    assert classify_official_filing_presentation(text) == FILING_PRESENTATION_SUMMARY
+
+
 def test_generic_running_header_does_not_mask_explicit_body_cover_title():
     text = """
     2021 年第一季度报告
