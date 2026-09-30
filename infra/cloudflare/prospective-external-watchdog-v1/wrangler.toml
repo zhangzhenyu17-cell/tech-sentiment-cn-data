@@ -1,0 +1,22 @@
+name = "prospective-external-watchdog-v1"
+main = "src/worker.mjs"
+compatibility_date = "2026-09-30"
+workers_dev = true
+
+[vars]
+GITHUB_OWNER = "zhangzhenyu17-cell"
+GITHUB_REPO = "tech-sentiment-cn-data"
+ORCHESTRATOR_WORKFLOW = "prospective-public-daily-orchestrator-v1.yml"
+GITHUB_REF = "main"
+WATCHDOG_GAP_MINUTES = "25"
+DRY_RUN = "false"
+
+[secrets]
+required = ["GITHUB_TOKEN"]
+
+[triggers]
+crons = [
+  "10,25,40,55 7-23 * * *",
+  "10,25,30,35,40,45,50,55 0 * * *",
+  "0,5 1 * * *",
+]
