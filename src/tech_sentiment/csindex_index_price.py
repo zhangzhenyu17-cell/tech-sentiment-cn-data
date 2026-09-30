@@ -65,11 +65,11 @@ def _normalise_csindex_rows(data: list[Any], code: str) -> pd.DataFrame:
             "high": ("high", "最高"),
             "low": ("low", "最低"),
             "close": ("close", "收盘"),
-            "pct_chg": ("pctChange", "涨跌幅"),
-            "volume": ("volume", "成交量"),
-            "amount": ("turnover", "amount", "成交金额"),
-            "sample_count": ("sampleCount", "sample_count", "样本数"),
-            "rolling_pe": ("rollingPE", "rolling_pe", "滚动市盈率"),
+            "pct_chg": ("pctChange", "changePct", "涨跌幅"),
+            "volume": ("volume", "tradingVol", "成交量"),
+            "amount": ("turnover", "amount", "tradingValue", "成交金额"),
+            "sample_count": ("sampleCount", "sample_count", "consNumber", "样本数"),
+            "rolling_pe": ("rollingPE", "rolling_pe", "peg", "滚动市盈率"),
         }
         selected: dict[str, pd.Series] = {}
         for target, candidates in aliases.items():
