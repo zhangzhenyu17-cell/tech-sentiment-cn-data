@@ -1,45 +1,63 @@
 {
   "schema_version": "cross-sector-relative-mispricing-v0-public-input-contract-v1",
   "product_id": "CROSS_SECTOR_RELATIVE_MISPRICING_V0_PUBLIC_INPUT",
-  "status": "PUBLIC_RAW_PIT_PRICE_VALUATION_ONLY_NO_MODEL_OUTPUT",
+  "status": "PUBLIC_RAW_PIT_PRICE_INPUT_WITH_PARTIAL_OFFICIAL_VALUATION_NO_MODEL_OUTPUT",
   "date": "2026-09-30",
-  "purpose": "Provide official CSI daily price and rolling-PE observations for the four frozen Cross-Sector Relative Mispricing V0 domains without private model semantics, outcome labels, evidence promotion, Production authority or trading authority.",
+  "purpose": "Provide official daily index price observations for all frozen Cross-Sector Relative Mispricing V0 benchmarks and preserve official historical rolling-PE where the benchmark operator exposes it. Missing official historical valuation must remain missing; no private model semantics, outcome labels, evidence promotion, Production authority or trading authority.",
   "source": {
-    "operator": "China Securities Index Co., Ltd.",
-    "endpoint_identity": "CSI_OFFICIAL_INDEX_PERF",
-    "adapter": "src/tech_sentiment/csindex_index_price.py",
-    "producer": "scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py"
+    "producer": "scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py",
+    "source_policy": "BENCHMARK_OPERATOR_OFFICIAL_SOURCE_FIRST_NO_THIRD_PARTY_VALUATION_BACKFILL",
+    "adapters": {
+      "CSI_OFFICIAL_INDEX_PERF": "src/tech_sentiment/csindex_index_price.py",
+      "CNINDEX_OFFICIAL_MARKET_DAILY": "src/tech_sentiment/cnindex_index_price.py"
+    }
   },
   "benchmarks": [
     {
       "domain_id": "TECHNOLOGY",
       "benchmark_id": "TECHNOLOGY_STAR50",
       "index_code": "000688",
-      "role": "DOMAIN_COMPONENT"
+      "role": "DOMAIN_COMPONENT",
+      "source_system": "CSI_OFFICIAL_INDEX_PERF",
+      "historical_price_available": true,
+      "historical_rolling_pe_available": true
     },
     {
       "domain_id": "TECHNOLOGY",
       "benchmark_id": "TECHNOLOGY_CHINEXT50",
       "index_code": "399673",
-      "role": "DOMAIN_COMPONENT"
+      "role": "DOMAIN_COMPONENT",
+      "source_system": "CNINDEX_OFFICIAL_MARKET_DAILY",
+      "historical_price_available": true,
+      "historical_rolling_pe_available": false,
+      "valuation_missing_reason": "OFFICIAL_HISTORICAL_INDEX_VALUATION_NOT_EXPOSED_BY_VERIFIED_CNINDEX_DAILY_HISTORY_ENDPOINT"
     },
     {
       "domain_id": "INNOVATION_DRUG",
       "benchmark_id": "INNOVATION_DRUG_931152",
       "index_code": "931152",
-      "role": "DOMAIN_PRIMARY"
+      "role": "DOMAIN_PRIMARY",
+      "source_system": "CSI_OFFICIAL_INDEX_PERF",
+      "historical_price_available": true,
+      "historical_rolling_pe_available": true
     },
     {
       "domain_id": "DEFENSE",
       "benchmark_id": "DEFENSE_399973",
       "index_code": "399973",
-      "role": "DOMAIN_PRIMARY"
+      "role": "DOMAIN_PRIMARY",
+      "source_system": "CSI_OFFICIAL_INDEX_PERF",
+      "historical_price_available": true,
+      "historical_rolling_pe_available": true
     },
     {
       "domain_id": "CORE_BETA",
       "benchmark_id": "CORE_BETA_A500",
       "index_code": "000510",
-      "role": "DOMAIN_PRIMARY"
+      "role": "DOMAIN_PRIMARY",
+      "source_system": "CSI_OFFICIAL_INDEX_PERF",
+      "historical_price_available": true,
+      "historical_rolling_pe_available": true
     }
   ],
   "required_columns": [
@@ -74,7 +92,16 @@
     "nonpositive_values_may_be_reclassified_downstream": false,
     "cross_domain_raw_pe_comparison_allowed": false,
     "downstream_domain_native_normalization_required": true,
-    "public_product_may_define_valuation_score": false
+    "public_product_may_define_valuation_score": false,
+    "third_party_backfill_allowed": false,
+    "current_snapshot_may_backfill_historical_valuation": false,
+    "known_missing_benchmark": {
+      "benchmark_id": "TECHNOLOGY_CHINEXT50",
+      "index_code": "399673",
+      "state": "OFFICIAL_HISTORICAL_VALUATION_UNAVAILABLE",
+      "price_source": "CNINDEX_OFFICIAL_MARKET_DAILY",
+      "note": "CNINDEX official daily history is qualified for price observations but does not expose historical index PE. Current index-list PE is not retroactively replicated across historical dates."
+    }
   },
   "pit_semantics": {
     "future_rows_allowed": false,
@@ -91,7 +118,9 @@
     "positive_close_required": true,
     "rolling_pe_column_required": true,
     "positive_rolling_pe_coverage_is_reported_not_silently_imputed": true,
-    "minimum_history_derivation": "252-session longest raw metric warmup + 200 valid observations for trailing-252 empirical percentile - 1 = 451 sessions"
+    "minimum_history_derivation": "252-session longest raw metric warmup + 200 valid observations for trailing-252 empirical percentile - 1 = 451 sessions",
+    "official_price_required_for_every_benchmark": true,
+    "missing_official_historical_valuation_must_fail_closed_downstream": true
   },
   "authority": {
     "contains_model_output": false,
