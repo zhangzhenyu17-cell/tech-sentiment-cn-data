@@ -47,6 +47,60 @@ def _stable_hash(payload: dict[str, object]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def build_official_capture_manifest(
+    *,
+    contract: dict[str, object],
+    mapping_registry_sha256: str,
+    captured_at: str,
+    capture_status: str = "PARTIAL",
+    snapshot_id: str | None = None,
+) -> dict[str, object]:
+    allowed = set(contract["source_completeness"]["allowed_status"])
+    if capture_status not in allowed:
+        raise ValueError("CDE/NMPA capture status is not allowed")
+    timestamp = pd.Timestamp(captured_at)
+    if timestamp.tzinfo is None:
+        raise ValueError("CDE/NMPA captured_at must be timezone-aware")
+    captured_iso = timestamp.isoformat()
+    canonical = set(map(str, contract["canonical_event_types"]))
+    source_urls: list[str] = []
+    category_rows: list[dict[str, str]] = []
+    for source in contract["official_source_catalog"]:
+        url = str(source["url"])
+        source_urls.append(url)
+        for category in map(str, source["allowed_categories"]):
+            if category in canonical:
+                category_rows.append(
+                    {"source_url": url, "category": category, "status": capture_status}
+                )
+    if not category_rows:
+        raise ValueError("CDE/NMPA contract exposes no canonical capture categories")
+    if snapshot_id is None:
+        stamp = timestamp.tz_convert("Asia/Shanghai").strftime("%Y%m%dT%H%M%S%z")
+        snapshot_id = f"innovation-drug-cde-nmpa-{stamp}"
+    return {
+        "manifest_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_CAPTURE_V1",
+        "snapshot_id": snapshot_id,
+        "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
+        "captured_at": captured_iso,
+        "capture_method": "BROWSER_RENDERED_OFFICIAL_TABLE_CAPTURE",
+        "source_urls": source_urls,
+        "category_capture_status": category_rows,
+        "entity_mapping_registry_sha256": mapping_registry_sha256,
+        "historical_outcome_read": False,
+        "prospective_outcome_read": False,
+        "fuzzy_entity_mapping_used": False,
+        "publication_date_inferred": False,
+        "current_page_presence_used_for_historical_backfill": False,
+        "current_constituent_backfill_used": False,
+        "direction_classified": False,
+        "predictive_weight_assigned": False,
+        "sector_score_computed": False,
+        "evidence_qualification_changed": False,
+        "formal_sector_kpi_state": "DATA_INSUFFICIENT",
+    }
+
+
 def load_exact_entity_mapping_registry(path: Path) -> dict[str, object]:
     registry = json.loads(path.read_text(encoding="utf-8"))
     if registry.get("registry_id") != MAPPING_REGISTRY_ID:
@@ -371,6 +425,7 @@ def materialize_official_capture_files(
 __all__ = [
     "MAPPING_REGISTRY_ID",
     "OfficialIntakeResult",
+    "build_official_capture_manifest",
     "load_exact_entity_mapping_registry",
     "materialize_official_capture",
     "materialize_official_capture_files",

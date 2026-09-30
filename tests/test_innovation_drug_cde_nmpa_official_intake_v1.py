@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from tech_sentiment.innovation_drug_cde_nmpa_official_intake_v1 import (
+    build_official_capture_manifest,
     load_exact_entity_mapping_registry,
     materialize_official_capture,
     materialize_official_capture_files,
@@ -99,6 +100,33 @@ def _raw_rows() -> pd.DataFrame:
             "publication_date": "2026-09-25",
         },
     ])
+
+
+def test_capture_manifest_builder_is_partial_by_default_and_fail_closed() -> None:
+    contract = load_cde_snapshot_contract(CONTRACT)
+    mapping_sha = hashlib.sha256(MAPPING.read_bytes()).hexdigest()
+    manifest = build_official_capture_manifest(
+        contract=contract,
+        mapping_registry_sha256=mapping_sha,
+        captured_at="2026-09-30T16:30:00+08:00",
+    )
+    assert manifest["entity_mapping_registry_sha256"] == mapping_sha
+    assert len(manifest["source_urls"]) == 4
+    assert len(manifest["category_capture_status"]) == 4
+    assert {row["status"] for row in manifest["category_capture_status"]} == {"PARTIAL"}
+    assert manifest["historical_outcome_read"] is False
+    assert manifest["prospective_outcome_read"] is False
+    assert manifest["direction_classified"] is False
+    assert manifest["predictive_weight_assigned"] is False
+    assert manifest["sector_score_computed"] is False
+    assert manifest["formal_sector_kpi_state"] == "DATA_INSUFFICIENT"
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        build_official_capture_manifest(
+            contract=contract,
+            mapping_registry_sha256=mapping_sha,
+            captured_at="2026-09-30T16:30:00",
+        )
 
 
 def test_exact_mapping_registry_is_narrow_and_auditable() -> None:

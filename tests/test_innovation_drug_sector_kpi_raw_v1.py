@@ -6,6 +6,7 @@ import pytest
 from tech_sentiment.innovation_drug_sector_kpi_raw_v1 import (
     BD_LICENSING,
     CLINICAL_REGULATORY,
+    audit_innovation_drug_title,
     build_sector_kpi_raw_result,
     classify_innovation_drug_title,
     normalize_cde_snapshot,
@@ -59,6 +60,17 @@ def test_title_taxonomy_is_domain_specific_and_non_directional(title: str, expec
     assert classify_innovation_drug_title(title) == expected
 
 
+def test_title_audit_is_deterministic_non_directional_and_explanatory() -> None:
+    audit = audit_innovation_drug_title(
+        "恒瑞医药关于与某公司签署战略合作及许可协议的公告"
+    )
+    assert audit["audit_version"] == "innovation-drug-title-audit-v1"
+    assert "许可协议" in audit["matched_title_tokens"]
+    assert len(audit["normalized_title_sha256"]) == 64
+    assert audit["direction_classified"] is False
+    assert audit["predictive_weight_assigned"] is False
+
+
 def test_cninfo_normalization_uses_exact_pit_identity_without_direction() -> None:
     frame = pd.DataFrame(
         [
@@ -78,6 +90,10 @@ def test_cninfo_normalization_uses_exact_pit_identity_without_direction() -> Non
     assert out["predictive_weight_assigned"].tolist() == [False, False]
     assert out["outcome_read"].tolist() == [False, False]
     assert set(out["source_identity"]) == {"CNINFO_ANNOUNCEMENT_ARCHIVE"}
+    provenance = [json.loads(value) for value in out["provenance"]]
+    assert all(item["title_audit"]["audit_version"] == "innovation-drug-title-audit-v1" for item in provenance)
+    assert all(item["title_audit"]["direction_classified"] is False for item in provenance)
+    assert all(item["title_audit"]["predictive_weight_assigned"] is False for item in provenance)
 
 
 def test_cde_snapshot_requires_exact_mapping_and_delays_date_only_publication() -> None:
