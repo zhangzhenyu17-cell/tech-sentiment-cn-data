@@ -12,7 +12,7 @@ from .csindex_index_price import fetch_csindex_history
 
 SCHEMA_VERSION = "cross-sector-relative-mispricing-v0-public-input-v1"
 PRODUCT_ID = "CROSS_SECTOR_RELATIVE_MISPRICING_V0_PUBLIC_INPUT"
-MINIMUM_HISTORY_SESSIONS = 313
+MINIMUM_HISTORY_SESSIONS = 451
 
 BENCHMARK_SPECS = (
     {
