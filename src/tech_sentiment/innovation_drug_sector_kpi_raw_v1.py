@@ -320,6 +320,7 @@ def normalize_cde_snapshot(
             "EXACT_LISTED_ISSUER_LEGAL_NAME",
             "EXACT_APPLICANT_ALIAS_REGISTRY",
             "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE",
+            "EXACT_APPLICANT_TOKEN_IN_OFFICIAL_MULTI_APPLICANT_FIELD",
         }:
             raise ValueError("CDE entity mapping must be exact and auditable")
         event_type = _CDE_CATEGORY_MAP[category]

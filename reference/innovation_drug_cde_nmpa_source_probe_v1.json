@@ -36,17 +36,20 @@
     "snapshot_captured_at": "2026-09-30T17:29:59+08:00",
     "snapshot_root": "data/reference/innovation_drug_cde_nmpa_snapshots/2026-09-30",
     "raw_rows": 670,
-    "historical_reconstructable_rows": 53,
-    "prospective_first_observed_rows": 215,
-    "exact_mapped_rows": 268,
-    "unmapped_rows": 402,
+    "historical_reconstructable_rows": 79,
+    "prospective_first_observed_rows": 591,
+    "exact_mapped_rows": 670,
+    "unmapped_rows": 0,
     "full_source_category_completeness_claimed": false,
     "query_scoped_complete_categories": 4,
     "formal_sector_kpi_state": "DATA_INSUFFICIENT",
     "snapshot_id": "innovation-drug-cde-nmpa-20260930T172959+0800",
     "raw_snapshot_sha256": "7c4f3297858e40aefac8c675d050b14b7432bb74557a06e6d6b649b8e344afae",
     "manifest_sha256": "d600e25f1f73268730323b1bd2f9ec459efc261aa6bd2e84f0583573305887b6",
-    "materialization_summary_sha256": "ede3d9e04d1d090c04e0580e34a2767c854296c3933627a2f15d1602ca8f7635"
+    "materialization_summary_sha256": "7b117fd17159a11afb05dff62dcc65ba407f1acf04ae2067d25093692719f7c7",
+    "whole_field_exact_mapped_rows": 268,
+    "multi_applicant_exact_token_mapped_rows": 402,
+    "exact_mapping_semantics": "WHOLE_FIELD_OR_DELIMITED_EXACT_LEGAL_NAME_TOKEN_NO_SUBSTRING_NO_AFFILIATE_INFERENCE"
   },
   "governance": {
     "historical_outcome_read": false,
@@ -58,6 +61,8 @@
     "production_permission": "NONE",
     "trading_authority": false,
     "bottom_v1_changed": false,
-    "high_v1_changed": false
+    "high_v1_changed": false,
+    "substring_matching_used": false,
+    "affiliate_inference_used": false
   }
 }

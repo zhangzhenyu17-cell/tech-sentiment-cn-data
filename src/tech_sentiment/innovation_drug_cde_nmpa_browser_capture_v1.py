@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import json
+import re
 from typing import Any, Mapping
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -337,6 +338,12 @@ def capture_cde_nmpa_via_browser(
         raise ValueError("captured_at must be timezone-aware")
     when = when.astimezone(SHANGHAI)
     frame = normalize_cde_browser_capture_rows(raw, details)
+    applicants = frame["applicant"].astype(str)
+    whole_exact = applicants.eq(target_company)
+    exact_token = applicants.map(
+        lambda value: target_company
+        in {token.strip() for token in re.split(r"[;；\n、]+", value) if token.strip()}
+    )
     report = {
         "captured_at": when.isoformat(timespec="seconds"),
         "capture_method": "BROWSER_RENDERED_OFFICIAL_TABLE_CAPTURE",
@@ -345,8 +352,12 @@ def capture_cde_nmpa_via_browser(
         "target_company_query": target_company,
         "sources": source_report,
         "raw_rows": int(len(frame)),
-        "exact_applicant_rows": int(frame["applicant"].astype(str).eq(target_company).sum()),
-        "non_exact_applicant_rows": int((~frame["applicant"].astype(str).eq(target_company)).sum()),
+        "whole_field_exact_applicant_rows": int(whole_exact.sum()),
+        "multi_applicant_exact_token_rows": int((exact_token & ~whole_exact).sum()),
+        "rows_with_exact_target_applicant_token": int(exact_token.sum()),
+        "rows_without_exact_target_applicant_token": int((~exact_token).sum()),
+        "substring_matching_used": False,
+        "affiliate_inference_used": False,
         "historical_outcomes_read": False,
         "prospective_outcomes_read": False,
         "direction_classified": False,

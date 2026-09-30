@@ -1,4 +1,5 @@
 {
+  "affiliate_inference_used": false,
   "browser_page": {
     "bodyText": "国家药品监督管理局药品审评中心\nCENTER FOR DRUG EVALUATION, NMPA\n网站地图\n联系我们\nCDE邮箱\n \n搜索\n首页机构职能新闻中心政策法规党建工作信息公开申请人之窗办事服务监督与反馈登记备案平台\n信息公开\n受理品种信息\n审评任务公示\n沟通交流公示\n优先审评公示\n突破性治疗公示\n共性问题\n临床试验默示许可\n上市药品信息\n原辅包登记信息\n药品目录集信息\n重点工作\n附条件批准品种\n预算决算\n其他公开信息\n药品试验数据保护品种\n 当前位置 : 信息公开 ＞＞ 优先审评公示\n拟优先审评品种公示 纳入优先审评品种名单 异议论证结果查询\n受理号：\n药品名称：\n注册申请人：\n查询\n序号\t受理号\t药品名称\t注册申请人\t承办日期\t申请日期\t公示日期\t状态\t是否为罕见病药物\n1\tCXHS2660047\t马来酸依格美妥司他\t浙江瑞博制药有限公司\t2026-08-19\t2026-09-18\t2026-09-22\t已纳入\t否\n2\t无\t注射用HS-20093 （注射用瑞康立伏妥塔单抗）\t常州恒邦药业有限公司\t\t2026-09-11\t2026-09-14\t已纳入\t是\n3\t无\t替瑞奇珠单抗",
     "readyState": "complete",
@@ -9,12 +10,13 @@
   "captured_at": "2026-09-30T17:29:59+08:00",
   "direction_classified": false,
   "evidence_qualification_changed": false,
-  "exact_applicant_rows": 268,
   "historical_outcomes_read": false,
-  "non_exact_applicant_rows": 402,
+  "multi_applicant_exact_token_rows": 402,
   "predictive_weight_assigned": false,
   "prospective_outcomes_read": false,
   "raw_rows": 670,
+  "rows_with_exact_target_applicant_token": 670,
+  "rows_without_exact_target_applicant_token": 0,
   "sector_score_computed": false,
   "sources": {
     "breakthrough": {
@@ -74,6 +76,8 @@
       "total": 48
     }
   },
+  "substring_matching_used": false,
   "target_company_query": "江苏恒瑞医药股份有限公司",
-  "transport": "LOCAL_REAL_BROWSER_CDP_SAME_ORIGIN_OFFICIAL_ENDPOINTS"
+  "transport": "LOCAL_REAL_BROWSER_CDP_SAME_ORIGIN_OFFICIAL_ENDPOINTS",
+  "whole_field_exact_applicant_rows": 268
 }

@@ -181,7 +181,53 @@ def test_raw_official_capture_maps_exact_name_preserves_unmapped_and_pit_semanti
     assert str(implied["event_date"].date()) == "2026-09-26"
     assert str(implied["evidence_available_date"].date()) == "2026-09-28"
     assert result.unmapped_rows.iloc[0]["applicant"] == "江苏恒瑞生物科技有限公司"
-    assert result.unmapped_rows.iloc[0]["mapping_state"] == "UNMAPPED_EXACT_NAME_REQUIRED"
+    assert result.unmapped_rows.iloc[0]["mapping_state"] == "UNMAPPED_EXACT_NAME_OR_TOKEN_REQUIRED"
+
+
+def test_multi_applicant_field_uses_exact_token_mapping_without_fuzzy_or_affiliate_inference() -> None:
+    contract = load_cde_snapshot_contract(CONTRACT)
+    registry = load_exact_entity_mapping_registry(MAPPING)
+    raw = pd.DataFrame(
+        [
+            {
+                "category": "临床试验默示许可",
+                "source_url": URL_IMPLIED,
+                "source_record_id": "multi-applicant-exact-token",
+                "applicant": "上海恒瑞医药有限公司;江苏恒瑞医药股份有限公司",
+                "drug_name": "HR-MULTI",
+                "acceptance_no": "CXHL2600123",
+                "indication": "示例适应症",
+            },
+            {
+                "category": "临床试验默示许可",
+                "source_url": URL_IMPLIED,
+                "source_record_id": "affiliate-only",
+                "applicant": "上海恒瑞医药有限公司;江苏恒瑞生物科技有限公司",
+                "drug_name": "AFFILIATE-ONLY",
+                "acceptance_no": "CXHL2600456",
+                "indication": "示例适应症",
+            },
+        ]
+    )
+    mapped, unmapped, duplicates, stats = normalize_official_capture_rows(
+        raw, manifest=_manifest(), contract=contract, mapping_registry=registry
+    )
+    assert len(mapped) == 1
+    assert len(unmapped) == 1
+    assert duplicates.empty
+    row = mapped.iloc[0]
+    assert row["entity_id"] == "600276.SH"
+    assert row["entity_mapping_basis"] == (
+        "EXACT_APPLICANT_TOKEN_IN_OFFICIAL_MULTI_APPLICANT_FIELD"
+    )
+    assert row["mapping_match_mode"] == "DELIMITED_APPLICANT_TOKEN_EXACT"
+    assert row["matched_applicant_token"] == "江苏恒瑞医药股份有限公司"
+    evidence = json.loads(row["mapping_evidence"])
+    assert evidence["substring_matching_used"] is False
+    assert evidence["affiliate_inference_used"] is False
+    assert unmapped.iloc[0]["mapping_state"] == "UNMAPPED_EXACT_NAME_OR_TOKEN_REQUIRED"
+    assert stats["whole_field_exact_mapped_rows"] == 0
+    assert stats["delimited_token_exact_mapped_rows"] == 1
 
 
 def test_official_row_code_disambiguates_repeated_acceptance_number_publications() -> None:
@@ -295,6 +341,13 @@ def test_contract_freezes_official_endpoint_identity_without_requests_scraper() 
     conditional = catalog["CONDITIONAL_APPROVAL"]
     assert conditional["official_api_path"] == "/xxgk/getFtjpzqdList"
     assert conditional["approval_date_source_field"] == "list[].bcftjpzDate"
+    mapping = contract["entity_mapping"]
+    assert mapping["exact_match_unit"] == "WHOLE_APPLICANT_FIELD_OR_DELIMITED_APPLICANT_TOKEN"
+    assert mapping["multi_applicant_exact_token_matching_allowed"] is True
+    assert mapping["substring_matching_allowed"] is False
+    assert mapping["affiliate_inference_allowed"] is False
+    assert mapping["multi_entity_fanout_implemented"] is False
+    assert mapping["multiple_distinct_listed_entity_matches"] == "FAIL_CLOSED"
 
 
 def test_committed_real_snapshot_is_query_scoped_auditable_and_non_predictive() -> None:
@@ -307,10 +360,14 @@ def test_committed_real_snapshot_is_query_scoped_auditable_and_non_predictive() 
     )
     report = json.loads((root / "capture_report.json").read_text())
     assert summary["raw_rows"] == report["raw_rows"] == 670
-    assert summary["exact_mapped_rows"] == report["exact_applicant_rows"] == 268
-    assert summary["unmapped_rows"] == report["non_exact_applicant_rows"] == 402
-    assert summary["historical_reconstructable_rows"] == 53
-    assert summary["prospective_first_observed_rows"] == 215
+    assert summary["exact_mapped_rows"] == report["rows_with_exact_target_applicant_token"] == 670
+    assert summary["whole_field_exact_mapped_rows"] == report["whole_field_exact_applicant_rows"] == 268
+    assert summary["delimited_token_exact_mapped_rows"] == report["multi_applicant_exact_token_rows"] == 402
+    assert summary["unmapped_rows"] == report["rows_without_exact_target_applicant_token"] == 0
+    assert summary["historical_reconstructable_rows"] == 79
+    assert summary["prospective_first_observed_rows"] == 591
+    assert report["substring_matching_used"] is False
+    assert report["affiliate_inference_used"] is False
     assert summary["capture_scope"] == manifest["capture_scope"]
     assert manifest["capture_scope"]["completeness_semantics"] == (
         "QUERY_SCOPED_EXHAUSTIVE_PAGINATION"
@@ -337,10 +394,14 @@ def test_source_probe_and_public_governance_remain_fail_closed() -> None:
     assert probe["state"] == "REAL_OFFICIAL_SNAPSHOT_MATERIALIZED_VIA_LOCAL_REAL_BROWSER_CDP"
     assert probe["data_state"]["real_official_snapshot_materialized"] is True
     assert probe["data_state"]["raw_rows"] == 670
-    assert probe["data_state"]["historical_reconstructable_rows"] == 53
-    assert probe["data_state"]["prospective_first_observed_rows"] == 215
-    assert probe["data_state"]["exact_mapped_rows"] == 268
-    assert probe["data_state"]["unmapped_rows"] == 402
+    assert probe["data_state"]["historical_reconstructable_rows"] == 79
+    assert probe["data_state"]["prospective_first_observed_rows"] == 591
+    assert probe["data_state"]["exact_mapped_rows"] == 670
+    assert probe["data_state"]["unmapped_rows"] == 0
+    assert probe["data_state"]["whole_field_exact_mapped_rows"] == 268
+    assert probe["data_state"]["multi_applicant_exact_token_mapped_rows"] == 402
+    assert probe["governance"]["substring_matching_used"] is False
+    assert probe["governance"]["affiliate_inference_used"] is False
     assert probe["data_state"]["full_source_category_completeness_claimed"] is False
     assert probe["data_state"]["formal_sector_kpi_state"] == "DATA_INSUFFICIENT"
     assert probe["transport_observations"]["waf_bypass_used"] is False
