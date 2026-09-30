@@ -1,0 +1,88 @@
+{
+  "schema_version": "cross-sector-fundamental-expansion-shard-a-v1",
+  "status": "FROZEN_SHARD_A_SCOPE_ENGINEERING_READY_NO_QUALIFICATION",
+  "shard_id": "A",
+  "shard_definition": "sorted(M)[0::2]",
+  "scope_decision_date": "2026-09-30",
+  "fundamental_decision_date": "2026-09-29",
+  "scope_csv_path": "data/reference/cross_sector_fundamental_expansion_shard_a_scope.csv",
+  "scope_csv_sha256": "12ce7645841b9a9eec783faf59153f2fd5da2ceac49a1befb1f30b1f0da68fa6",
+  "counts": {
+    "official_union_unique_entities": 552,
+    "baseline_missing_unique_entities": 437,
+    "shard_a_entities": 219,
+    "innovation_drug_missing": 37,
+    "defense_missing": 42,
+    "core_beta_missing": 391,
+    "core_beta_intersection_innovation_drug": 26,
+    "core_beta_intersection_defense": 22,
+    "innovation_drug_intersection_defense": 0
+  },
+  "official_membership_witnesses": {
+    "INNOVATION_DRUG": {
+      "index_code": "931152",
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/innovation_drug_931152.csv",
+      "sha256": "d31cd86223135f0165cb3bd9772823a733d054cbbd8d22b663442014ddc963a1",
+      "rows": 50,
+      "baseline_covered": 13,
+      "missing": 37,
+      "snapshot_source": "csindex_cons_xls",
+      "snapshot_role": "official_live_witness"
+    },
+    "DEFENSE": {
+      "index_code": "399973",
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/defense_399973.csv",
+      "sha256": "5e66da1ba1b0deec41987d655c31a38ac764fe39714d5a125bb495b4bb295e4e",
+      "rows": 50,
+      "baseline_covered": 8,
+      "missing": 42,
+      "snapshot_source": "csindex_cons_xls",
+      "snapshot_role": "official_live_witness"
+    },
+    "CORE_BETA": {
+      "index_code": "000510",
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/core_beta_a500.csv",
+      "sha256": "035529237a142bbfea404804f6017a108cc77e0e110077deca53b45be7f9ecee",
+      "rows": 500,
+      "baseline_covered": 109,
+      "missing": 391,
+      "snapshot_source": "csindex_cons_xls",
+      "snapshot_role": "official_live_witness"
+    }
+  },
+  "frozen_v4a_fundamental_input": {
+    "repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+    "run_id": 35485765220,
+    "artifact_id": 10596634296,
+    "artifact_name": "capital-pit-input-materialization",
+    "artifact_sha256": "0faffd88a611beee8412de8b5f4f23f5d0cfd0e3068f7c311206b4829fc7faac",
+    "member_path": "pit_evidence_materialization/fundamental_state_evidence.csv",
+    "member_sha256": "b56e6a1e8bdf32890abe8234dfc7ea989780c8103eebe48d2e5cdec2a1a758d0",
+    "coverage_semantics": "ENTITY_HAS_AT_LEAST_ONE_HISTORICAL_RECONSTRUCTABLE_FUNDAMENTAL_STATE_AVAILABLE_BY_2026_09_30"
+  },
+  "materialization": {
+    "target_start_date": "2026-01-01",
+    "decision_end_date": "2026-09-29",
+    "filing_query_warmup_years": 2,
+    "parser_and_state_semantics": "REUSE_EXISTING_V4A_OFFICIAL_FILING_MATERIALIZER_AND_FUNDAMENTAL_PIT_STATE_CONTRACT",
+    "work_unit_partition": "sorted(shard_a_symbols)[position % 32]",
+    "max_parallel": 4,
+    "checkpoint_required": true
+  },
+  "authority": {
+    "forward_outcome_read": false,
+    "historical_outcome_read": false,
+    "prospective_outcome_read": false,
+    "parameter_search": false,
+    "threshold_search": false,
+    "weight_search": false,
+    "ml": false,
+    "new_domain": false,
+    "evidence_qualification_change": false,
+    "production_change": false,
+    "trading_authority_change": false,
+    "pairwise_builder_allowed": false
+  },
+  "terminal_state_not_claimed": true,
+  "final_integration_allowed": false
+}
