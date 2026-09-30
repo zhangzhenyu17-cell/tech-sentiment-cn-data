@@ -1,0 +1,9 @@
+date,sse_financing_balance,sse_source_unit,sse_source_identity,sse_source_url,szse_financing_balance,szse_source_unit,szse_source_identity,szse_source_url,bilateral_complete
+2026-09-18,1334561902108.0,CNY,SSE_MARGIN_SUMMARY,https://www.sse.com.cn/market/othersdata/margin/sum/,12657.14,CNY_100M,SZSE_MARGIN_SUMMARY,https://www.szse.cn/disclosure/margin/margin/index.html,True
+2026-09-21,1339890337610.0,CNY,SSE_MARGIN_SUMMARY,https://www.sse.com.cn/market/othersdata/margin/sum/,12745.57,CNY_100M,SZSE_MARGIN_SUMMARY,https://www.szse.cn/disclosure/margin/margin/index.html,True
+2026-09-22,1340797151676.0,CNY,SSE_MARGIN_SUMMARY,https://www.sse.com.cn/market/othersdata/margin/sum/,12770.72,CNY_100M,SZSE_MARGIN_SUMMARY,https://www.szse.cn/disclosure/margin/margin/index.html,True
+2026-09-23,1340782189632.0,CNY,SSE_MARGIN_SUMMARY,https://www.sse.com.cn/market/othersdata/margin/sum/,12760.28,CNY_100M,SZSE_MARGIN_SUMMARY,https://www.szse.cn/disclosure/margin/margin/index.html,True
+2026-09-24,1331841736225.0,CNY,SSE_MARGIN_SUMMARY,https://www.sse.com.cn/market/othersdata/margin/sum/,12676.68,CNY_100M,SZSE_MARGIN_SUMMARY,https://www.szse.cn/disclosure/margin/margin/index.html,True
+2026-09-28,1318768541155.0,CNY,SSE_MARGIN_SUMMARY,https://www.sse.com.cn/market/othersdata/margin/sum/,12547.5,CNY_100M,SZSE_MARGIN_SUMMARY,https://www.szse.cn/disclosure/margin/margin/index.html,True
+2026-09-29,1319482471088.0,CNY,SSE_MARGIN_SUMMARY,https://www.sse.com.cn/market/othersdata/margin/sum/,12519.88,CNY_100M,SZSE_MARGIN_SUMMARY,https://www.szse.cn/disclosure/margin/margin/index.html,True
+2026-09-30,,,,,,,,,False

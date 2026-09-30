@@ -1,0 +1,20 @@
+{
+  "schema_version": "market-regime-broad-market-capital-v0-capture-receipt-v1",
+  "market_date": "2026-09-30",
+  "seed_end_date": "2026-09-17",
+  "fresh_trading_dates": [
+    "2026-09-18",
+    "2026-09-21",
+    "2026-09-22",
+    "2026-09-23",
+    "2026-09-24",
+    "2026-09-28",
+    "2026-09-29",
+    "2026-09-30"
+  ],
+  "fresh_turnover_error_rows": 0,
+  "fresh_financing_error_rows": 1,
+  "financing_latest_available_observation_date": "2026-09-29",
+  "financing_publication_lag_trading_days": 1,
+  "automatic_trigger": false
+}

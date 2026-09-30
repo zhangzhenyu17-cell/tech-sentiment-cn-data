@@ -1,0 +1,62 @@
+{
+  "schema_version": "market-regime-broad-market-capital-v0-public-input-v1",
+  "product_id": "MARKET_REGIME_BROAD_MARKET_CAPITAL_V0_PUBLIC_INPUT",
+  "status": "PUBLIC_RAW_INPUT_READY_FOR_PRIVATE_BROAD_MARKET_CAPITAL_V0",
+  "market_date": "2026-09-30",
+  "scope": "SSE_SZSE_A_SHARES",
+  "trading_day_count": 1150,
+  "turnover": {
+    "latest_observation_date": "2026-09-30",
+    "row_count": 1150,
+    "complete_through_market_date": true,
+    "fresh_capture_error_rows": 0,
+    "bse_included": false,
+    "full_sh_sz_bj_market_claimed": false
+  },
+  "financing": {
+    "latest_available_observation_date": "2026-09-29",
+    "row_count": 1149,
+    "publication_lag_trading_days": 1,
+    "same_observation_date_as_market_date": false,
+    "current_market_date_missing_allowed_as_publication_lag": true,
+    "max_allowed_publication_lag_trading_days": 1,
+    "older_missing_date_count": 0,
+    "fresh_capture_error_rows": 1
+  },
+  "same_day_operational_readiness": {
+    "ready": true,
+    "meaning": "RAIL_CAN_BE_BUILT_ON_MARKET_DATE_USING_SAME_DAY_TURNOVER_AND_LATEST_OFFICIAL_FINANCING_WITH_AT_MOST_ONE_TRADING_DAY_PUBLICATION_LAG",
+    "full_same_observation_date_claimed": false,
+    "no_forward_fill": true,
+    "no_backfill_from_future_publication": true
+  },
+  "seed_lineage": {
+    "release_tag": "v4a-stage-bundles-v1",
+    "capital": {
+      "asset_base": "v4a-capital-20220104-20260917-6f8ed7d3811fa72ae9bd",
+      "bundle_identity": "742ff961f72b72bdecfec4cbe0b517dc3a794669fd05917ee8940dfbb5a8f175",
+      "archive_sha256": "44e03c32e73d5638fda7de77a579a24b47bfd5774b05cd26a8d8a93e45bfeb3c",
+      "stage_receipt_sha256": "d6c5b693b84748fcf1e7252ca458647ba85d80c439a064b211382431faf09776",
+      "seed_csv_sha256": "143832b4a1b82a366337ad6fb2e7af03676cdda25a73bc2f7beef95ddb411d97",
+      "end_date": "2026-09-17"
+    },
+    "financing": {
+      "asset_base": "v4a-financing-20220104-20260917-50c5cefbed3574a68989",
+      "bundle_identity": "4856c39a41bfb80c3ffe2e54802363731ef6fd98d9ecbbc4c242bccfe685a50e",
+      "archive_sha256": "b9ddb91409a0e93a68e4248ed40baa1ac8f7e9db4bdd5c2860fa9e1f9772ed3b",
+      "stage_receipt_sha256": "84a5765143271405857235434f8548dbf739fed86b65fb2be1caf22854e57710",
+      "seed_csv_sha256": "1c334c93625850bd9b197eeb4ad8004451e63c089a402852e82781b3d4eff12d",
+      "end_date": "2026-09-17"
+    }
+  },
+  "authority": {
+    "contains_model_output": false,
+    "contains_private_thresholds": false,
+    "contains_private_evidence": false,
+    "forward_outcomes_read": false,
+    "evidence_qualification_changed": false,
+    "production_permission_changed": false,
+    "trading_authority": false
+  },
+  "captured_at": "2026-09-30T20:55:56+08:00"
+}
