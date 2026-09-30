@@ -59,6 +59,6 @@
     "production_permission_changed": false,
     "trading_authority": false
   },
-  "captured_at": "2026-09-30T20:12:39+08:00",
-  "capture_reconstruction": "DETERMINISTIC_FROM_LOCAL_RAW_CAPTURE_AFTER_NETWORK_STAGE"
+  "captured_at": "2026-09-30T20:32:23+08:00",
+  "beijing_snapshot_security_count_excluded": 348
 }

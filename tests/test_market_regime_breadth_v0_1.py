@@ -113,3 +113,43 @@ def test_committed_20260930_direct_breadth_bundle_is_qualified_and_hash_bound() 
         path = root / rel
         assert path.stat().st_size == item["size_bytes"]
         assert hashlib.sha256(path.read_bytes()).hexdigest() == item["sha256"]
+
+
+def test_committed_direct_breadth_bundle_is_complete_and_raw_only() -> None:
+    import hashlib
+    root = Path(__file__).resolve().parents[1]
+    base = root / "data/reference/market_regime_v0_1_direct_breadth/2026-09-30"
+    summary = json.loads((base / "breadth_summary.json").read_text())
+    receipt = json.loads((base / "capture_receipt.json").read_text())
+    manifest = json.loads((base / "bundle_manifest.json").read_text())
+    errors = pd.read_csv(base / "query_errors.csv")
+
+    assert summary["status"] == STATUS_QUALIFIED
+    assert summary["market_date"] == "2026-09-30"
+    assert summary["universe_security_count"] == 5223
+    assert summary["same_day_history_security_count"] == 5212
+    assert summary["query_symbol_count"] == 5223
+    assert summary["complete_query_count"] == 5223
+    assert summary["query_error_count"] == 0
+    assert summary["qualified_trend_breadth"] is True
+    assert summary["scope_limitations"]["beijing_stock_exchange_in_direct_trend_breadth"] is False
+    assert summary["scope_limitations"]["full_sh_sz_bj_market_breadth_claimed"] is False
+    assert summary["metric_denominators"]["above_ma20_ratio"] == 5208
+    assert summary["metric_denominators"]["above_ma60_ratio"] == 5198
+    assert summary["metric_denominators"]["new_low_60_ratio"] == 5198
+    assert summary["metric_denominators"]["new_high_252_ratio"] == 5178
+    assert errors.empty
+    assert receipt["complete_query_count"] == receipt["query_symbol_count"] == 5223
+    assert receipt["query_error_count"] == 0
+    assert manifest["public_only"] is True
+    assert manifest["contains_model_output"] is False
+    assert manifest["contains_private_evidence"] is False
+    assert manifest["forward_outcomes_read"] is False
+    assert manifest["production_permission_changed"] is False
+    assert manifest["trading_authority"] is False
+    assert len(manifest["files"]) == 6
+    for item in manifest["files"]:
+        path = root / item["path"]
+        assert path.is_file()
+        assert path.stat().st_size == item["size_bytes"]
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == item["sha256"]

@@ -25,8 +25,8 @@
     },
     {
       "path": "data/reference/market_regime_v0_1_direct_breadth/2026-09-30/breadth_summary.json",
-      "sha256": "edf06a26a3d08e65375176629c4f090c487e9f742929f40bb9bab434d359c8ad",
-      "size_bytes": 2493
+      "sha256": "ba310a5766b14e1d68273151cfaa687790de86dcedf83d471ce7099c1ccbc2e0",
+      "size_bytes": 2456
     },
     {
       "path": "data/reference/market_regime_v0_1_direct_breadth/2026-09-30/query_errors.csv",
@@ -35,8 +35,8 @@
     },
     {
       "path": "data/reference/market_regime_v0_1_direct_breadth/2026-09-30/capture_receipt.json",
-      "sha256": "f2785a51ebd54d16ef331d05acc0e528f90434381779af1cc8c953cf560a7dac",
-      "size_bytes": 369
+      "sha256": "95369015f640bc4a7be631024221f859df8a14ac556588ffc79aac834dd2e6dd",
+      "size_bytes": 340
     }
   ]
 }
