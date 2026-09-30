@@ -141,7 +141,38 @@ python scripts/materialize_innovation_drug_cde_nmpa_official_intake_v1.py \
 
 The generated `cde_nmpa_snapshot_manifest.json` remains outcome-blind, exact-mapping-only, and `DATA_INSUFFICIENT`; use `COMPLETE` only when the browser/export capture has actually exhausted the frozen source category.
 
-A real official snapshot has **not** been materialized by this engineering change. The current public state remains adapter/intake ready with real data pending, and the formal sector KPI remains `DATA_INSUFFICIENT`.
+As of 2026-09-30, a real official company-query-scoped snapshot for `江苏恒瑞医药股份有限公司` has been materialized from all four frozen CDE source categories. The capture exhausts every page returned by the official company query, but **does not claim full-category completeness across all CDE applicants**. The formal sector KPI remains `DATA_INSUFFICIENT`.
+
+
+## V1.2 local real-browser capture route
+
+The durable acquisition path no longer depends on TinyFish or any paid cloud browser. It uses a dedicated local real Chrome session with Chrome DevTools Protocol (CDP), verifies that the loaded page is the official CDE site, and executes the same same-origin `myAjax` POST calls used by the CDE frontend itself. It does not synthesize challenge tokens, replay a WAF bypass, or issue a standalone direct-requests scraper.
+
+On macOS, start a dedicated disposable Chrome profile:
+
+```bash
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --user-data-dir=/tmp/cde-cdp-profile \
+  --remote-debugging-port=9223 \
+  --remote-allow-origins='*' \
+  --no-first-run \
+  'https://www.cde.org.cn/main/xxgk/listpage/2f78f372d351c6851af7431c7710a731'
+```
+
+After the official page has loaded normally, capture the four frozen source families with:
+
+```bash
+PYTHONPATH=src python scripts/capture_innovation_drug_cde_nmpa_browser_v1.py \
+  --cdp-url http://127.0.0.1:9223 \
+  --target-company '江苏恒瑞医药股份有限公司' \
+  --output-dir /path/to/capture
+```
+
+The capture script validates the official page title/host/readiness, exhausts returned pagination, preserves the official row codes (`pridCODE`, `bcnidCODE`, `nidCODE`), and retrieves the official priority-review / breakthrough detail records needed for indication and registration-class fields. `COMPLETE` therefore means **complete within the declared official company-query scope**. It never means that the entire CDE category across all applicants was downloaded.
+
+The 2026-09-30 capture produced 670 raw rows: 268 rows exactly map to `江苏恒瑞医药股份有限公司 -> 600276.SH`; 402 multi-applicant or other non-exact strings remain unmapped. Of the 268 mapped rows, 53 have explicit official publication/approval dates and are historically reconstructable under the frozen date-delay rule; 215 implied-clinical-trial-license rows have no record-level publication date and are therefore `PROSPECTIVE_FIRST_OBSERVED_ONLY` from the 2026-09-30 capture. No current-page presence is used to backfill those 215 rows historically.
+
+Real data also exposed that one CDE acceptance number can appear in multiple distinct official publication records. V1.2 therefore prefers the official frontend row code as source record identity when published by the source, with acceptance number only as a fallback. This is an identity/provenance correction; it does not alter event direction, weighting, score, evidence qualification, Production, or trading authority.
 
 ### Workflow decision
 

@@ -1,0 +1,53 @@
+{
+  "capture_method": "BROWSER_RENDERED_OFFICIAL_TABLE_CAPTURE",
+  "capture_scope": {
+    "company_query": "江苏恒瑞医药股份有限公司",
+    "completeness_semantics": "QUERY_SCOPED_EXHAUSTIVE_PAGINATION",
+    "full_source_category_completeness_claimed": false,
+    "kind": "OFFICIAL_COMPANY_QUERY"
+  },
+  "captured_at": "2026-09-30T17:29:59+08:00",
+  "category_capture_status": [
+    {
+      "category": "纳入优先审评品种名单",
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/2f78f372d351c6851af7431c7710a731",
+      "status": "COMPLETE"
+    },
+    {
+      "category": "纳入突破性治疗品种名单",
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/da6efd086c099b7fc949121166f0130c",
+      "status": "COMPLETE"
+    },
+    {
+      "category": "临床试验默示许可",
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/4b5255eb0a84820cef4ca3e8b6bbe20c",
+      "status": "COMPLETE"
+    },
+    {
+      "category": "附条件批准品种",
+      "source_url": "https://www.cde.org.cn/main/xxgk/listpage/c8d79e513a6df98adf05893281ace198",
+      "status": "COMPLETE"
+    }
+  ],
+  "current_constituent_backfill_used": false,
+  "current_page_presence_used_for_historical_backfill": false,
+  "direction_classified": false,
+  "entity_mapping_registry_sha256": "08f50b1490e54c1f277d6f61919e96d1eac300809b9e0029300248b2b156e5f9",
+  "evidence_qualification_changed": false,
+  "formal_sector_kpi_state": "DATA_INSUFFICIENT",
+  "fuzzy_entity_mapping_used": false,
+  "historical_outcome_read": false,
+  "manifest_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_CAPTURE_V1",
+  "predictive_weight_assigned": false,
+  "prospective_outcome_read": false,
+  "publication_date_inferred": false,
+  "sector_score_computed": false,
+  "snapshot_id": "innovation-drug-cde-nmpa-20260930T172959+0800",
+  "source_identity": "NMPA_CDE_PUBLISHED_NOTICE_ARCHIVE",
+  "source_urls": [
+    "https://www.cde.org.cn/main/xxgk/listpage/2f78f372d351c6851af7431c7710a731",
+    "https://www.cde.org.cn/main/xxgk/listpage/da6efd086c099b7fc949121166f0130c",
+    "https://www.cde.org.cn/main/xxgk/listpage/4b5255eb0a84820cef4ca3e8b6bbe20c",
+    "https://www.cde.org.cn/main/xxgk/listpage/c8d79e513a6df98adf05893281ace198"
+  ]
+}

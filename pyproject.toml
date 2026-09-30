@@ -20,6 +20,7 @@ data = [
   "pdfplumber>=0.11,<1",
   "pymupdf>=1.26,<2",
   "requests>=2.32,<3",
+  "websocket-client>=1.8,<2",
 ]
 sector-data = [
   "baostock==0.9.3",
