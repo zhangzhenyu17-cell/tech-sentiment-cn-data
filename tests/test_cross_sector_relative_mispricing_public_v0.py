@@ -24,7 +24,7 @@ def _fake_fetcher(
     retry_backoff_seconds: float,
     timeout_seconds: float,
 ) -> pd.DataFrame:
-    dates = pd.bdate_range("2025-01-02", periods=480)
+    dates = pd.bdate_range(end="2026-09-30", periods=480)
     base = 1000.0 + int(code[-2:])
     frame = pd.DataFrame(
         {
