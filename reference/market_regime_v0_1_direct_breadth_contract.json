@@ -1,0 +1,45 @@
+{
+  "schema_version": "market-regime-v0-1-direct-security-breadth-contract-v1",
+  "product_id": "MARKET_REGIME_V0_1_DIRECT_SECURITY_BREADTH",
+  "status": "PUBLIC_RAW_AND_DETERMINISTIC_DIAGNOSTIC_ONLY",
+  "purpose": "Materialize direct security-level current breadth required by the private Market Regime V0.1 non-rewriting context.",
+  "market_scope": {
+    "direct_trend_breadth_universe": "SSE_SZSE_A_SHARE_SINA_LIVE_UNIVERSE",
+    "beijing_stock_exchange_included": false,
+    "beijing_exclusion_reason": "CURRENT_HISTORY_PROVIDER_UNSUPPORTED",
+    "full_sh_sz_bj_market_breadth_claimed": false,
+    "current_snapshot_may_define_historical_membership": false
+  },
+  "feature_semantics_reused_without_retuning": {
+    "ma20": "rolling20_close_min_periods_10",
+    "ma60": "rolling60_close_min_periods_30",
+    "new_low_60": "close_lte_rolling60_close_low_times_1.001_min_periods_30",
+    "new_high_252": "close_gte_rolling252_close_high_times_0.999_min_periods_100",
+    "warmup_missing_excluded_from_metric_denominator": true
+  },
+  "sources": {
+    "universe_snapshot": "Sina stock_zh_a_spot, filtered to sh/sz A-share codes",
+    "history": "Tencent direct newfqkline unadjusted daily close",
+    "price_adjustment": "NONE"
+  },
+  "qualification": {
+    "all_declared_universe_symbols_must_be_queried": true,
+    "query_errors_allowed_for_qualified_state": 0,
+    "same_market_date_direct_history_required": true,
+    "unknown_ma20_ma60_new_high_new_low_may_be_imputed": false
+  },
+  "authority": {
+    "contains_model_output": false,
+    "may_rewrite_market_regime_state": false,
+    "may_change_thresholds": false,
+    "may_estimate_future_transition_probability": false,
+    "forward_outcomes_read": false,
+    "may_change_production": false,
+    "may_authorize_trading": false
+  },
+  "update_policy": {
+    "automatic_trigger": false,
+    "workflow": null,
+    "manual_or_local_materialization_only": true
+  }
+}

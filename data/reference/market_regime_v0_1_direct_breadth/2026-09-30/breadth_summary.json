@@ -1,0 +1,64 @@
+{
+  "schema_version": "market-regime-v0-1-direct-security-breadth-v1",
+  "status": "QUALIFIED_DIRECT_SECURITY_LEVEL_TREND_BREADTH",
+  "market_date": "2026-09-30",
+  "universe_scope": "SSE_SZSE_A_SHARE_SINA_LIVE_UNIVERSE",
+  "universe_security_count": 5223,
+  "same_day_history_security_count": 5212,
+  "same_day_history_coverage_ratio": 0.9978939306911736,
+  "spot_price_valid_security_count": 5217,
+  "spot_history_close_match_count": 5212,
+  "spot_history_close_match_ratio_of_valid_spot_and_same_day": 1.0,
+  "query_symbol_count": 5223,
+  "complete_query_count": 5223,
+  "query_error_count": 0,
+  "direct_security_level_raw_snapshot_materialized": true,
+  "qualified_trend_breadth": true,
+  "breadth": {
+    "advance_ratio": 0.44828247937056226,
+    "above_ma20_ratio": 0.33448540706605223,
+    "above_ma60_ratio": 0.4944209311273567,
+    "new_low_60_ratio": 0.0357829934590227,
+    "new_high_252_ratio": 0.006759366550791812,
+    "equal_weight_return_pct": -0.16314443512905868,
+    "advancing_security_count": 2336,
+    "declining_security_count": 2721,
+    "flat_security_count": 154
+  },
+  "metric_denominators": {
+    "advance_ratio": 5211,
+    "above_ma20_ratio": 5208,
+    "above_ma60_ratio": 5198,
+    "new_low_60_ratio": 5198,
+    "new_high_252_ratio": 5178
+  },
+  "rolling_semantics": {
+    "ma20": "rolling20_close_min_periods_10",
+    "ma60": "rolling60_close_min_periods_30",
+    "new_low_60": "close_lte_rolling60_close_low_times_1.001_min_periods_30",
+    "new_high_252": "close_gte_rolling252_close_high_times_0.999_min_periods_100",
+    "warmup_missing_excluded_from_metric_denominator": true
+  },
+  "source": {
+    "universe_snapshot": "SINA_STOCK_ZH_A_SPOT_FILTERED_TO_SH_SZ",
+    "history": "TENCENT_DIRECT_UNADJUSTED_DAILY_CLOSE",
+    "price_adjustment": "NONE"
+  },
+  "scope_limitations": {
+    "beijing_stock_exchange_in_direct_trend_breadth": false,
+    "beijing_exclusion_reason": "CURRENT_HISTORY_PROVIDER_UNSUPPORTED",
+    "full_sh_sz_bj_market_breadth_claimed": false,
+    "current_snapshot_is_historical_membership": false
+  },
+  "authority": {
+    "contains_model_output": false,
+    "state_rewrite_allowed": false,
+    "threshold_change_allowed": false,
+    "future_transition_probability_estimated": false,
+    "forward_outcomes_read": false,
+    "production_permission_changed": false,
+    "trading_authority": false
+  },
+  "captured_at": "2026-09-30T20:12:39+08:00",
+  "capture_reconstruction": "DETERMINISTIC_FROM_LOCAL_RAW_CAPTURE_AFTER_NETWORK_STAGE"
+}
