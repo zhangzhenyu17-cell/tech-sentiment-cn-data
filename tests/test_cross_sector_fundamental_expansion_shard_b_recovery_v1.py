@@ -11,12 +11,14 @@ import sys
 import pandas as pd
 import pytest
 
-from scripts.recover_cross_sector_fundamental_expansion_shard_b_v1 import recover_work_units
-from scripts.validate_cross_sector_fundamental_expansion_shard_b_recovery_artifacts_v1 import (
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from recover_cross_sector_fundamental_expansion_shard_b_v1 import recover_work_units
+from validate_cross_sector_fundamental_expansion_shard_b_recovery_artifacts_v1 import (
     validate_metadata,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
 SCOPE = ROOT / "data/reference/cross_sector_fundamental_expansion_shard_b_scope.csv"
 SCOPE_CONTRACT = ROOT / "reference/cross_sector_fundamental_expansion_shard_b_v1.json"
 RECOVERY_CONTRACT = ROOT / "reference/cross_sector_fundamental_expansion_shard_b_recovery_v1.json"
