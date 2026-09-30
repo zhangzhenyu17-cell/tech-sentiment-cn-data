@@ -78,6 +78,8 @@ def test_official_csindex_array_rows_are_parsed_without_guessing() -> None:
     assert list(out["date"].dt.strftime("%Y-%m-%d")) == ["2019-04-22", "2019-04-23"]
     assert list(out["index_code"]) == ["931152", "931152"]
     assert list(out["close"]) == [1010, 1005]
+    assert list(out["sample_count"]) == [28, 28]
+    assert list(out["rolling_pe"]) == [30.5, 30.2]
     assert set(out["provider"]) == {"csindex:index_perf"}
     assert set(out["provider_identifier"]) == {"931152"}
 
