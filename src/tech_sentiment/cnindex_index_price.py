@@ -110,7 +110,8 @@ def fetch_cnindex_history(
     out = pd.DataFrame(
         {
             "date": pd.to_datetime(raw["timestamp"], unit="ms", utc=True, errors="raise")
-            .dt.tz_convert(None)
+            .dt.tz_convert("Asia/Shanghai")
+            .dt.tz_localize(None)
             .dt.normalize(),
             "index_code": code,
             "open": pd.to_numeric(raw["open"], errors="coerce"),
