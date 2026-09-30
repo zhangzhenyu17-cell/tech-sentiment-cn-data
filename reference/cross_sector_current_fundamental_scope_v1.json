@@ -74,8 +74,8 @@
   "target_current_state": {
     "target_start_date": "2026-01-01",
     "end_date": "2026-09-30",
-    "filing_query_warmup_years": 1,
-    "purpose": "LATEST_COMPARABLE_ACCOUNTING_STATE_ONLY_NOT_FULL_HISTORICAL_RESEARCH"
+    "filing_query_warmup_years": 2,
+    "purpose": "LATEST_COMPARABLE_ACCOUNTING_STATE_ONLY_WITH_TWO_YEAR_QUERY_WARMUP_NOT_FULL_HISTORICAL_RESEARCH"
   },
   "outcome_read": false,
   "historical_outcome_read": false,
