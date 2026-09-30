@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCOPE = ROOT / "data/reference/cross_sector_fundamental_expansion_shard_b_scope.csv"
 CONTRACT = ROOT / "reference/cross_sector_fundamental_expansion_shard_b_v1.json"
 WORKFLOW = ROOT / ".github/workflows/cross-sector-fundamental-expansion-shard-b-v1.yml"
+A_SCOPE = ROOT / "data/reference/cross_sector_fundamental_expansion_shard_a_scope.csv"
+A_CONTRACT = ROOT / "reference/cross_sector_fundamental_expansion_shard_a_v1.json"
 
 
 def _sha(path: Path) -> str:
@@ -79,6 +81,43 @@ def test_shard_b_scope_reconstructs_exact_frozen_missing_universe() -> None:
     assert contract["counts"]["shard_b_defense_entities"] == 25
     assert contract["counts"]["shard_b_core_beta_entities"] == 197
 
+
+
+def test_shard_a_and_b_are_exact_disjoint_partition_with_same_frozen_sources() -> None:
+    b_contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    a_contract = json.loads(A_CONTRACT.read_text(encoding="utf-8"))
+    a_scope = pd.read_csv(A_SCOPE, dtype={"symbol": str})
+    b_scope = pd.read_csv(SCOPE, dtype={"symbol": str})
+
+    assert a_contract["shard_definition"] == "sorted(M)[0::2]"
+    assert b_contract["shard_definition"] == "sorted(M)[1::2]"
+    assert a_contract["fundamental_decision_date"] == b_contract["fundamental_decision_date"] == "2026-09-29"
+    assert a_contract["scope_decision_date"] == b_contract["scope_decision_date"] == "2026-09-30"
+    assert a_contract["frozen_v4a_fundamental_input"]["artifact_sha256"] == b_contract["frozen_v4a_fundamental_input"]["artifact_sha256"]
+    assert a_contract["frozen_v4a_fundamental_input"]["member_sha256"] == b_contract["frozen_v4a_fundamental_input"]["member_sha256"]
+    for domain in ("INNOVATION_DRUG", "DEFENSE", "CORE_BETA"):
+        assert a_contract["official_membership_witnesses"][domain]["path"] == b_contract["official_membership_witnesses"][domain]["path"]
+        assert a_contract["official_membership_witnesses"][domain]["sha256"] == b_contract["official_membership_witnesses"][domain]["sha256"]
+
+    a_entities = set(a_scope["entity_id"].astype(str))
+    b_entities = set(b_scope["entity_id"].astype(str))
+    assert len(a_entities) == 219
+    assert len(b_entities) == 218
+    assert a_entities.isdisjoint(b_entities)
+
+    membership_entities: set[str] = set()
+    for item in b_contract["official_membership_witnesses"].values():
+        frame = pd.read_csv(ROOT / item["path"], dtype={"symbol": str})
+        membership_entities.update(frame["entity_id"].astype(str))
+    baseline = b_contract["frozen_v4a_fundamental_input"]
+    baseline_entities = set(
+        pd.read_csv(ROOT / baseline["entity_identity_path"], dtype=str)["entity_id"].astype(str)
+    )
+    missing = sorted(membership_entities - baseline_entities)
+    assert len(missing) == 437
+    assert a_scope["entity_id"].astype(str).tolist() == missing[0::2]
+    assert b_scope["entity_id"].astype(str).tolist() == missing[1::2]
+    assert a_entities | b_entities == set(missing)
 
 def test_shard_b_scope_has_required_domain_routing_columns() -> None:
     scope = pd.read_csv(SCOPE, dtype={"symbol": str})
