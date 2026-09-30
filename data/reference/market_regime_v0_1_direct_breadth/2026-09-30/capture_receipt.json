@@ -1,0 +1,12 @@
+{
+  "market_date": "2026-09-30",
+  "query_symbol_count": 5223,
+  "complete_query_count": 5223,
+  "query_error_count": 0,
+  "workers": 32,
+  "timeout_seconds": 8.0,
+  "retries": 2,
+  "checkpoint_dir_committed": false,
+  "source_endpoint": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get",
+  "source_adjustment": "NONE"
+}

@@ -1,8 +1,8 @@
 {
   "schema_version": "market-regime-v0-public-input-v1",
   "status": "PUBLIC_RAW_INPUT_READY_NO_PRIVATE_QUALIFICATION",
-  "requested_as_of_date": "2026-09-29",
-  "latest_market_date": "2026-09-29",
+  "requested_as_of_date": "2026-09-30",
+  "latest_market_date": "2026-09-30",
   "start_date": "2025-12-01",
   "index_codes": [
     "000985",
@@ -10,18 +10,18 @@
     "000905",
     "399006"
   ],
-  "row_count": 812,
+  "row_count": 816,
   "rows_by_index": {
-    "000985": 203,
-    "000300": 203,
-    "000905": 203,
-    "399006": 203
+    "000985": 204,
+    "000300": 204,
+    "000905": 204,
+    "399006": 204
   },
   "providers": [
-    "eastmoney:direct_index_kline"
+    "akshare:tencent_index"
   ],
   "csv_path": "data/reference/market_regime_v0_public_input_latest.csv",
-  "csv_sha256": "d23bf4531e9ea8126db9f1c4a26011b83c219cb72cf07e5c919c806c5faf06a0",
+  "csv_sha256": "465e55a008686989cb9b7f0b947bdcce53eede0e3e132aacada5b661a806c434",
   "contains_model_output": false,
   "contains_private_evidence": false,
   "public_handoff_ready_grants_private_qualification": false,

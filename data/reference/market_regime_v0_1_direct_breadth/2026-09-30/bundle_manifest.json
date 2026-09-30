@@ -1,0 +1,42 @@
+{
+  "bundle_id": "MARKET_REGIME_V0_1_DIRECT_BREADTH_2026_09_30",
+  "market_date": "2026-09-30",
+  "public_only": true,
+  "contains_model_output": false,
+  "contains_private_evidence": false,
+  "forward_outcomes_read": false,
+  "production_permission_changed": false,
+  "trading_authority": false,
+  "files": [
+    {
+      "path": "data/reference/market_regime_v0_1_direct_breadth/2026-09-30/security_snapshot.csv",
+      "sha256": "15392d1cda727f5a3bc7d02ce68dc109607c1b66441d14a1e6467b735f4ae65f",
+      "size_bytes": 222332
+    },
+    {
+      "path": "data/reference/market_regime_v0_1_direct_breadth/2026-09-30/security_close_history.csv.gz",
+      "sha256": "71dd66f76099593a8720e417cabac9334d2ddd8e347509e8e04e3ba267b07b7c",
+      "size_bytes": 16659187
+    },
+    {
+      "path": "data/reference/market_regime_v0_1_direct_breadth/2026-09-30/security_diagnostics.csv",
+      "sha256": "5f0b9c53029cb5ca4750a5159e87bb315f39fa4123d07f7f82bbbf916dc5358b",
+      "size_bytes": 1086624
+    },
+    {
+      "path": "data/reference/market_regime_v0_1_direct_breadth/2026-09-30/breadth_summary.json",
+      "sha256": "ba310a5766b14e1d68273151cfaa687790de86dcedf83d471ce7099c1ccbc2e0",
+      "size_bytes": 2456
+    },
+    {
+      "path": "data/reference/market_regime_v0_1_direct_breadth/2026-09-30/query_errors.csv",
+      "sha256": "063ff5282a6862d60cd3dfb610b581eb752f824ec757b6902cb4ca04e3c8c8a4",
+      "size_bytes": 13
+    },
+    {
+      "path": "data/reference/market_regime_v0_1_direct_breadth/2026-09-30/capture_receipt.json",
+      "sha256": "95369015f640bc4a7be631024221f859df8a14ac556588ffc79aac834dd2e6dd",
+      "size_bytes": 340
+    }
+  ]
+}

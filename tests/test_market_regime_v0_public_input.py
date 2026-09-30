@@ -93,7 +93,7 @@ def test_committed_current_public_input_matches_manifest() -> None:
 
     assert hashlib.sha256(csv_path.read_bytes()).hexdigest() == manifest["csv_sha256"]
     assert set(frame["index_code"].str.zfill(6)) == set(INDEX_CODES)
-    assert manifest["latest_market_date"] == "2026-09-29"
-    assert manifest["row_count"] == len(frame) == 812
+    assert manifest["latest_market_date"] == "2026-09-30"
+    assert manifest["row_count"] == len(frame) == 816
     assert all(manifest["rows_by_index"][code] >= 121 for code in INDEX_CODES)
     assert manifest["contains_model_output"] is False
