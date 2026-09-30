@@ -7,7 +7,8 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from .csindex_index_price import fetch_csindex_history\nfrom .cnindex_index_price import fetch_cnindex_history
+from .cnindex_index_price import fetch_cnindex_history
+from .csindex_index_price import fetch_csindex_history
 
 
 SCHEMA_VERSION = "cross-sector-relative-mispricing-v0-public-input-v1"
@@ -21,6 +22,7 @@ BENCHMARK_SPECS = (
         "benchmark_role": "DOMAIN_COMPONENT",
         "index_code": "000688",
         "index_name": "STAR50",
+        "source_system": "CSI_OFFICIAL_INDEX_PERF",
     },
     {
         "domain_id": "TECHNOLOGY",
@@ -28,6 +30,7 @@ BENCHMARK_SPECS = (
         "benchmark_role": "DOMAIN_COMPONENT",
         "index_code": "399673",
         "index_name": "CHINEXT50",
+        "source_system": "CNINDEX_OFFICIAL_MARKET_DAILY",
     },
     {
         "domain_id": "INNOVATION_DRUG",
@@ -35,6 +38,7 @@ BENCHMARK_SPECS = (
         "benchmark_role": "DOMAIN_PRIMARY",
         "index_code": "931152",
         "index_name": "CSI_INNOVATIVE_DRUG_INDUSTRY",
+        "source_system": "CSI_OFFICIAL_INDEX_PERF",
     },
     {
         "domain_id": "DEFENSE",
@@ -42,6 +46,7 @@ BENCHMARK_SPECS = (
         "benchmark_role": "DOMAIN_PRIMARY",
         "index_code": "399973",
         "index_name": "CSI_DEFENSE",
+        "source_system": "CSI_OFFICIAL_INDEX_PERF",
     },
     {
         "domain_id": "CORE_BETA",
@@ -49,6 +54,7 @@ BENCHMARK_SPECS = (
         "benchmark_role": "DOMAIN_PRIMARY",
         "index_code": "000510",
         "index_name": "CSI_A500",
+        "source_system": "CSI_OFFICIAL_INDEX_PERF",
     },
 )
 
@@ -71,7 +77,9 @@ def build_cross_sector_public_input(
     source_commit: str,
     output_csv: Path,
     output_manifest: Path,
-    fetcher: Callable[..., pd.DataFrame] = fetch_csindex_history,
+    fetcher: Callable[..., pd.DataFrame] | None = None,
+    csindex_fetcher: Callable[..., pd.DataFrame] = fetch_csindex_history,
+    cnindex_fetcher: Callable[..., pd.DataFrame] = fetch_cnindex_history,
 ) -> dict[str, Any]:
     if not source_commit or len(str(source_commit)) < 7:
         raise ValueError("source_commit is required")
@@ -106,6 +114,7 @@ def build_cross_sector_public_input(
             retry_backoff_seconds=0.5,
             timeout_seconds=20.0,
         ).copy()
+
         required = {
             "date",
             "index_code",
@@ -118,7 +127,7 @@ def build_cross_sector_public_input(
         if missing:
             raise ValueError(f"{code} official input missing columns: {sorted(missing)}")
         if frame.empty:
-            raise ValueError(f"{code} official CSI input is empty")
+            raise ValueError(f"{code} official input is empty")
 
         frame["date"] = pd.to_datetime(frame["date"], errors="raise").dt.normalize()
         frame["index_code"] = frame["index_code"].astype(str).str.zfill(6)
@@ -132,6 +141,7 @@ def build_cross_sector_public_input(
             raise ValueError(
                 f"{code} has insufficient history: {len(frame)} < {MINIMUM_HISTORY_SESSIONS}"
             )
+
         frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
         if frame["close"].isna().any() or (frame["close"] <= 0).any():
             raise ValueError(f"{code} contains invalid close values")
@@ -151,7 +161,9 @@ def build_cross_sector_public_input(
         frame.insert(4, "index_name", str(spec["index_name"]))
         frame["point_in_time"] = True
         frame["source_observation_date"] = frame["date"].dt.strftime("%Y-%m-%d")
-        frame["availability_semantics"] = "OFFICIAL_DAILY_OBSERVATION_DATE_NO_INTRADAY_TIMESTAMP_CLAIM"
+        frame["availability_semantics"] = (
+            "OFFICIAL_DAILY_OBSERVATION_DATE_NO_INTRADAY_TIMESTAMP_CLAIM"
+        )
 
         benchmark_id = str(spec["benchmark_id"])
         latest_row = frame.sort_values("date").iloc[-1]
@@ -159,7 +171,9 @@ def build_cross_sector_public_input(
         rows_by_benchmark[benchmark_id] = int(len(frame))
         pe_rows_by_benchmark[benchmark_id] = int((frame["rolling_pe"] > 0).sum())
         latest_pe_by_benchmark[benchmark_id] = _json_number(latest_row["rolling_pe"])
-        valuation_state_by_benchmark[benchmark_id] = str(latest_row["valuation_source_state"])
+        valuation_state_by_benchmark[benchmark_id] = str(
+            latest_row["valuation_source_state"]
+        )
         source_identity_by_benchmark[benchmark_id] = str(spec["source_system"])
         providers.update(str(x) for x in frame["provider"].dropna().unique())
         frames.append(frame)
@@ -174,17 +188,26 @@ def build_cross_sector_public_input(
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     output.to_csv(output_csv, index=False, date_format="%Y-%m-%d")
 
+    valuation_complete = all(
+        state == "OFFICIAL_HISTORICAL_VALUATION_AVAILABLE"
+        for state in valuation_state_by_benchmark.values()
+    )
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "product_id": PRODUCT_ID,
-        "status": "PUBLIC_RAW_PIT_PRICE_INPUT_READY_VALUATION_PARTIAL_NO_PRIVATE_QUALIFICATION",
+        "status": (
+            "PUBLIC_RAW_PIT_PRICE_VALUATION_INPUT_READY_NO_PRIVATE_QUALIFICATION"
+            if valuation_complete
+            else "PUBLIC_RAW_PIT_PRICE_INPUT_READY_VALUATION_PARTIAL_NO_PRIVATE_QUALIFICATION"
+        ),
         "requested_as_of_date": as_of_date,
         "latest_market_date": latest_market_date,
         "start_date": start_date,
         "minimum_history_sessions": MINIMUM_HISTORY_SESSIONS,
         "source_repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
         "source_commit": str(source_commit),
-        "source_identity": "MULTI_OFFICIAL_INDEX_SOURCES",\n        "source_identities_by_benchmark": source_identity_by_benchmark,
+        "source_identity": "MULTI_OFFICIAL_INDEX_SOURCES",
+        "source_identities_by_benchmark": source_identity_by_benchmark,
         "benchmarks": [dict(spec) for spec in BENCHMARK_SPECS],
         "row_count": int(len(output)),
         "rows_by_benchmark": rows_by_benchmark,
