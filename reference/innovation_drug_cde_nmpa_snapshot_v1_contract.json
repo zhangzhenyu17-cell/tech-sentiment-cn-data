@@ -1,6 +1,6 @@
 {
   "contract_id": "INNOVATION_DRUG_CDE_NMPA_SNAPSHOT_V1",
-  "contract_revision": "1.2",
+  "contract_revision": "1.3",
   "date": "2026-09-30",
   "status": "FROZEN_OUTCOME_BLIND_OFFICIAL_SNAPSHOT_ADAPTER_READY_DATA_PENDING",
   "domain_id": "INNOVATION_DRUG",
@@ -156,7 +156,8 @@
     "exact_mapping_bases_allowed": [
       "EXACT_LISTED_ISSUER_LEGAL_NAME",
       "EXACT_APPLICANT_ALIAS_REGISTRY",
-      "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE"
+      "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE",
+      "EXACT_APPLICANT_TOKEN_IN_OFFICIAL_MULTI_APPLICANT_FIELD"
     ]
   },
   "entity_mapping": {
@@ -165,7 +166,18 @@
     "fuzzy_matching_allowed": false,
     "substring_matching_allowed": false,
     "affiliate_inference_allowed": false,
-    "unmapped_affiliates_remain_unmapped": true
+    "unmapped_affiliates_remain_unmapped": true,
+    "exact_match_unit": "WHOLE_APPLICANT_FIELD_OR_DELIMITED_APPLICANT_TOKEN",
+    "multi_applicant_exact_token_matching_allowed": true,
+    "multi_applicant_token_delimiters": [
+      ";",
+      "；",
+      "\\n",
+      "、"
+    ],
+    "exact_token_match_is_substring_match": false,
+    "multi_entity_fanout_implemented": false,
+    "multiple_distinct_listed_entity_matches": "FAIL_CLOSED"
   },
   "duplicate_and_revision_semantics": {
     "same_source_identity_key": [
@@ -256,7 +268,8 @@
     "exact_mapping_bases_allowed": [
       "EXACT_LISTED_ISSUER_LEGAL_NAME",
       "EXACT_APPLICANT_ALIAS_REGISTRY",
-      "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE"
+      "EXACT_ISSUER_DISCLOSURE_CROSS_REFERENCE",
+      "EXACT_APPLICANT_TOKEN_IN_OFFICIAL_MULTI_APPLICANT_FIELD"
     ],
     "publication_date_explicit_requires": [
       "publication_date"

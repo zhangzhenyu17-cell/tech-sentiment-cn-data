@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -34,6 +35,11 @@ def _text(value: object) -> str:
     return str(value).strip()
 
 
+def _single_line_text(value: object) -> str:
+    """Canonicalize derived display text without mutating the raw official snapshot."""
+    return re.sub(r"\s+", " ", _text(value)).strip()
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -45,6 +51,47 @@ def _sha256(path: Path) -> str:
 def _stable_hash(payload: dict[str, object]) -> str:
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+APPLICANT_TOKEN_SPLIT_RE = re.compile(r"[;；\n、]+")
+EXACT_MULTI_APPLICANT_TOKEN_BASIS = "EXACT_APPLICANT_TOKEN_IN_OFFICIAL_MULTI_APPLICANT_FIELD"
+
+
+BASE_CAPTURE_OUTPUT_COLUMNS = (
+    "category", "record_id", "applicant", "drug_name", "indication", "source_url",
+    "availability_basis", "publication_date", "approval_date", "snapshot_captured_at",
+    "acceptance_no", "registration_class", "status", "capture_status", "source_record_id",
+)
+MAPPED_CAPTURE_OUTPUT_COLUMNS = BASE_CAPTURE_OUTPUT_COLUMNS + (
+    "entity_id", "entity_mapping_basis", "mapping_match_mode", "matched_applicant_token",
+    "mapping_evidence",
+)
+UNMAPPED_CAPTURE_OUTPUT_COLUMNS = BASE_CAPTURE_OUTPUT_COLUMNS + ("mapping_state",)
+DUPLICATE_CAPTURE_OUTPUT_COLUMNS = MAPPED_CAPTURE_OUTPUT_COLUMNS + ("mapping_state", "duplicate_state")
+
+
+def _exact_mapping_match(
+    applicant: str, mapping: dict[str, dict[str, object]]
+) -> tuple[dict[str, object] | None, str | None, str | None]:
+    whole = mapping.get(applicant)
+    if whole is not None:
+        return whole, str(whole["mapping_basis"]), applicant
+    tokens = []
+    for token in APPLICANT_TOKEN_SPLIT_RE.split(applicant):
+        value = token.strip()
+        if value and value not in tokens:
+            tokens.append(value)
+    matches = [(token, mapping[token]) for token in tokens if token in mapping]
+    entity_ids = {str(item["entity_id"]) for _, item in matches}
+    if len(entity_ids) > 1:
+        raise ValueError(
+            "CDE/NMPA official multi-applicant row maps to multiple listed entities; "
+            "fan-out semantics must be explicitly implemented before intake"
+        )
+    if not matches:
+        return None, None, None
+    token, mapped = matches[0]
+    return mapped, EXACT_MULTI_APPLICANT_TOKEN_BASIS, token
 
 
 def build_official_capture_manifest(
@@ -289,8 +336,8 @@ def normalize_official_capture_rows(
             "category": category,
             "record_id": rid,
             "applicant": applicant,
-            "drug_name": _text(row.get("drug_name")),
-            "indication": _text(row.get("indication")),
+            "drug_name": _single_line_text(row.get("drug_name")),
+            "indication": _single_line_text(row.get("indication")),
             "source_url": source_url,
             "availability_basis": availability_basis,
             "publication_date": _text(row.get("publication_date")),
@@ -301,33 +348,54 @@ def normalize_official_capture_rows(
                 else ""
             ),
             "acceptance_no": _text(row.get("acceptance_no")),
-            "registration_class": _text(row.get("registration_class")),
-            "status": _text(row.get("status")),
+            "registration_class": _single_line_text(row.get("registration_class")),
+            "status": _single_line_text(row.get("status")),
             "capture_status": capture_status[(source_url, category)],
             "source_record_id": _text(row.get("source_record_id")),
         }
-        mapped = mapping.get(applicant)
+        mapped, mapping_basis, matched_token = _exact_mapping_match(applicant, mapping)
         if mapped is None:
-            unmapped.append({**base, "mapping_state": "UNMAPPED_EXACT_NAME_REQUIRED"})
+            unmapped.append({**base, "mapping_state": "UNMAPPED_EXACT_NAME_OR_TOKEN_REQUIRED"})
             continue
+        match_mode = (
+            "WHOLE_FIELD_EXACT"
+            if applicant == matched_token
+            else "DELIMITED_APPLICANT_TOKEN_EXACT"
+        )
+        mapping_evidence = {
+            "registry_evidence": mapped["evidence"],
+            "mapping_match_mode": match_mode,
+            "matched_applicant_token": matched_token,
+            "official_applicant_field": applicant,
+            "substring_matching_used": False,
+            "affiliate_inference_used": False,
+        }
         normalized.append(
             {
                 **base,
                 "entity_id": str(mapped["entity_id"]),
-                "entity_mapping_basis": str(mapped["mapping_basis"]),
-                "mapping_evidence": json.dumps(mapped["evidence"], ensure_ascii=False, sort_keys=True),
+                "entity_mapping_basis": str(mapping_basis),
+                "mapping_match_mode": match_mode,
+                "matched_applicant_token": matched_token,
+                "mapping_evidence": json.dumps(mapping_evidence, ensure_ascii=False, sort_keys=True),
             }
         )
 
-    mapped_frame = pd.DataFrame(normalized)
-    unmapped_frame = pd.DataFrame(unmapped)
+    mapped_frame = pd.DataFrame(normalized, columns=MAPPED_CAPTURE_OUTPUT_COLUMNS)
+    unmapped_frame = pd.DataFrame(unmapped, columns=UNMAPPED_CAPTURE_OUTPUT_COLUMNS)
     duplicate_rows: list[dict[str, object]] = []
     mapped_frame = _dedupe_source_rows(mapped_frame, duplicate_rows=duplicate_rows)
     unmapped_frame = _dedupe_source_rows(unmapped_frame, duplicate_rows=duplicate_rows)
-    duplicate_frame = pd.DataFrame(duplicate_rows)
+    duplicate_frame = pd.DataFrame(duplicate_rows, columns=DUPLICATE_CAPTURE_OUTPUT_COLUMNS)
     stats = {
         "raw_rows": int(len(raw)),
         "exact_mapped_rows": int(len(mapped_frame)),
+        "whole_field_exact_mapped_rows": int(
+            mapped_frame.get("mapping_match_mode", pd.Series(dtype=str)).eq("WHOLE_FIELD_EXACT").sum()
+        ),
+        "delimited_token_exact_mapped_rows": int(
+            mapped_frame.get("mapping_match_mode", pd.Series(dtype=str)).eq("DELIMITED_APPLICANT_TOKEN_EXACT").sum()
+        ),
         "unmapped_rows": int(len(unmapped_frame)),
         "identical_duplicate_rows_removed": int(len(duplicate_frame)),
         "capture_status_complete_categories": sum(v == "COMPLETE" for v in capture_status.values()),
@@ -444,6 +512,8 @@ def materialize_official_capture_files(
 
 
 __all__ = [
+    "APPLICANT_TOKEN_SPLIT_RE",
+    "EXACT_MULTI_APPLICANT_TOKEN_BASIS",
     "MAPPING_REGISTRY_ID",
     "OfficialIntakeResult",
     "build_official_capture_manifest",
