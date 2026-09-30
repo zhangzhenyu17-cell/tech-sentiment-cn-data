@@ -1,0 +1,114 @@
+{
+  "schema_version": "cross-sector-relative-mispricing-v0-public-input-v1",
+  "product_id": "CROSS_SECTOR_RELATIVE_MISPRICING_V0_PUBLIC_INPUT",
+  "status": "PUBLIC_RAW_PIT_COMMON_DATE_PRICE_INPUT_READY_VALUATION_PARTIAL_NO_PRIVATE_QUALIFICATION",
+  "requested_as_of_date": "2026-09-30",
+  "latest_market_date": "2026-09-29",
+  "latest_available_market_date_by_benchmark": {
+    "TECHNOLOGY_STAR50": "2026-09-30",
+    "TECHNOLOGY_CHINEXT50": "2026-09-29",
+    "INNOVATION_DRUG_931152": "2026-09-30",
+    "DEFENSE_399973": "2026-09-30",
+    "CORE_BETA_A500": "2026-09-30"
+  },
+  "alignment_policy": "LATEST_COMMON_OFFICIAL_MARKET_DATE_NO_FORWARD_FILL",
+  "lagging_benchmarks_vs_requested_as_of": {
+    "TECHNOLOGY_CHINEXT50": "2026-09-29"
+  },
+  "start_date": "2024-01-01",
+  "minimum_history_sessions": 451,
+  "source_repository": "zhangzhenyu17-cell/tech-sentiment-cn-data",
+  "source_commit": "333080d4accb99ae85e942d45abd3bf838a2d1ce",
+  "source_identity": "MULTI_OFFICIAL_INDEX_SOURCES",
+  "source_identities_by_benchmark": {
+    "TECHNOLOGY_STAR50": "CSI_OFFICIAL_INDEX_PERF",
+    "TECHNOLOGY_CHINEXT50": "CNINDEX_OFFICIAL_MARKET_DAILY",
+    "INNOVATION_DRUG_931152": "CSI_OFFICIAL_INDEX_PERF",
+    "DEFENSE_399973": "CSI_OFFICIAL_INDEX_PERF",
+    "CORE_BETA_A500": "CSI_OFFICIAL_INDEX_PERF"
+  },
+  "benchmarks": [
+    {
+      "domain_id": "TECHNOLOGY",
+      "benchmark_id": "TECHNOLOGY_STAR50",
+      "benchmark_role": "DOMAIN_COMPONENT",
+      "index_code": "000688",
+      "index_name": "STAR50",
+      "source_system": "CSI_OFFICIAL_INDEX_PERF"
+    },
+    {
+      "domain_id": "TECHNOLOGY",
+      "benchmark_id": "TECHNOLOGY_CHINEXT50",
+      "benchmark_role": "DOMAIN_COMPONENT",
+      "index_code": "399673",
+      "index_name": "CHINEXT50",
+      "source_system": "CNINDEX_OFFICIAL_MARKET_DAILY"
+    },
+    {
+      "domain_id": "INNOVATION_DRUG",
+      "benchmark_id": "INNOVATION_DRUG_931152",
+      "benchmark_role": "DOMAIN_PRIMARY",
+      "index_code": "931152",
+      "index_name": "CSI_INNOVATIVE_DRUG_INDUSTRY",
+      "source_system": "CSI_OFFICIAL_INDEX_PERF"
+    },
+    {
+      "domain_id": "DEFENSE",
+      "benchmark_id": "DEFENSE_399973",
+      "benchmark_role": "DOMAIN_PRIMARY",
+      "index_code": "399973",
+      "index_name": "CSI_DEFENSE",
+      "source_system": "CSI_OFFICIAL_INDEX_PERF"
+    },
+    {
+      "domain_id": "CORE_BETA",
+      "benchmark_id": "CORE_BETA_A500",
+      "benchmark_role": "DOMAIN_PRIMARY",
+      "index_code": "000510",
+      "index_name": "CSI_A500",
+      "source_system": "CSI_OFFICIAL_INDEX_PERF"
+    }
+  ],
+  "row_count": 3327,
+  "rows_by_benchmark": {
+    "CORE_BETA_A500": 664,
+    "DEFENSE_399973": 666,
+    "INNOVATION_DRUG_931152": 666,
+    "TECHNOLOGY_CHINEXT50": 665,
+    "TECHNOLOGY_STAR50": 666
+  },
+  "positive_rolling_pe_rows_by_benchmark": {
+    "CORE_BETA_A500": 501,
+    "DEFENSE_399973": 666,
+    "INNOVATION_DRUG_931152": 666,
+    "TECHNOLOGY_CHINEXT50": 0,
+    "TECHNOLOGY_STAR50": 666
+  },
+  "latest_rolling_pe_by_benchmark": {
+    "CORE_BETA_A500": 14.67,
+    "DEFENSE_399973": 56.19,
+    "INNOVATION_DRUG_931152": 27.17,
+    "TECHNOLOGY_CHINEXT50": null,
+    "TECHNOLOGY_STAR50": 73.25
+  },
+  "valuation_source_state_by_benchmark": {
+    "CORE_BETA_A500": "OFFICIAL_HISTORICAL_VALUATION_AVAILABLE",
+    "DEFENSE_399973": "OFFICIAL_HISTORICAL_VALUATION_AVAILABLE",
+    "INNOVATION_DRUG_931152": "OFFICIAL_HISTORICAL_VALUATION_AVAILABLE",
+    "TECHNOLOGY_CHINEXT50": "OFFICIAL_HISTORICAL_VALUATION_UNAVAILABLE",
+    "TECHNOLOGY_STAR50": "OFFICIAL_HISTORICAL_VALUATION_AVAILABLE"
+  },
+  "providers": [
+    "cnindex:official_market_daily",
+    "csindex:index_perf"
+  ],
+  "csv_path": "data/reference/cross_sector_relative_mispricing_v0_public_input_latest.csv",
+  "csv_sha256": "530fd99212825b9e6c91278608d5396fdb8bf73eb796979919a1ac61a86ba302",
+  "contains_model_output": false,
+  "contains_private_model_semantics": false,
+  "contains_forward_outcomes": false,
+  "contains_portfolio_or_holdings_data": false,
+  "historical_rows_are_public_observations_not_outcome_labels": true,
+  "public_handoff_ready_grants_private_qualification": false,
+  "automatic_trigger": false
+}
