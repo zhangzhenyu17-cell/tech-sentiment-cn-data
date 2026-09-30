@@ -1,0 +1,113 @@
+{
+  "schema_version": "cross-sector-relative-mispricing-v0-public-input-contract-v1",
+  "product_id": "CROSS_SECTOR_RELATIVE_MISPRICING_V0_PUBLIC_INPUT",
+  "status": "PUBLIC_RAW_PIT_PRICE_VALUATION_ONLY_NO_MODEL_OUTPUT",
+  "date": "2026-09-30",
+  "purpose": "Provide official CSI daily price and rolling-PE observations for the four frozen Cross-Sector Relative Mispricing V0 domains without private model semantics, outcome labels, evidence promotion, Production authority or trading authority.",
+  "source": {
+    "operator": "China Securities Index Co., Ltd.",
+    "endpoint_identity": "CSI_OFFICIAL_INDEX_PERF",
+    "adapter": "src/tech_sentiment/csindex_index_price.py",
+    "producer": "scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py"
+  },
+  "benchmarks": [
+    {
+      "domain_id": "TECHNOLOGY",
+      "benchmark_id": "TECHNOLOGY_STAR50",
+      "index_code": "000688",
+      "role": "DOMAIN_COMPONENT"
+    },
+    {
+      "domain_id": "TECHNOLOGY",
+      "benchmark_id": "TECHNOLOGY_CHINEXT50",
+      "index_code": "399673",
+      "role": "DOMAIN_COMPONENT"
+    },
+    {
+      "domain_id": "INNOVATION_DRUG",
+      "benchmark_id": "INNOVATION_DRUG_931152",
+      "index_code": "931152",
+      "role": "DOMAIN_PRIMARY"
+    },
+    {
+      "domain_id": "DEFENSE",
+      "benchmark_id": "DEFENSE_399973",
+      "index_code": "399973",
+      "role": "DOMAIN_PRIMARY"
+    },
+    {
+      "domain_id": "CORE_BETA",
+      "benchmark_id": "CORE_BETA_A500",
+      "index_code": "000510",
+      "role": "DOMAIN_PRIMARY"
+    }
+  ],
+  "required_columns": [
+    "date",
+    "domain_id",
+    "benchmark_id",
+    "benchmark_role",
+    "index_name",
+    "index_code",
+    "close",
+    "rolling_pe",
+    "provider",
+    "provider_identifier",
+    "point_in_time",
+    "source_observation_date",
+    "availability_semantics"
+  ],
+  "optional_columns": [
+    "open",
+    "high",
+    "low",
+    "pct_chg",
+    "volume",
+    "amount",
+    "sample_count"
+  ],
+  "minimum_history_sessions_per_benchmark": 313,
+  "valuation_semantics": {
+    "source_field": "rolling_pe",
+    "raw_source_value_only": true,
+    "null_values_retained": true,
+    "nonpositive_values_may_be_reclassified_downstream": false,
+    "cross_domain_raw_pe_comparison_allowed": false,
+    "downstream_domain_native_normalization_required": true,
+    "public_product_may_define_valuation_score": false
+  },
+  "pit_semantics": {
+    "future_rows_allowed": false,
+    "current_snapshot_historical_backfill_of_membership": false,
+    "rows_are_official_daily_index_observations": true,
+    "intraday_publication_timestamp_claimed": false,
+    "availability_semantics": "OFFICIAL_DAILY_OBSERVATION_DATE_NO_INTRADAY_TIMESTAMP_CLAIM",
+    "historical_rows_are_outcome_labels": false
+  },
+  "quality": {
+    "exact_index_identity_required": true,
+    "duplicate_index_date_allowed": false,
+    "latest_market_date_alignment_required": true,
+    "positive_close_required": true,
+    "rolling_pe_column_required": true,
+    "positive_rolling_pe_coverage_is_reported_not_silently_imputed": true
+  },
+  "authority": {
+    "contains_model_output": false,
+    "contains_private_model_semantics": false,
+    "contains_forward_outcomes": false,
+    "contains_portfolio_or_holdings_data": false,
+    "may_promote_evidence": false,
+    "may_change_evidence_eligibility": false,
+    "may_change_model_factor_threshold_signal": false,
+    "may_change_production": false,
+    "may_authorize_trading": false,
+    "public_handoff_ready_grants_private_qualification": false
+  },
+  "execution": {
+    "automatic_trigger": false,
+    "workflow_added": false,
+    "materialization_mode": "MANUAL_OR_LOCAL_SCRIPT_ONLY",
+    "private_intake_requires_separate_exact_artifact_validation": true
+  }
+}
