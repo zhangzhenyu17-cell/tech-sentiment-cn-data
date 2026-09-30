@@ -1,0 +1,73 @@
+{
+  "bundle_id": "MARKET_REGIME_BROAD_MARKET_CAPITAL_V0_2026_09_30",
+  "market_date": "2026-09-30",
+  "public_only": true,
+  "contains_model_output": false,
+  "contains_private_thresholds": false,
+  "contains_private_evidence": false,
+  "forward_outcomes_read": false,
+  "production_permission_changed": false,
+  "trading_authority": false,
+  "files": [
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/turnover_history.csv",
+      "sha256": "73473193706cf0bbd9429d31da1531a0f5947e683f9832df29ffefd1df7c7af7",
+      "size_bytes": 122341
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/financing_history.csv",
+      "sha256": "27c8bad5b660a2a75bd4d2ed5f6ac013cc37334d90a5cad0e9b775c890b95531",
+      "size_bytes": 258469
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/fresh_sse_turnover.csv",
+      "sha256": "dd88a52588044d8753e7e641719cfd07293ea81e1e72323f5f9b25c8ad75c648",
+      "size_bytes": 1050
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/fresh_szse_turnover.csv",
+      "sha256": "c06bc74ab410146abe0b1a2c89b2b7fc45a84f35f68e05e45044da0a944437b8",
+      "size_bytes": 922
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/fresh_combined_turnover.csv",
+      "sha256": "420a1e642652399486affe92b3954c84f4e8619b13f687218d82760b80dd6aa8",
+      "size_bytes": 942
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/fresh_turnover_errors.csv",
+      "sha256": "e5bbc5087bab807e04862b0d4cb1f0c3dc5fea4f02fc892332bb44b3b16a70d1",
+      "size_bytes": 20
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/fresh_financing_raw_aligned.csv",
+      "sha256": "9dfa3876f45c0fe6a4c3d85cccb26c407ffe5d3a13c558ab173739eae4d1bc90",
+      "size_bytes": 1612
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/fresh_financing_canonical.csv",
+      "sha256": "35d1f0b6bc804f2ae644a7414453098f7744ce490af26963829453b3dd121fa5",
+      "size_bytes": 1990
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/fresh_financing_errors.csv",
+      "sha256": "0c8be9d3a8a9c9c7f491f9947ee02dc7738d69781f5218d04937cd232e36ee9d",
+      "size_bytes": 124
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/trading_calendar.csv",
+      "sha256": "407c8deceb7c70524ae5e9e50396e4a59540c9d22be04d79edb39abb3e20ec85",
+      "size_bytes": 12655
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/input_summary.json",
+      "sha256": "ffc473aa3e7dad07895664f5b5f27c6cc90634fb9034f21c04c93baf39a7d3d5",
+      "size_bytes": 2690
+    },
+    {
+      "path": "data/reference/market_regime_broad_market_capital_v0/2026-09-30/capture_receipt.json",
+      "sha256": "0e4c40651f2f5af3e6d0ae510f34d46f561b265a051089b0dd0e1e78c74109ec",
+      "size_bytes": 531
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+date,exchange,error
+2026-09-30,SZSE,"ValueError: Length mismatch: Expected axis has 0 elements, new values have 6 elements"
