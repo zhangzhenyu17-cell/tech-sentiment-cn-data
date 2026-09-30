@@ -201,11 +201,39 @@ jobs:
                 --jq '[.[] | select(.status == "queued" or .status == "in_progress")] | length'
             )"
             if [ "$ACTIVE" -eq 0 ]; then
-              gh workflow run prospective-public-continuous-collector-v3.yml \
-                --ref main \
-                -f market_session_date="$MARKET_SESSION_DATE" \
-                -f decision_date="$DECISION_DATE"
-              echo "Requested V3 collection for missing sources: ${MISSING[*]}"
+              RECENT_EXACT=false
+              NOW_EPOCH="$(date -u +%s)"
+              while IFS=$'\t' read -r RUN_ID CREATED_AT CONCLUSION; do
+                [ -n "$RUN_ID" ] || continue
+                [ "$CONCLUSION" = "success" ] || continue
+                CREATED_EPOCH="$(date -u -d "$CREATED_AT" +%s 2>/dev/null || echo 0)"
+                [ "$CREATED_EPOCH" -gt 0 ] || continue
+                AGE_SECONDS=$((NOW_EPOCH - CREATED_EPOCH))
+                [ "$AGE_SECONDS" -ge 0 ] || continue
+                [ "$AGE_SECONDS" -le 1500 ] || continue
+                if gh run view "$RUN_ID" --log 2>/dev/null | grep -Fq \
+                  "should_run=True session=$MARKET_SESSION_DATE decision=$DECISION_DATE"; then
+                  RECENT_EXACT=true
+                  echo "Recent successful exact-pair V3 collector suppresses duplicate dispatch: run=$RUN_ID age_seconds=$AGE_SECONDS"
+                  break
+                fi
+              done < <(
+                gh run list \
+                  --workflow prospective-public-continuous-collector-v3.yml \
+                  --limit 10 \
+                  --json databaseId,createdAt,conclusion \
+                  --jq '.[] | [.databaseId, .createdAt, (.conclusion // "")] | @tsv'
+              )
+
+              if [ "$RECENT_EXACT" = "true" ]; then
+                echo "Recent exact-pair V3 collector already executed; missing sources: ${MISSING[*]}"
+              else
+                gh workflow run prospective-public-continuous-collector-v3.yml \
+                  --ref main \
+                  -f market_session_date="$MARKET_SESSION_DATE" \
+                  -f decision_date="$DECISION_DATE"
+                echo "Requested V3 collection for missing sources: ${MISSING[*]}"
+              fi
             else
               echo "V3 collector already active; missing sources: ${MISSING[*]}"
             fi

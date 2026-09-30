@@ -238,6 +238,14 @@ def test_public_daily_orchestrator_is_exactly_allowlisted() -> None:
     assert "publish-market-bundle.yml" in text
     assert "prospective-public-continuous-collector-v3.yml" in text
     assert "prospective-context-raw-preopen-v2.yml" in text
+    assert "[ \"$AGE_SECONDS\" -le 1500 ]" in text
+    assert "--json databaseId,createdAt,conclusion" in text
+    assert "gh run view \"$RUN_ID\" --log" in text
+    assert (
+        "should_run=True session=$MARKET_SESSION_DATE decision=$DECISION_DATE"
+        in text
+    )
+    assert "Recent successful exact-pair V3 collector suppresses duplicate dispatch" in text
     assert "market-bundle-$MARKET_SESSION_DATE" in text
     assert "FORMAL_V3_SOURCE_SET_ELIGIBLE" in text
     assert "FORMAL_V3_SOURCE_AFTER_0845_CUTOFF" in text
