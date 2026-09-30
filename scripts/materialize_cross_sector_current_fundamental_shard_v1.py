@@ -13,7 +13,7 @@ from tech_sentiment.pit_public_materialization import validate_materialized_pit_
 SCHEMA_VERSION = "cross-sector-current-fundamental-shard-v1"
 TARGET_START_DATE = "2026-01-01"
 END_DATE = "2026-09-30"
-WARMUP_YEARS = 1
+WARMUP_YEARS = 2
 
 
 def _read_scope(path: Path) -> list[str]:
