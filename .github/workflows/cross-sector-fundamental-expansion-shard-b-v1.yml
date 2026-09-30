@@ -8,7 +8,7 @@ permissions:
 
 env:
   CALENDAR_START_DATE: "2025-01-01"
-  DECISION_DATE: "2026-09-30"
+  DECISION_DATE: "2026-09-29"
   WORK_UNITS: "32"
   CACHE_PREFIX: "csrm-fundamental-expansion-shard-b-v1"
 

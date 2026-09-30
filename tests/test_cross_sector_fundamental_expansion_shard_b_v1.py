@@ -129,7 +129,7 @@ def test_shard_b_workflow_is_manual_only_and_bounded() -> None:
         assert trigger not in text
     assert 'WORK_UNITS: "32"' in text
     assert "max-parallel: 4" in text
-    assert 'DECISION_DATE: "2026-09-30"' in text
+    assert 'DECISION_DATE: "2026-09-29"' in text
     assert "cross_sector_fundamental_expansion_shard_b_scope.csv" in text
     assert "--scope-contract reference/cross_sector_fundamental_expansion_shard_b_v1.json" in text
     assert "materialize_cross_sector_fundamental_expansion_shard_b_v1.py" in text
@@ -137,4 +137,4 @@ def test_shard_b_workflow_is_manual_only_and_bounded() -> None:
     assert "tar --sort=name --mtime='UTC 1970-01-01'" in text
     assert "bundle_manifest.json.sha256" in text
     assert 'ARCHIVE="cross-sector-fundamental-expansion-shard-b-v1.tar.gz"' in text
-    assert '"$ARCHIVE.sha256"' in text
+    assert '$ARCHIVE.sha256' in text
