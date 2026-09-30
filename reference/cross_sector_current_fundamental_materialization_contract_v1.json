@@ -25,8 +25,8 @@
   "target_window": {
     "target_start_date": "2026-01-01",
     "end_date": "2026-09-30",
-    "filing_query_warmup_years": 1,
-    "semantic": "LATEST_COMPARABLE_ACCOUNTING_STATE_ONLY_NOT_FULL_HISTORICAL_RESEARCH"
+    "filing_query_warmup_years": 2,
+    "semantic": "LATEST_COMPARABLE_ACCOUNTING_STATE_ONLY_WITH_TWO_YEAR_QUERY_WARMUP_NOT_FULL_HISTORICAL_RESEARCH"
   },
   "inherited_semantics": {
     "filing_materializer": "src/tech_sentiment/filing_materialization.py::materialize_versioned_filing_facts",
