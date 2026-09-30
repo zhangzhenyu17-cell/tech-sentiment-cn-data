@@ -38,16 +38,29 @@ duplicate guards.
 
 ## Security boundary
 
-GITHUB_TOKEN must be a GitHub fine-grained token restricted to repository
+V2 prefers a private GitHub App installed only on
 zhangzhenyu17-cell/tech-sentiment-cn-data with repository permission
-Actions: Read and write.
+Actions: Read and write. The Worker mints a short-lived installation token at
+runtime and explicitly scopes each token request to that repository and
+actions=write.
 
-Do not grant access to zhangzhenyu17-cell/tech-sentiment-cn. Do not grant
+Cloudflare stores two App credentials as encrypted Worker secrets:
+
+- GITHUB_APP_ID
+- GITHUB_APP_PRIVATE_KEY (PKCS#8 PEM)
+
+GitHub-generated private keys are normally downloaded as RSA PEM. Convert the
+downloaded key to unencrypted PKCS#8 before storing it:
+
+openssl pkcs8 -topk8 -nocrypt -in github-app.pem -out github-app-pkcs8.pem
+
+During migration only, the existing repository-scoped GITHUB_TOKEN PAT remains
+available as a fallback. After one real Cron invocation proves
+github_auth_mode=github_app, remove GITHUB_TOKEN and revoke the PAT.
+
+Do not install the App on zhangzhenyu17-cell/tech-sentiment-cn. Do not grant
 Contents write, Administration, Secrets, Environments, Production, or trading
-permissions.
-
-Store the token only as the Cloudflare encrypted Worker secret GITHUB_TOKEN.
-Never commit it or place it in Wrangler vars.
+permissions. Never commit the App private key or any installation token.
 
 ## Local verification
 
@@ -61,18 +74,23 @@ npx wrangler deploy --dry-run
 
 Authenticate Wrangler to the user's Cloudflare account with npx wrangler login.
 
-After a scoped GitHub token has been created, store it with:
+Create a private GitHub App with only Actions: Read and write, install it only
+on tech-sentiment-cn-data, generate a private key, and convert that key to
+PKCS#8. Store the App ID and converted key as Cloudflare encrypted secrets:
 
-npx wrangler secret put GITHUB_TOKEN
+npx wrangler secret put GITHUB_APP_ID
+npx wrangler secret put GITHUB_APP_PRIVATE_KEY
 
-Then deploy with:
+Keep GITHUB_TOKEN only during the transition. Then deploy with:
 
 npx wrangler deploy
 
 This Worker is scheduled-only with workers_dev=false, so no public workers.dev
-route is required. Inspect the first Cron invocation in Cloudflare logs. A healthy
-normal cycle should usually log NOOP_RECENT_GITHUB_DELIVERY. When GitHub schedule delivery
-is absent beyond the threshold it should log DISPATCHED_ORCHESTRATOR.
+route is required. Inspect a real Cron invocation and require
+github_auth_mode=github_app before deleting GITHUB_TOKEN and revoking the PAT.
+A healthy normal cycle should usually log NOOP_RECENT_GITHUB_DELIVERY. When
+GitHub schedule delivery is absent beyond the threshold it should log
+DISPATCHED_ORCHESTRATOR.
 
 ## Safety invariants
 
