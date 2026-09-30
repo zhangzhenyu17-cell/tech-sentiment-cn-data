@@ -1,0 +1,87 @@
+{
+  "contract_id": "CROSS_SECTOR_CURRENT_FUNDAMENTAL_MATERIALIZATION_V1",
+  "contract_version": 1,
+  "status": "FROZEN_OUTCOME_BLIND_CURRENT_FACT_INPUT_MATERIALIZATION",
+  "date": "2026-09-30",
+  "purpose": "Fill current FUNDAMENTAL_STATE coverage gaps inside the already-frozen Cross-Sector Relative Mispricing V0 domains using existing CNINFO filing parser/state semantics, without full historical research or forward outcomes.",
+  "baseline": {
+    "artifact_id": 10596634296,
+    "artifact_name": "capital-pit-input-materialization",
+    "artifact_sha256": "0faffd88a611beee8412de8b5f4f23f5d0cfd0e3068f7c311206b4829fc7faac",
+    "fundamental_member_path": "pit_evidence_materialization/fundamental_state_evidence.csv",
+    "fundamental_member_sha256": "b56e6a1e8bdf32890abe8234dfc7ea989780c8103eebe48d2e5cdec2a1a758d0"
+  },
+  "frozen_domains": [
+    "INNOVATION_DRUG",
+    "DEFENSE",
+    "CORE_BETA"
+  ],
+  "source_scope_manifest": {
+    "path": "reference/cross_sector_current_fundamental_scope_v1.json",
+    "priority_symbols": 79,
+    "a500_remaining_symbols": 358,
+    "total_unique_new_symbols": 437
+  },
+  "target_window": {
+    "target_start_date": "2026-01-01",
+    "end_date": "2026-09-30",
+    "filing_query_warmup_years": 1,
+    "semantic": "LATEST_COMPARABLE_ACCOUNTING_STATE_ONLY_NOT_FULL_HISTORICAL_RESEARCH"
+  },
+  "inherited_semantics": {
+    "filing_materializer": "src/tech_sentiment/filing_materialization.py::materialize_versioned_filing_facts",
+    "fundamental_state_contract": "FUNDAMENTAL_PIT_STATE_CONTRACT_V1",
+    "required_facts": [
+      "OPERATING_REVENUE",
+      "NET_PROFIT_PARENT",
+      "OPERATING_CASH_FLOW_NET",
+      "NET_PROFIT_MARGIN"
+    ],
+    "classification": "SIGN_AND_EXACT_DIRECTION_ONLY_NO_RETURN_OPTIMIZATION",
+    "cross_sector_aggregation_coverage_threshold": 0.8,
+    "cross_sector_aggregation_denominator": "ALL_ACTIVE_POINT_IN_TIME_CONSTITUENTS",
+    "parameter_or_threshold_search_allowed": false
+  },
+  "execution": {
+    "workflow": ".github/workflows/cross-sector-current-fundamental-v1.yml",
+    "workflow_dispatch_only": true,
+    "automatic_triggers_allowed": false,
+    "priority_shards": 16,
+    "a500_shards": 48,
+    "max_parallel_provider_jobs": 4,
+    "priority_runs_before_a500": true,
+    "cache_is_engineering_only": true,
+    "shard_outputs_are_not_evidence_qualification": true,
+    "final_artifact_name": "cross-sector-current-fundamental-v1"
+  },
+  "public_private_boundary": {
+    "public_outputs_may_contain": [
+      "official filing facts",
+      "derived FUNDAMENTAL_STATE evidence",
+      "coverage",
+      "errors",
+      "provenance",
+      "scope snapshots"
+    ],
+    "private_model_semantics_allowed": false,
+    "private_thresholds_signals_holdings_allowed": false,
+    "public_success_grants_private_pairwise_qualification": false
+  },
+  "authority": {
+    "historical_forward_outcome_read": false,
+    "prospective_forward_outcome_read": false,
+    "full_historical_research": false,
+    "clean_holdout_or_oos": false,
+    "parameter_search": false,
+    "threshold_search": false,
+    "weight_search": false,
+    "feature_or_subset_search": false,
+    "ml": false,
+    "new_domain": false,
+    "new_cross_sector_benchmark": false,
+    "evidence_qualification_change": false,
+    "production_change": false,
+    "trading_authority": false,
+    "automatic_execution": false
+  }
+}
