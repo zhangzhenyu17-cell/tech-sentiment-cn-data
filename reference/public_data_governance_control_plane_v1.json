@@ -229,15 +229,34 @@
       "registration_state": "NEW_PUBLIC_RAW_PRODUCT_MANUAL_SCRIPT_ONLY",
       "public_workflow_success_grants_private_qualification": false,
       "may_promote_evidence": false
+    },
+    {
+      "product_id": "CROSS_SECTOR_CURRENT_FUNDAMENTAL_V1",
+      "contract_path": "reference/cross_sector_current_fundamental_materialization_contract_v1.json",
+      "producer_path": ".github/workflows/cross-sector-current-fundamental-v1.yml",
+      "logical_dataset": "cross-sector current official-filing Fundamental state gap materialization",
+      "private_consumer_boundary": "Cross-Sector Relative Mispricing V0 outcome-blind fact-axis intake only; no pairwise builder, evidence promotion, Production or trading authority",
+      "registration_state": "NEW_MANUAL_ONLY_PUBLIC_MATERIALIZATION_EXPLICITLY_ALLOWLISTED",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
     }
   ],
   "ci_enforcement": {
-    "existing_workflow_only": true,
-    "new_workflow_added": false,
+    "existing_workflow_only": false,
+    "new_workflow_added": true,
     "audit_entrypoint": "scripts/audit_public_tree.py",
     "pytest_contract": "tests/test_public_data_governance_control_plane.py",
     "fail_closed_on_missing_registered_path": true,
     "fail_closed_on_authority_escalation": true,
-    "fail_closed_on_quarantine_bypass": true
+    "fail_closed_on_quarantine_bypass": true,
+    "new_workflow_allowlist": [
+      {
+        "path": ".github/workflows/cross-sector-current-fundamental-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": false,
+        "necessity": "Materialize current comparable Fundamental state gaps for the already-frozen Technology/Innovation Drug/Defense/Core Beta cross-sector domains without modifying the frozen V4-A Fundamental producer fingerprint.",
+        "research_boundary": "OUTCOME_BLIND_CURRENT_INPUT_ONLY_NO_PAIRWISE_NO_EVIDENCE_PROMOTION"
+      }
+    ]
   }
 }
