@@ -239,6 +239,16 @@
       "registration_state": "NEW_MANUAL_ONLY_PUBLIC_MATERIALIZATION_EXPLICITLY_ALLOWLISTED",
       "public_workflow_success_grants_private_qualification": false,
       "may_promote_evidence": false
+    },
+    {
+      "product_id": "CROSS_SECTOR_FUNDAMENTAL_EXPANSION_SHARD_A_V1",
+      "contract_path": "reference/cross_sector_fundamental_expansion_shard_a_v1.json",
+      "producer_path": ".github/workflows/cross-sector-fundamental-expansion-shard-a-v1.yml",
+      "logical_dataset": "CSRM current official-filing Fundamental PIT universe expansion Shard A",
+      "private_consumer_boundary": "Shard A exact artifact intake/readiness only; no A+B integration, pairwise builder, evidence promotion, Production or trading authority",
+      "registration_state": "NEW_MANUAL_ONLY_PUBLIC_MATERIALIZATION_EXPLICITLY_ALLOWLISTED",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
     }
   ],
   "ci_enforcement": {
@@ -256,6 +266,13 @@
         "automatic_triggers_allowed": false,
         "necessity": "Materialize current comparable Fundamental state gaps for the already-frozen Technology/Innovation Drug/Defense/Core Beta cross-sector domains without modifying the frozen V4-A Fundamental producer fingerprint.",
         "research_boundary": "OUTCOME_BLIND_CURRENT_INPUT_ONLY_NO_PAIRWISE_NO_EVIDENCE_PROMOTION"
+      },
+      {
+        "path": ".github/workflows/cross-sector-fundamental-expansion-shard-a-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": false,
+        "necessity": "Materialize the frozen 219-entity CSRM Fundamental PIT expansion Shard A with resumable work units and a 2026-09-29 decision-date boundary.",
+        "research_boundary": "OUTCOME_BLIND_SHARD_A_INPUT_ONLY_NO_FINAL_INTEGRATION_NO_PAIRWISE_NO_EVIDENCE_PROMOTION"
       }
     ]
   }
