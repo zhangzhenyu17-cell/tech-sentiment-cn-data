@@ -1,7 +1,7 @@
 name = "prospective-external-watchdog-v1"
 main = "src/worker.mjs"
 compatibility_date = "2026-09-30"
-workers_dev = true
+workers_dev = false
 
 [vars]
 GITHUB_OWNER = "zhangzhenyu17-cell"

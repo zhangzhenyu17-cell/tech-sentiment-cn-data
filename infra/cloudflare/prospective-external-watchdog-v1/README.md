@@ -69,8 +69,9 @@ Then deploy with:
 
 npx wrangler deploy
 
-Verify /health and inspect the first Cron invocation. A healthy normal cycle
-should usually log NOOP_RECENT_GITHUB_DELIVERY. When GitHub schedule delivery
+This Worker is scheduled-only with workers_dev=false, so no public workers.dev
+route is required. Inspect the first Cron invocation in Cloudflare logs. A healthy
+normal cycle should usually log NOOP_RECENT_GITHUB_DELIVERY. When GitHub schedule delivery
 is absent beyond the threshold it should log DISPATCHED_ORCHESTRATOR.
 
 ## Safety invariants
