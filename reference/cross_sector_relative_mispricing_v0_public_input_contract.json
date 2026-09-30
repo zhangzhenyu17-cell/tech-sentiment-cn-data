@@ -66,7 +66,7 @@
     "amount",
     "sample_count"
   ],
-  "minimum_history_sessions_per_benchmark": 313,
+  "minimum_history_sessions_per_benchmark": 451,
   "valuation_semantics": {
     "source_field": "rolling_pe",
     "raw_source_value_only": true,
@@ -90,7 +90,8 @@
     "latest_market_date_alignment_required": true,
     "positive_close_required": true,
     "rolling_pe_column_required": true,
-    "positive_rolling_pe_coverage_is_reported_not_silently_imputed": true
+    "positive_rolling_pe_coverage_is_reported_not_silently_imputed": true,
+    "minimum_history_derivation": "252-session longest raw metric warmup + 200 valid observations for trailing-252 empirical percentile - 1 = 451 sessions"
   },
   "authority": {
     "contains_model_output": false,

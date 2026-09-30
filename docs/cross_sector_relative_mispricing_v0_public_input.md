@@ -29,7 +29,7 @@ python scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py \
 - `data/reference/cross_sector_relative_mispricing_v0_public_input_latest.csv`
 - `reference/cross_sector_relative_mispricing_v0_public_input_latest.json`
 
-每个 benchmark 至少要求 313 个交易日历史，且五条 rail 的最新市场日期必须一致。PE 缺失不会被插值；manifest 会显式报告每条 rail 的正值 PE 覆盖。
+每个 benchmark 至少要求 451 个交易日历史（252 日最长价格窗口 + 至少 200 个有效分位观测所需的最小原始长度），且五条 rail 的最新市场日期必须一致。PE 缺失不会被插值；manifest 会显式报告每条 rail 的正值 PE 覆盖。
 
 ## 边界
 

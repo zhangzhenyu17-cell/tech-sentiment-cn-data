@@ -105,3 +105,48 @@ def test_positional_schema_drift_fails_closed() -> None:
         assert "expected 16 fields" in str(exc)
     else:
         raise AssertionError("CSI positional schema drift should fail closed")
+
+
+def test_official_csindex_live_mapping_rows_preserve_pe_and_market_fields() -> None:
+    class MappingResponse(FakeResponse):
+        def json(self) -> dict:
+            return {
+                "data": [
+                    {
+                        "tradeDate": "20260930",
+                        "indexCode": "000688",
+                        "indexNameCnAll": "上证科创板50成份指数",
+                        "indexNameCn": "科创50",
+                        "indexNameEnAll": "SSE Science and Technology Innovation Board 50 Index",
+                        "indexNameEn": "STAR 50",
+                        "open": 1600.0,
+                        "high": 1610.0,
+                        "low": 1580.0,
+                        "close": 1590.0,
+                        "change": -10.0,
+                        "changePct": -0.62,
+                        "tradingVol": 700000000.0,
+                        "tradingValue": 650.0,
+                        "consNumber": 50.0,
+                        "peg": 73.95,
+                    }
+                ]
+            }
+
+    class MappingSession(FakeSession):
+        def get(self, url: str, *, params: dict, timeout: float):
+            self.calls.append({"url": url, "params": dict(params), "timeout": timeout})
+            return MappingResponse()
+
+    out = fetch_csindex_history(
+        "000688",
+        start_date="2026-09-30",
+        end_date="2026-09-30",
+        session=MappingSession(),
+        retries=0,
+    )
+    assert list(out["pct_chg"]) == [-0.62]
+    assert list(out["volume"]) == [700000000.0]
+    assert list(out["amount"]) == [650.0]
+    assert list(out["sample_count"]) == [50.0]
+    assert list(out["rolling_pe"]) == [73.95]
