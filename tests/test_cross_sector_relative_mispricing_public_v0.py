@@ -161,7 +161,7 @@ def test_default_source_routing_keeps_chinext50_price_but_fails_closed_on_histor
     assert calls["cni"] == ["399673"]
     assert set(calls["csi"]) == {"000688", "931152", "399973", "000510"}
     assert manifest["status"] == (
-        "PUBLIC_RAW_PIT_PRICE_INPUT_READY_VALUATION_PARTIAL_NO_PRIVATE_QUALIFICATION"
+        "PUBLIC_RAW_PIT_COMMON_DATE_PRICE_INPUT_READY_VALUATION_PARTIAL_NO_PRIVATE_QUALIFICATION"
     )
     assert manifest["positive_rolling_pe_rows_by_benchmark"]["TECHNOLOGY_CHINEXT50"] == 0
     assert (
