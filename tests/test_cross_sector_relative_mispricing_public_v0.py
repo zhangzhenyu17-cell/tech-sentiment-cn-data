@@ -172,3 +172,48 @@ def test_default_source_routing_keeps_chinext50_price_but_fails_closed_on_histor
         manifest["source_identities_by_benchmark"]["TECHNOLOGY_CHINEXT50"]
         == "CNINDEX_OFFICIAL_MARKET_DAILY"
     )
+
+
+def test_provider_lag_aligns_to_latest_common_official_date_without_forward_fill(
+    tmp_path: Path,
+) -> None:
+    def csi_fetcher(code: str, **kwargs) -> pd.DataFrame:
+        return _fake_fetcher(code, **kwargs)
+
+    def lagging_cni_fetcher(code: str, **kwargs) -> pd.DataFrame:
+        frame = _fake_fetcher(code, **kwargs).iloc[:-1].copy()
+        frame["rolling_pe"] = pd.NA
+        frame["provider"] = "cnindex:official_market_daily"
+        frame["provider_identifier"] = code
+        frame["valuation_source_state"] = "OFFICIAL_HISTORICAL_VALUATION_UNAVAILABLE"
+        return frame
+
+    output_csv = tmp_path / "public.csv"
+    manifest = build_cross_sector_public_input(
+        start_date="2024-01-01",
+        as_of_date="2026-09-30",
+        source_commit="e" * 40,
+        output_csv=output_csv,
+        output_manifest=tmp_path / "manifest.json",
+        csindex_fetcher=csi_fetcher,
+        cnindex_fetcher=lagging_cni_fetcher,
+    )
+
+    cni_raw = lagging_cni_fetcher(
+        "399673",
+        start_date="2024-01-01",
+        end_date="2026-09-30",
+        retries=2,
+        retry_backoff_seconds=0.5,
+        timeout_seconds=20.0,
+    )
+    expected_common = cni_raw["date"].max().strftime("%Y-%m-%d")
+    assert manifest["latest_market_date"] == expected_common
+    assert manifest["alignment_policy"] == "LATEST_COMMON_OFFICIAL_MARKET_DATE_NO_FORWARD_FILL"
+    assert manifest["latest_available_market_date_by_benchmark"]["TECHNOLOGY_CHINEXT50"] == expected_common
+    assert "TECHNOLOGY_CHINEXT50" in manifest["lagging_benchmarks_vs_requested_as_of"]
+
+    materialized = pd.read_csv(output_csv)
+    maxima = materialized.groupby("benchmark_id")["date"].max()
+    assert maxima.nunique() == 1
+    assert maxima.iloc[0] == expected_common
