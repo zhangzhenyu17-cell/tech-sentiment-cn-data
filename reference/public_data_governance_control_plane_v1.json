@@ -219,6 +219,16 @@
       "registration_state": "NEW_PUBLIC_RAW_PRODUCT_MANUAL_ONLY",
       "public_workflow_success_grants_private_qualification": false,
       "may_promote_evidence": false
+    },
+    {
+      "product_id": "CROSS_SECTOR_RELATIVE_MISPRICING_V0_PUBLIC_INPUT",
+      "contract_path": "reference/cross_sector_relative_mispricing_v0_public_input_contract.json",
+      "producer_path": "scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py",
+      "logical_dataset": "cross-sector relative mispricing v0 official CSI price and rolling-PE raw input",
+      "private_consumer_boundary": "Cross-Sector Relative Mispricing V0 outcome-blind input feasibility only; no pairwise builder, validation, Production or trading authority",
+      "registration_state": "NEW_PUBLIC_RAW_PRODUCT_MANUAL_SCRIPT_ONLY",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
     }
   ],
   "ci_enforcement": {
