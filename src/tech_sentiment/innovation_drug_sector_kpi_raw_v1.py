@@ -91,6 +91,28 @@ def _clean_title(value: object) -> str:
     return re.sub(r"\s+", "", re.sub(r"<[^>]+>", "", str(value or ""))).strip()
 
 
+TITLE_AUDIT_TOKENS = (
+    "终止临床", "临床试验终止", "临床失败", "撤回药品注册申请", "突破性治疗",
+    "上市许可申请", "优先审评", "受理", "获受理", "获得药品注册批准", "药品注册批准",
+    "获批上市", "批准上市", "临床试验批准通知书", "临床试验批准", "许可协议", "授权协议",
+    "独家许可", "合作及许可协议", "许可及合作协议", "合作协议", "药品授权合作", "药品合作",
+    "药物合作", "新药", "研发合作", "临床合作", "治疗合作", "商业化合作", "里程碑付款",
+    "里程碑支付",
+)
+
+
+def audit_innovation_drug_title(title: object) -> dict[str, object]:
+    """Return deterministic, non-directional title evidence for audit only."""
+    text = _clean_title(title)
+    return {
+        "normalized_title_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "matched_title_tokens": [token for token in TITLE_AUDIT_TOKENS if token in text],
+        "audit_version": "innovation-drug-title-audit-v1",
+        "direction_classified": False,
+        "predictive_weight_assigned": False,
+    }
+
+
 def classify_innovation_drug_title(title: object) -> str | None:
     """Outcome-blind Innovation Drug event taxonomy from an issuer title only.
 
@@ -222,6 +244,7 @@ def normalize_cninfo_sector_events(records: pd.DataFrame) -> pd.DataFrame:
             "source_ingestion_identity": str(item["ingestion_identity"]),
             "taxonomy": SCHEMA_VERSION,
             "title_taxonomy_only": True,
+            "title_audit": audit_innovation_drug_title(item["title"]),
             "direction_classified": False,
             "predictive_weight_assigned": False,
             "forward_or_historical_outcome_read": False,
@@ -888,6 +911,7 @@ __all__ = [
     "EVENT_TYPE_QUERY_COVERAGE",
     "SectorKeywordMaterializationResult",
     "SectorKpiRawResult",
+    "audit_innovation_drug_title",
     "build_931152_sector_raw_summary",
     "build_sector_kpi_raw_result",
     "filter_events_to_pit_membership",

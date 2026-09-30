@@ -116,7 +116,7 @@ Direct page requests and headless DOM dumps still encounter the CDE challenge la
 
 ### Raw official capture intake
 
-Use `scripts/materialize_innovation_drug_cde_nmpa_official_intake_v1.py` for a browser-rendered official table capture or official export. The intake layer:
+Use `scripts/materialize_innovation_drug_cde_nmpa_official_intake_v1.py` for a browser-rendered official table capture or official export. When an explicit manifest is not supplied, the script can now deterministically build the frozen safety manifest from `--captured-at` plus the exact mapping-registry SHA; the generated capture state defaults to `PARTIAL` and cannot silently claim source completeness. The intake layer:
 
 - validates source URL and frozen category identity;
 - derives stable record identity from CDE acceptance number, or from drug/holder/approval-date identity for conditional approvals;
@@ -127,6 +127,19 @@ Use `scripts/materialize_innovation_drug_cde_nmpa_official_intake_v1.py` for a b
 - requires the manifest to declare each captured category `COMPLETE` or `PARTIAL`; completeness is never inferred from row count.
 
 The initial exact registry contains only `江苏恒瑞医药股份有限公司 -> 600276.SH`, supported by an official SSE issuer disclosure. No substring, short-name or affiliate inference is allowed. Applicants such as a subsidiary remain unmapped until a separately audited exact mapping is added.
+
+Example for a browser capture where completeness has not been independently established:
+
+```bash
+python scripts/materialize_innovation_drug_cde_nmpa_official_intake_v1.py \
+  --raw-snapshot-csv /path/to/browser_capture.csv \
+  --captured-at 2026-09-30T16:30:00+08:00 \
+  --capture-status PARTIAL \
+  --trading-calendar-csv /path/to/trading_calendar.csv \
+  --output-dir /path/to/output
+```
+
+The generated `cde_nmpa_snapshot_manifest.json` remains outcome-blind, exact-mapping-only, and `DATA_INSUFFICIENT`; use `COMPLETE` only when the browser/export capture has actually exhausted the frozen source category.
 
 A real official snapshot has **not** been materialized by this engineering change. The current public state remains adapter/intake ready with real data pending, and the formal sector KPI remains `DATA_INSUFFICIENT`.
 
