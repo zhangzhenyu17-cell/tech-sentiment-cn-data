@@ -152,14 +152,26 @@ def test_external_patterns_are_adapted_without_runtime_dependencies() -> None:
     assert ci["existing_workflow_only"] is False
     assert ci["new_workflow_added"] is True
     allowlist = ci["new_workflow_allowlist"]
-    assert allowlist[-1] == {
+    by_path = {entry["path"]: entry for entry in allowlist}
+    assert len(by_path) == len(allowlist)
+    assert by_path[".github/workflows/cross-sector-price-refresh-v1.yml"] == {
         "path": ".github/workflows/cross-sector-price-refresh-v1.yml",
         "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
         "automatic_triggers_allowed": False,
         "necessity": "Refresh the five existing official price rails for 2026-09-30 while preserving per-benchmark dates, so a lagging source cannot erase unrelated observations.",
         "research_boundary": "PUBLIC_PRICE_INPUT_ONLY_NO_PAIRWISE_NO_EVIDENCE_PROMOTION",
     }
-    assert allowlist[:-1] == [
+    assert by_path[".github/workflows/cross-sector-fundamental-date-increment-v1.yml"] == {
+        "path": ".github/workflows/cross-sector-fundamental-date-increment-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": False,
+        "necessity": "Capture only newly available official numeric filings inside the already-frozen five-membership union; reuse A/B and baseline rather than restart full historical queries.",
+        "research_boundary": "PUBLIC_DISCLOSURE_INCREMENT_ONLY_NO_STATE_QUALIFICATION_NO_PAIRWISE_NO_EVIDENCE_PROMOTION",
+    }
+    assert [entry for entry in allowlist if entry["path"] not in {
+        ".github/workflows/cross-sector-price-refresh-v1.yml",
+        ".github/workflows/cross-sector-fundamental-date-increment-v1.yml",
+    }] == [
         {
             "path": ".github/workflows/cross-sector-current-fundamental-v1.yml",
             "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
