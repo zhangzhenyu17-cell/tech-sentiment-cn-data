@@ -1,0 +1,172 @@
+name: Cross-Sector Fundamental Date Increment V1
+
+on:
+  workflow_dispatch:
+    inputs:
+      resume_run_id:
+        description: "Optional same-SHA run whose immutable successful units should be reused"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cross-sector-fundamental-date-increment-v1
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install public acquisition environment
+        run: python -m pip install -e ".[data,dev]"
+      - name: Validate contract and affected semantics
+        run: |
+          python scripts/audit_public_tree.py
+          pytest -q tests/test_cross_sector_fundamental_date_increment_v1.py tests/test_official_filing_facts.py tests/test_immutable_checkpoint.py tests/test_cninfo_direct.py
+      - name: Capture exact official trading calendar
+        run: |
+          python scripts/build_v4a_shared_calendar.py --start-date 2026-09-01 --end-date 2026-09-30 --source-commit "$GITHUB_SHA" --out-dir stage/shared
+          python scripts/cross_sector_fundamental_date_increment_v1.py prepare --source-commit "$GITHUB_SHA" --shared-dir stage/shared
+      - name: Live query and exact official PDF pilot
+        run: |
+          python scripts/cross_sector_fundamental_date_increment_v1.py pilot --source-commit "$GITHUB_SHA" --shared-dir stage/shared --checkpoint-dir stage/shared/pilot_checkpoint
+      - name: Publish explicit shared inputs and pilot checkpoints
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-sector-fundamental-increment-shared
+          path: |
+            stage/shared/scope.csv
+            stage/shared/trading_calendar.csv
+            stage/shared/membership_*.csv
+            stage/shared/shared_manifest.json
+            stage/shared/pilot_transport_receipt.json
+            stage/shared/pilot/*.csv
+            stage/shared/pilot/stage_manifest.json
+            stage/shared/pilot_checkpoint/*/*.csv
+            stage/shared/pilot_checkpoint/*/receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
+  capture:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        unit: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install public acquisition environment
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: cross-sector-fundamental-increment-shared
+          path: stage/shared
+      - name: Restore exact successful unit from requested run
+        if: ${{ inputs.resume_run_id != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cross-sector-fundamental-increment-unit-${{ matrix.unit }}-attempt-*
+          run-id: ${{ inputs.resume_run_id }}
+          github-token: ${{ github.token }}
+          path: stage/resume
+          merge-multiple: false
+      - name: Restore current-SHA query and document progress
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/cross-sector-fundamental-increment/unit-${{ matrix.unit }}
+          key: csrm-fund-date-inc-v1-unit-${{ matrix.unit }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: csrm-fund-date-inc-v1-unit-${{ matrix.unit }}-${{ github.sha }}-
+      - name: Capture bounded disclosure increment or reuse exact unit
+        id: capture
+        run: |
+          python scripts/cross_sector_fundamental_date_increment_v1.py capture --source-commit "$GITHUB_SHA" --shared-dir stage/shared --unit-index "${{ matrix.unit }}" --checkpoint-dir ".cache/cross-sector-fundamental-increment/unit-${{ matrix.unit }}" --resume-root stage/resume --out-dir stage/unit
+      - name: Save progress after success or failure
+        if: ${{ always() && steps.capture.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/cross-sector-fundamental-increment/unit-${{ matrix.unit }}
+          key: csrm-fund-date-inc-v1-unit-${{ matrix.unit }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Publish immutable successful work unit
+        if: ${{ steps.capture.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-sector-fundamental-increment-unit-${{ matrix.unit }}-attempt-${{ github.run_attempt }}
+          path: |
+            stage/unit/versioned_filing_facts.csv
+            stage/unit/entity_window_receipts.csv
+            stage/unit/document_receipts.csv
+            stage/unit/errors.csv
+            stage/unit/stage_manifest.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Preserve explicit failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-sector-fundamental-increment-diagnostic-${{ matrix.unit }}-attempt-${{ github.run_attempt }}
+          path: |
+            stage/unit/entity_window_receipts.csv
+            stage/unit/document_receipts.csv
+            stage/unit/errors.csv
+            stage/unit/stage_manifest.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  finalize:
+    needs: capture
+    if: ${{ always() && needs.capture.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: cross-sector-fundamental-increment-shared
+          path: stage/shared
+      - name: Download immutable successful units only
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cross-sector-fundamental-increment-unit-*-attempt-*
+          path: stage/units
+          merge-multiple: false
+      - name: Verify all units and finalize public raw increment
+        run: python scripts/cross_sector_fundamental_date_increment_v1.py finalize --source-commit "$GITHUB_SHA" --shared-dir stage/shared --work-unit-root stage/units --out-dir stage/final
+      - name: Publish explicit public fact files
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-sector-fundamental-date-increment-2026-09-30-v1
+          path: |
+            stage/final/versioned_filing_facts.csv
+            stage/final/entity_window_receipts.csv
+            stage/final/document_receipts.csv
+            stage/final/errors.csv
+            stage/final/scope.csv
+            stage/final/trading_calendar.csv
+            stage/final/membership_*.csv
+            stage/final/capture_contract.json
+            stage/final/bundle_manifest.json
+          if-no-files-found: error
+          retention-days: 90
