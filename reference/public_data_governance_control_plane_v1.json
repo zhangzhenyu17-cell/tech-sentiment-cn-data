@@ -269,6 +269,16 @@
       "registration_state": "NEW_MANUAL_ONLY_PUBLIC_RECOVERY_EXPLICITLY_ALLOWLISTED",
       "public_workflow_success_grants_private_qualification": false,
       "may_promote_evidence": false
+    },
+    {
+      "product_id": "CROSS_SECTOR_FUNDAMENTAL_DATE_INCREMENT_V1",
+      "contract_path": "reference/cross_sector_fundamental_date_increment_v1.json",
+      "producer_path": ".github/workflows/cross-sector-fundamental-date-increment-v1.yml",
+      "logical_dataset": "Frozen five-membership public filing availability increment through 2026-09-30",
+      "private_consumer_boundary": "Raw filing facts and exact query window receipts only; separate baseline merge, semantic review and private same-date intake required",
+      "registration_state": "NEW_MANUAL_ONLY_PUBLIC_MATERIALIZATION_EXPLICITLY_ALLOWLISTED",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
     }
   ],
   "ci_enforcement": {
@@ -314,6 +324,13 @@
         "automatic_triggers_allowed": false,
         "necessity": "Refresh the five existing official price rails for 2026-09-30 while preserving per-benchmark dates, so a lagging source cannot erase unrelated observations.",
         "research_boundary": "PUBLIC_PRICE_INPUT_ONLY_NO_PAIRWISE_NO_EVIDENCE_PROMOTION"
+      },
+      {
+        "path": ".github/workflows/cross-sector-fundamental-date-increment-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": false,
+        "necessity": "Capture only newly available official numeric filings inside the already-frozen five-membership union; reuse A/B and baseline rather than restart full historical queries.",
+        "research_boundary": "PUBLIC_DISCLOSURE_INCREMENT_ONLY_NO_STATE_QUALIFICATION_NO_PAIRWISE_NO_EVIDENCE_PROMOTION"
       }
     ]
   }

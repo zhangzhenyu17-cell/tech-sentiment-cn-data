@@ -1,0 +1,104 @@
+{
+  "contract_id": "CROSS_SECTOR_FUNDAMENTAL_DATE_INCREMENT_V1",
+  "contract_version": 1,
+  "status": "FROZEN_PUBLIC_DISCLOSURE_INCREMENT_ONLY_NO_PRIVATE_QUALIFICATION",
+  "baseline_cutoff_date": "2026-09-29",
+  "target_date": "2026-09-30",
+  "publication_window": {
+    "start_date": "2026-09-29",
+    "end_date": "2026-09-30"
+  },
+  "window_reason": "Include prior-session after-close/date-only publications first available at target session; capture only availability > baseline and <= target.",
+  "membership_effective_date": "2026-09-30",
+  "scope_unique_entities": 572,
+  "memberships": {
+    "STAR50": {
+      "index_code": "000688",
+      "anchor_path": "data/reference/kc50_anchor_2026-09-14.csv",
+      "anchor_sha256": "91058a1a40f626d14987fb4fce88c498d14ea22d4d76dd23bce2966304a016ea",
+      "anchor_effective_date": "2026-09-14",
+      "adjustments_path": "data/reference/v4c03_kc50_adjustments_2021h2_2026.csv",
+      "adjustments_sha256": "7f9ea23e10b42b4691397f442d8f1c98a14939c468cd323f72e54196e6c3fcad",
+      "expected_constituents": 50
+    },
+    "ChiNext50": {
+      "index_code": "399673",
+      "anchor_path": "data/reference/chinext50_anchor_2026-06-15.csv",
+      "anchor_sha256": "2879fe205aaaac9f036132818dc10522fb3f159cfcb489f13ba3a39a46b4be38",
+      "anchor_effective_date": "2026-06-15",
+      "adjustments_path": "data/reference/v4c03_chinext50_adjustments_2021h2_2026.csv",
+      "adjustments_sha256": "ea60c9e4e70d90b498ee74dfacf3d737a4b42237914e9ffa7c89a88b5b207691",
+      "expected_constituents": 50
+    },
+    "INNOVATION_DRUG": {
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/innovation_drug_931152.csv",
+      "sha256": "d31cd86223135f0165cb3bd9772823a733d054cbbd8d22b663442014ddc963a1",
+      "index_code": "931152"
+    },
+    "DEFENSE": {
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/defense_399973.csv",
+      "sha256": "5e66da1ba1b0deec41987d655c31a38ac764fe39714d5a125bb495b4bb295e4e",
+      "index_code": "399973"
+    },
+    "CORE_BETA": {
+      "path": "data/reference/cross_sector_fundamental_current_membership_2026-09-30/core_beta_a500.csv",
+      "sha256": "035529237a142bbfea404804f6017a108cc77e0e110077deca53b45be7f9ecee",
+      "index_code": "000510"
+    }
+  },
+  "inherited_source_sha256": {
+    "src/tech_sentiment/filing_materialization.py": "5d1e359ea8f4fea79b1eea2e2feed51192b1db185a38917c3f0c4081af9e479e",
+    "src/tech_sentiment/official_filing_facts.py": "e55aa95a5b0da64622bf8c9a31b5f339546284ce3a6ba7ea0ad7d8740045fe28",
+    "src/tech_sentiment/fundamental_pit_state.py": "faf36cb1326ac9a4c07308c9e4451ed9fe786de52516f1aa0f387352118a0be7",
+    "src/tech_sentiment/cninfo_direct.py": "df3d3ce30cc23b2a648b37548af6bd0dbdec08bf6e772ce10790877cc1ac2611",
+    "src/tech_sentiment/pit_public_materialization.py": "d4b78aa3985a37900b1841cf31def9e607247fc02baa63048830ec46233cb2f4",
+    "src/tech_sentiment/index_history.py": "30c4023b626e377f535d3b491f07a1666f18af34f7dfe7c05324780a17b34171",
+    "src/tech_sentiment/immutable_checkpoint.py": "e92590bc692da180e921c7a8e00667d830ad2a85273540d9c681ab401a2be07d"
+  },
+  "work_unit_count": 16,
+  "provider_max_parallel": 4,
+  "hard_failure_breaker": 3,
+  "historical_reconstruction_only_no_contemporaneous_availability_claim": true,
+  "fundamental_state_recomputation_in_this_stage": false,
+  "pilot_document": {
+    "entity_id": "000032.SZ",
+    "document_id": "1225212108",
+    "document_url": "https://static.cninfo.com.cn/finalpage/2026-04-28/1225212108.PDF",
+    "document_sha256": "70187505f8b9b5cb9d96db43606b6a01e5ca84d2b27a36b5b0b1f322d700e908",
+    "publication_timestamp": "2026-04-28T00:00:00",
+    "evidence_available_date": "2026-04-28",
+    "source_artifact_id": 11116173338
+  },
+  "baseline_reuse_plan": {
+    "baseline": {
+      "run_id": 35485765220,
+      "artifact_id": 10596634296,
+      "digest": "sha256:0faffd88a611beee8412de8b5f4f23f5d0cfd0e3068f7c311206b4829fc7faac",
+      "fundamental_state_member_sha256": "b56e6a1e8bdf32890abe8234dfc7ea989780c8103eebe48d2e5cdec2a1a758d0"
+    },
+    "A": {
+      "run_id": 36737018868,
+      "artifact_id": 11116173338,
+      "digest": "sha256:c86eb27575ff7ff6db936a999d86d666af1264599deff27b0363d6144948d5b5",
+      "facts_member_path": "combined_versioned_filing_facts.csv",
+      "facts_sha256": "acbe56e0e0cab17ec746041feb3615b7ac6742d51432ba7fe8d6d3fe34ce818d"
+    },
+    "B": {
+      "run_id": 36759655693,
+      "artifact_id": 11117589677,
+      "digest": "sha256:f0378acb8fe4689bdd8a6384b6a0b1124a3dc0264512a651c6ec392274b67a43",
+      "facts_member_path": "combined_versioned_filing_facts.csv",
+      "facts_sha256": "9f69f6dedfb23cd9ca343a195cf90c069a66df4ca8690aff2fdbdb3e1e3e32c1"
+    },
+    "semantic": "References for later exact private intake; this public capture does not re-download/recompute or certify the old bundles."
+  },
+  "authority": {
+    "private_qualification_granted": false,
+    "fundamental_state_qualification_claimed": false,
+    "outcome_read": false,
+    "pairwise_builder_run": false,
+    "evidence_qualification_changed": false,
+    "production_changed": false,
+    "trading_authority_changed": false
+  }
+}
