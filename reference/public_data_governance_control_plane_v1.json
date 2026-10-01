@@ -307,6 +307,13 @@
         "automatic_triggers_allowed": false,
         "necessity": "Recover the frozen 218-entity CSRM Fundamental PIT Shard B by combining the pinned 31 successful original work-unit artifacts with the pinned repaired unit 12 artifact, without recomputation.",
         "research_boundary": "OUTCOME_BLIND_SHARD_B_RECOVERY_ONLY_NO_FINAL_A_B_INTEGRATION_NO_PAIRWISE_NO_EVIDENCE_PROMOTION"
+      },
+      {
+        "path": ".github/workflows/cross-sector-price-refresh-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": false,
+        "necessity": "Refresh the five existing official price rails for 2026-09-30 while preserving per-benchmark dates, so a lagging source cannot erase unrelated observations.",
+        "research_boundary": "PUBLIC_PRICE_INPUT_ONLY_NO_PAIRWISE_NO_EVIDENCE_PROMOTION"
       }
     ]
   }

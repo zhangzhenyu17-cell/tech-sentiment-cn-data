@@ -174,7 +174,7 @@ def test_default_source_routing_keeps_chinext50_price_but_fails_closed_on_histor
     )
 
 
-def test_provider_lag_aligns_to_latest_common_official_date_without_forward_fill(
+def test_provider_lag_preserves_current_other_rails_without_forward_fill(
     tmp_path: Path,
 ) -> None:
     def csi_fetcher(code: str, **kwargs) -> pd.DataFrame:
@@ -209,11 +209,16 @@ def test_provider_lag_aligns_to_latest_common_official_date_without_forward_fill
     )
     expected_common = cni_raw["date"].max().strftime("%Y-%m-%d")
     assert manifest["latest_market_date"] == expected_common
-    assert manifest["alignment_policy"] == "LATEST_COMMON_OFFICIAL_MARKET_DATE_NO_FORWARD_FILL"
+    assert manifest["alignment_policy"] == "PER_BENCHMARK_LATEST_OFFICIAL_MARKET_DATE_NO_FORWARD_FILL"
     assert manifest["latest_available_market_date_by_benchmark"]["TECHNOLOGY_CHINEXT50"] == expected_common
     assert "TECHNOLOGY_CHINEXT50" in manifest["lagging_benchmarks_vs_requested_as_of"]
 
     materialized = pd.read_csv(output_csv)
     maxima = materialized.groupby("benchmark_id")["date"].max()
-    assert maxima.nunique() == 1
-    assert maxima.iloc[0] == expected_common
+    assert maxima["TECHNOLOGY_CHINEXT50"] == expected_common
+    assert set(maxima.drop("TECHNOLOGY_CHINEXT50")) == {"2026-09-30"}
+    assert maxima.to_dict() == manifest["latest_available_market_date_by_benchmark"]
+    assert len(materialized) == 480 * 4 + 479
+    cni = materialized[materialized["benchmark_id"].eq("TECHNOLOGY_CHINEXT50")]
+    assert set(cni["provider"]) == {"cnindex:official_market_daily"}
+    assert not cni["date"].eq("2026-09-30").any()

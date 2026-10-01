@@ -114,17 +114,20 @@
   "quality": {
     "exact_index_identity_required": true,
     "duplicate_index_date_allowed": false,
-    "latest_market_date_alignment_required": true,
+    "latest_market_date_alignment_required": false,
     "positive_close_required": true,
     "rolling_pe_column_required": true,
     "positive_rolling_pe_coverage_is_reported_not_silently_imputed": true,
     "minimum_history_derivation": "252-session longest raw metric warmup + 200 valid observations for trailing-252 empirical percentile - 1 = 451 sessions",
     "official_price_required_for_every_benchmark": true,
     "missing_official_historical_valuation_must_fail_closed_downstream": true,
-    "alignment_policy": "LATEST_COMMON_OFFICIAL_MARKET_DATE_NO_FORWARD_FILL",
+    "alignment_policy": "PER_BENCHMARK_LATEST_OFFICIAL_MARKET_DATE_NO_FORWARD_FILL",
     "provider_lag_may_be_reported_without_forward_fill": true,
     "requested_as_of_date_need_not_equal_aligned_market_date": true,
-    "private_consumer_must_apply_freshness_gate": true
+    "private_consumer_must_apply_freshness_gate": true,
+    "latest_market_date_is_minimum_envelope_metadata": true,
+    "benchmark_date_metadata_must_match_actual_rows": true,
+    "unrelated_current_rows_may_be_truncated": false
   },
   "authority": {
     "contains_model_output": false,
@@ -140,8 +143,9 @@
   },
   "execution": {
     "automatic_trigger": false,
-    "workflow_added": false,
-    "materialization_mode": "MANUAL_OR_LOCAL_SCRIPT_ONLY",
-    "private_intake_requires_separate_exact_artifact_validation": true
+    "workflow_added": true,
+    "materialization_mode": "MANUAL_SCRIPT_OR_MANUAL_ONLY_WORKFLOW",
+    "private_intake_requires_separate_exact_artifact_validation": true,
+    "workflow": ".github/workflows/cross-sector-price-refresh-v1.yml"
   }
 }
