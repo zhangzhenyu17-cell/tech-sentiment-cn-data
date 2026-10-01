@@ -152,7 +152,14 @@ def test_external_patterns_are_adapted_without_runtime_dependencies() -> None:
     assert ci["existing_workflow_only"] is False
     assert ci["new_workflow_added"] is True
     allowlist = ci["new_workflow_allowlist"]
-    assert allowlist == [
+    assert allowlist[-1] == {
+        "path": ".github/workflows/cross-sector-price-refresh-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": False,
+        "necessity": "Refresh the five existing official price rails for 2026-09-30 while preserving per-benchmark dates, so a lagging source cannot erase unrelated observations.",
+        "research_boundary": "PUBLIC_PRICE_INPUT_ONLY_NO_PAIRWISE_NO_EVIDENCE_PROMOTION",
+    }
+    assert allowlist[:-1] == [
         {
             "path": ".github/workflows/cross-sector-current-fundamental-v1.yml",
             "trigger_policy": "WORKFLOW_DISPATCH_ONLY",

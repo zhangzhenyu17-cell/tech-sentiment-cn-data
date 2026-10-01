@@ -15,7 +15,7 @@
 
 ## 运行
 
-本产品不新增 GitHub Actions workflow。需要 materialize 时运行：
+本产品可通过 `Cross-Sector Official Price Refresh V1` manual-only workflow 刷新截至 2026-09-30 的既有输入，也可按以下方式运行脚本：
 
 ```bash
 python scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py \
@@ -29,7 +29,7 @@ python scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py \
 - `data/reference/cross_sector_relative_mispricing_v0_public_input_latest.csv`
 - `reference/cross_sector_relative_mispricing_v0_public_input_latest.json`
 
-每个 benchmark 至少要求 451 个交易日历史（252 日最长价格窗口 + 至少 200 个有效分位观测所需的最小原始长度），且五条 rail 的最新市场日期必须一致。PE 缺失不会被插值；manifest 会显式报告每条 rail 的正值 PE 覆盖。
+每个 benchmark 至少要求 451 个交易日历史（252 日最长价格窗口 + 至少 200 个有效分位观测所需的最小原始长度），每条 rail 保留自身真实最新日期，由 private 侧逐域、逐 pair 检查日期一致性。PE 缺失不会被插值；manifest 会显式报告每条 rail 的正值 PE 覆盖。
 
 ## 边界
 
@@ -40,8 +40,8 @@ python scripts/materialize_cross_sector_relative_mispricing_v0_public_input.py \
 - private 侧必须独立验证 exact commit、CSV hash、PIT、coverage、freshness 与 normalization contract。
 
 
-## 多官方源日期对齐
+## 多官方源日期保留
 
-当不同官方 operator 的发布节奏不同，public materializer 使用 **latest common official market date**，即取所有 benchmark 已实际发布日线的共同最新日期并截断到该日。禁止 forward-fill，也禁止把较早的官方观测标成较晚日期。
+当不同官方 operator 的发布节奏不同，public materializer 保留各 benchmark 的真实最后观测日，不再按单一 common date 裁剪其他 rail。`latest_market_date` 继续记录五条 rail 的最小日期，供旧 envelope 识别；`latest_available_market_date_by_benchmark` 必须与 CSV 中逐 rail 的最大日期完全一致。
 
-manifest 同时保留每条 benchmark 的实际 latest available market date。private consumer 必须独立应用 freshness gate；因此 requested as-of date 晚于共同日期时，公开数据仍可用于 coverage/materialization feasibility，但不得伪装成 same-date operational input。
+新 alignment policy 为 `PER_BENCHMARK_LATEST_OFFICIAL_MARKET_DATE_NO_FORWARD_FILL`。禁止 forward-fill，也禁止把较早观测标成较晚日期。private consumer 按 Domain 的所有 component 与 pair 的双方独立应用 freshness gate。这个改动不使慢源成为同日来源，也不提供 pairwise builder 权限。已发布的旧包保留原 SHA/日期，不反向重写。
