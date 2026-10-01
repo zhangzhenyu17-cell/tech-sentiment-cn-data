@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from tech_sentiment import cross_sector_fundamental_date_increment_v1 as inc
+from tech_sentiment.official_filing_facts import build_filing_fact_rows as inherited_build_filing_fact_rows
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "reference/cross_sector_fundamental_date_increment_v1.json"
@@ -247,6 +248,23 @@ def test_pilot_proves_exact_document_digest_before_parser(tmp_path, monkeypatch)
     spec["document_sha256"] = "c" * 64
     with pytest.raises(ValueError, match="document SHA"):
         inc.probe_document(spec)
+
+
+def test_live_pilot_and_capture_pass_real_filing_titles_to_inherited_parser(tmp_path, monkeypatch):
+    calls = _providers(monkeypatch, [_row("100", "2026-09-29 16:00:00")])
+    sample = ("主要会计数据和财务指标 单位：元 币种：人民币\n"
+              "营业收入 1200 1000\n"
+              "归属于上市公司股东的净利润 120 100\n"
+              "经营活动产生的现金流量净额 90 80\n")
+    monkeypatch.setattr(inc, "extract_pdf_text", lambda content: sample)
+    monkeypatch.setattr(inc, "build_filing_fact_rows", inherited_build_filing_fact_rows)
+    pilot = dict(_contract()["pilot_document"], document_sha256="b" * 64)
+    assert inc.probe_document(pilot)["fact_rows"] >= 4
+    result = _capture(tmp_path)
+    assert result["complete"] is True
+    assert result["facts"]["period_end"].eq(pd.Timestamp("2026-06-30")).all()
+    assert result["facts"]["filing_title"].eq("2026年半年度报告").all()
+    assert len(calls["document"]) == 2
 
 
 @pytest.mark.parametrize("mutation,match", [("digest", "file digest"), ("scope", "entity completeness"), ("accounting", "document accounting")])
