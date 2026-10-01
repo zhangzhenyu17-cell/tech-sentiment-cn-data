@@ -105,7 +105,8 @@ def probe_document(spec: dict) -> dict:
     _require(downloaded.sha256 == spec["document_sha256"], "pilot document SHA changed")
     text = extract_pdf_text(downloaded.content)
     facts = build_filing_fact_rows(
-        entity_id=spec["entity_id"], evidence_available_date=spec["evidence_available_date"],
+        entity_id=spec["entity_id"], title=spec["filing_title"],
+        evidence_available_date=spec["evidence_available_date"],
         publication_timestamp=spec["publication_timestamp"], source_identity=CNINFO_SOURCE_ID,
         provider="CNINFO", document_id=spec["document_id"],
         revision_id=f"DOCUMENT:{spec['document_id']}:SHA256:{downloaded.sha256}",
@@ -198,7 +199,8 @@ def capture_increment(*, symbols: list[str], contract: dict, trading_dates, sour
                 if cached is None:
                     downloaded = download_official_document(str(attachment))
                     text = extract_pdf_text(downloaded.content)
-                    facts = build_filing_fact_rows(entity_id=entity, evidence_available_date=available,
+                    facts = build_filing_fact_rows(entity_id=entity, title=str(announcement["公告标题"]),
+                        evidence_available_date=available,
                         publication_timestamp=publication, source_identity=CNINFO_SOURCE_ID, provider="CNINFO", document_id=document,
                         revision_id=f"DOCUMENT:{document}:SHA256:{downloaded.sha256}", document_url=downloaded.url,
                         document_sha256=downloaded.sha256, text=text)

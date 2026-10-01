@@ -23,3 +23,14 @@
 - Reuse/recompute：新数据任务从未 dispatch，全部 baseline/A/B/价格 artifact 保留；只重新运行本地相关测试与 latest-head 普通 PR CI。不重跑已完成 data/evidence 任务。
 - Smallest rerun scope：当前 PR 的唯一 pytest job；head 改变后使用既有 PR CI，不重跑旧 head。无原 immutable capture unit 需要重算。
 - Protocol decision：NO_PROTOCOL_CHANGE_NEEDED。既有相关契约测试规则足够；本次补齐遗漏覆盖。新 workflow 仍 manual-only，研究/证据资格/Production/交易权限不变。
+
+## 首次手动增量 run 的 parser 接线错误
+
+- Repository/workflow/run/attempt：`tech-sentiment-cn-data` / `cross-sector-fundamental-date-increment-v1.yml` / `36888387381` / 1；source commit `d7cec17999d66bafb008928a7506887570f0654a`。
+- Failed job/step：preflight `110457471020` / Live query and exact official PDF pilot。公开边界审计及 84 个相关测试、真实官方交易日历、572 个证券的冻结范围构建均已通过；16 个 capture unit 与 finalizer 未启动，没有生成该 run 的 artifact。
+- Failure class/signature：DETERMINISTIC_CODE_OR_ORCHESTRATION；`TypeError: build_filing_fact_rows() missing 1 required keyword-only argument: 'title'`。真实官方 PDF 下载完成后，pilot 在解析器调用处失败。
+- Verified root cause：新增日期增量模块的 pilot 和正式 capture 两处调用均漏传既有解析器要求的 `title`。原测试以接收任意 `**kwargs` 的假 parser 代替既有 parser，因而未覆盖调用契约。A artifact `11116173338` 内原始 `combined_versioned_filing_facts.csv` 中，pilot 文档 `1225212108` 的公告标题为 `2025年年度报告`，并与指定 SHA 和公告日期一致。
+- Correction/regression：pilot contract 固定该已证明的原始标题；pilot 向既有解析器传 `spec["filing_title"]`，capture 向它传每条公告的 `公告标题`，不猜测报告期。新增以真实 inherited parser 和模拟 transport 同时走 pilot、9/30 正式 capture 的测试，验证标题对应报告期、事实及来源字段。解析器本身及其他继承源 SHA 保持原样。
+- Reuse/recompute：旧 baseline/A/B 和价格 artifact 全部保留；失败 preflight 没有成功的增量 capture unit 可复用。首次修复须从新 main SHA 启动增量工作流，`resume_run_id` 留空；不能对旧 SHA 失败 job 重跑并把其结果认作修复验证。
+- Smallest rerun scope：受影响测试、公开边界审计、普通 PR CI，然后仅一次新的手动增量 run；不启动旧多年历史抓取或私有研究。
+- Protocol decision：NO_PROTOCOL_CHANGE_NEEDED。保持原 PIT、数据边界、资格和 Production/交易权限；修复机械接线与测试遗漏，不放宽 pilot 门槛。
