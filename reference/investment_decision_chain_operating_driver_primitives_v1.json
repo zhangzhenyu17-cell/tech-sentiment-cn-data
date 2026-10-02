@@ -1,0 +1,114 @@
+{
+  "contract_id": "INVESTMENT_DECISION_CHAIN_OPERATING_DRIVER_PRIMITIVES_V1",
+  "contract_version": 1,
+  "status": "FROZEN_OUTCOME_BLIND_PUBLIC_PIT_DRIVER_CAPTURE",
+  "decision_date": "2026-09-30",
+  "purpose": "Materialize direct CN-GAAP profit-statement primitives for the already-frozen four-domain Cross-Sector scope so private research can later assess price-implied expectations and economic-profit feasibility without reading outcomes.",
+  "scope": {
+    "path": "data/reference/investment_decision_chain_v1_driver_scope_2026-09-30.csv",
+    "sha256": "32f9f8693b8c8a28b11172adb828bb1f055c429c66385fa50d1957882e9ff763",
+    "symbol_count": 629,
+    "construction": {
+      "technology_existing_numeric_pit_baseline": {
+        "path": "data/reference/cross_sector_fundamental_expansion_shard_b_v4a_baseline_entities.csv",
+        "symbols": 192
+      },
+      "cross_sector_current_missing_scope": {
+        "priority_path": "data/reference/cross_sector_fundamental_scope_2026-09-30/priority_missing.csv",
+        "priority_symbols": 79,
+        "a500_remaining_path": "data/reference/cross_sector_fundamental_scope_2026-09-30/a500_remaining_missing.csv",
+        "a500_remaining_symbols": 358,
+        "symbols": 437
+      },
+      "overlap_between_two_parts": 0
+    },
+    "new_domain_added": false,
+    "new_benchmark_added": false
+  },
+  "parser": {
+    "module": "src/tech_sentiment/official_filing_decision_drivers_v1.py",
+    "parser_version": "official-filing-decision-drivers-v1-cngaap-direct-lines",
+    "fact_types": [
+      "OPERATING_PROFIT_CN_GAAP",
+      "TOTAL_PROFIT_CN_GAAP",
+      "INCOME_TAX_EXPENSE_CN_GAAP"
+    ],
+    "statement_scope": "FIRST_EXPLICIT_CONSOLIDATED_PROFIT_STATEMENT_WITH_LOCALLY_PROVEN_CNY_UNIT",
+    "semantic_boundaries": {
+      "operating_profit_equals_ebit": false,
+      "income_tax_expense_equals_cash_tax": false,
+      "nopat_derived": false,
+      "effective_tax_rate_derived": false,
+      "roic_or_rnoa_derived": false,
+      "wacc_or_cost_of_capital_derived": false,
+      "missing_values_zero_imputed": false
+    }
+  },
+  "window": {
+    "target_start_date": "2026-01-01",
+    "end_date": "2026-09-30",
+    "query_warmup_years": 2,
+    "semantic": "CURRENT_COMPARABLE_ACCOUNTING_INPUT_CAPTURE_NOT_FULL_HISTORICAL_OUTCOME_RESEARCH"
+  },
+  "pilot": {
+    "symbols": [
+      "000001",
+      "300750",
+      "600276",
+      "600519",
+      "600893",
+      "688001",
+      "688041"
+    ],
+    "symbol_count": 7,
+    "required_fact_types": [
+      "OPERATING_PROFIT_CN_GAAP",
+      "TOTAL_PROFIT_CN_GAAP",
+      "INCOME_TAX_EXPENSE_CN_GAAP"
+    ],
+    "pass_rule": "NO_HARD_FAILURE_AND_AT_LEAST_ONE_VALID_ROW_FOR_EACH_REQUIRED_FACT_TYPE_ACROSS_PILOT"
+  },
+  "execution": {
+    "workflow": ".github/workflows/investment-decision-driver-primitives-v1.yml",
+    "workflow_dispatch_only": true,
+    "automatic_triggers_allowed": false,
+    "full_shards": 32,
+    "max_parallel_provider_jobs": 4,
+    "checkpointed": true,
+    "circuit_breaker": true,
+    "pilot_before_full": true,
+    "artifact_prefix": "investment-decision-driver-primitives-v1"
+  },
+  "public_private_boundary": {
+    "public_outputs_may_contain": [
+      "official filing direct statement facts",
+      "coverage",
+      "errors",
+      "provenance",
+      "scope snapshots",
+      "bundle manifest and hashes"
+    ],
+    "private_model_logic_allowed": false,
+    "private_thresholds_signals_holdings_allowed": false,
+    "public_capture_grants_private_evidence_qualification": false,
+    "public_capture_grants_production_or_trading_authority": false
+  },
+  "authority": {
+    "historical_forward_outcome_read": false,
+    "prospective_forward_outcome_read": false,
+    "full_historical_research": false,
+    "clean_holdout_or_oos": false,
+    "parameter_search": false,
+    "threshold_search": false,
+    "weight_search": false,
+    "feature_or_subset_search": false,
+    "ml": false,
+    "evidence_qualification_change": false,
+    "production_change": false,
+    "strategic_budget_change": false,
+    "target_weight_generation": false,
+    "portfolio_action": false,
+    "trading_authority": false,
+    "automatic_execution": false
+  }
+}

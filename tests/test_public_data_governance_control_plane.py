@@ -223,6 +223,20 @@ def test_external_patterns_are_adapted_without_runtime_dependencies() -> None:
                 "NO_EVIDENCE_PROMOTION"
             ),
         },
+        {
+            "path": ".github/workflows/investment-decision-driver-primitives-v1.yml",
+            "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+            "automatic_triggers_allowed": False,
+            "necessity": (
+                "Materialize direct CN-GAAP operating-profit, total-profit and income-tax-expense "
+                "PIT primitives for the already-frozen four-domain Decision Chain input scope, "
+                "with pilot-first resumable public capture."
+            ),
+            "research_boundary": (
+                "OUTCOME_BLIND_PUBLIC_DRIVER_PRIMITIVES_ONLY_NO_PRIVATE_MODEL_"
+                "NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
+            ),
+        },
     ]
     assert ci["audit_entrypoint"] == "scripts/audit_public_tree.py"
     assert ci["pytest_contract"] == "tests/test_public_data_governance_control_plane.py"

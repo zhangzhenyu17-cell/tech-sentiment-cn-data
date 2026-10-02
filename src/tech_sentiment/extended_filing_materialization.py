@@ -50,10 +50,11 @@ def _extended_document_identity(
     symbol: str,
     document_id: str,
     attachment_url: str,
+    parser_version: str = EXTENDED_FILING_PARSER_VERSION,
 ) -> CheckpointIdentity:
     return CheckpointIdentity(
         producer="official-filing-extended-pit",
-        producer_version=EXTENDED_FILING_PARSER_VERSION,
+        producer_version=parser_version,
         source_commit=source_commit,
         source_identities=(CNINFO_SOURCE_ID,),
         query_identity={
@@ -69,6 +70,8 @@ _SOFT_DATA_INSUFFICIENCY_MARKERS = (
     "official filing has no extractable text layer",
     "extended filing text does not contain an explicit table unit declaration",
     "official filing has no extended PIT primitives with locally proven CNY units",
+    "decision-driver filing text does not contain an explicit table unit declaration",
+    "official filing has no decision-driver primitives with locally proven CNY units",
 )
 
 
@@ -153,6 +156,8 @@ def materialize_extended_filing_facts(
     progress_checkpoint_source_commit: str | None = None,
     hard_failure_circuit_breaker_threshold: int = 3,
     max_financial_documents_per_symbol: int | None = None,
+    parser_version: str = EXTENDED_FILING_PARSER_VERSION,
+    fact_row_builder=build_extended_filing_fact_rows,
 ) -> ExtendedFilingMaterializationResult:
     """Materialize direct official-filing raw PIT primitives only.
 
@@ -161,6 +166,10 @@ def materialize_extended_filing_facts(
     model-facing CASH/DEBT aggregates or any evidence qualification.
     """
 
+    if not str(parser_version).strip():
+        raise ValueError("parser_version must be non-empty")
+    if not callable(fact_row_builder):
+        raise ValueError("fact_row_builder must be callable")
     if warmup_years < 1:
         raise ValueError("warmup_years must be >= 1")
     if hard_failure_circuit_breaker_threshold < 1:
@@ -358,6 +367,7 @@ def materialize_extended_filing_facts(
                     symbol=symbol,
                     document_id=document_id,
                     attachment_url=attachment,
+                    parser_version=parser_version,
                 )
                 loaded = store.load(document_identity)
                 if loaded is not None:
@@ -366,7 +376,7 @@ def materialize_extended_filing_facts(
                 else:
                     downloaded = download_official_document(attachment)
                     text = extract_pdf_text(downloaded.content)
-                    facts = build_extended_filing_fact_rows(
+                    facts = fact_row_builder(
                         entity_id=entity,
                         title=str(announcement["公告标题"]),
                         evidence_available_date=available_date,
@@ -519,7 +529,7 @@ def materialize_extended_filing_facts(
 
     summary = {
         "materializer_version": EXTENDED_PIT_MATERIALIZER_VERSION,
-        "parser_version": EXTENDED_FILING_PARSER_VERSION,
+        "parser_version": parser_version,
         "source_identity": CNINFO_SOURCE_ID,
         "target_start_date": str(target_start.date()),
         "query_warmup_start_date": str(query_start.date()),
