@@ -74,6 +74,7 @@ class FakeAKShare:
                 "最高": [10.4, 10.5],
                 "最低": [9.9, 10.0],
                 "涨跌幅": [1.0, 1.98],
+                "成交量": [100000, 120000],
                 "成交额": [1000000, 1200000],
                 "换手率": [1.2, 1.4],
             }
@@ -100,6 +101,7 @@ class FakeAKShare:
                 "high": [20.5, 20.6],
                 "low": [19.8, 20.0],
                 "turnover": [0.012, 0.014],
+                "volume": [200000, 220000],
                 "amount": [2000000, 2200000],
             }
         )
@@ -288,6 +290,8 @@ def test_fetch_stock_history_normalizes_eastmoney_columns_and_timeout():
     assert list(prices["symbol"].unique()) == ["688001"]
     assert prices["date"].dtype.kind == "M"
     assert prices.loc[0, "pct_chg"] == 1.0
+    assert prices.loc[0, "volume"] == 100000
+    assert prices["volume"].dtype.kind in {"i", "u", "f"}
     assert prices.loc[0, "board"] == "star"
     assert set(prices["provider"]) == {"eastmoney"}
 
@@ -306,6 +310,7 @@ def test_tencent_fallback_derives_percentage_change():
     assert client.tencent_timeouts == [8.0]
     assert pd.isna(prices.loc[0, "pct_chg"])
     assert round(prices.loc[1, "pct_chg"], 6) == 2.0
+    assert prices.loc[0, "volume"] == 200000
     assert set(prices["provider"]) == {"tencent"}
 
 

@@ -237,6 +237,7 @@ def _normalize_stock_history(
         "high": ("最高", "high"),
         "low": ("最低", "low"),
         "pct_chg": ("涨跌幅", "pct_chg"),
+        "volume": ("成交量", "volume"),
         "amount": ("成交额", "amount"),
         "turnover": ("换手率", "turnover"),
     }
@@ -255,7 +256,7 @@ def _normalize_stock_history(
     out = pd.DataFrame(selected)
     out.insert(1, "symbol", normalize_symbol(symbol))
     out["date"] = pd.to_datetime(out["date"], errors="raise")
-    for column in ("open", "close", "high", "low", "pct_chg", "amount", "turnover"):
+    for column in ("open", "close", "high", "low", "pct_chg", "volume", "amount", "turnover"):
         if column in out.columns:
             out[column] = pd.to_numeric(out[column], errors="coerce")
 
@@ -408,6 +409,7 @@ def download_universe_history(
                 "high",
                 "low",
                 "pct_chg",
+                "volume",
                 "amount",
                 "board",
                 "provider",
