@@ -155,7 +155,13 @@ def test_preopen_workflow_is_manual_only_and_formal_v3_backed() -> None:
     assert '"pandas==3.0.5"' in text
     assert '"pytest==8.4.2"' in text
     assert "python -m pip check" in text
-    assert "Upload contemporaneous pre-open raw capture artifact" in text
+    assert text.count("Upload contemporaneous pre-open raw capture artifact") == 1
+    assert (
+        text.count(
+            "name: prospective-context-raw-preopen-v2-${{ inputs.market_session_date }}-for-${{ inputs.decision_date }}"
+        )
+        == 1
+    )
     assert "Publish, heal, or exact-verify immutable pre-open public raw capture" in text
     assert text.index("Upload contemporaneous pre-open raw capture artifact") < text.index(
         "Publish, heal, or exact-verify immutable pre-open public raw capture"
