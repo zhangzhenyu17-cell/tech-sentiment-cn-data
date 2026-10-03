@@ -47,6 +47,20 @@ def test_decision_driver_parser_does_not_infer_ebit_nopat_or_cash_tax() -> None:
     assert "EFFECTIVE_TAX_RATE" not in facts
 
 
+def test_standard_profit_statement_tax_prefix_is_parsed() -> None:
+    text = """
+    2025年半年度报告
+    合并利润表
+    单位：人民币万元
+    项目 2025年半年度 2024年半年度
+    五、营业利润 12,345 10,111
+    六、利润总额 12,100 9,900
+    减：所得税费用 1,815 1,485
+    """
+    facts = extract_decision_driver_facts(text)
+    assert facts["INCOME_TAX_EXPENSE_CN_GAAP"] == pytest.approx(18_150_000.0)
+
+
 def test_decision_driver_parser_fails_closed_without_explicit_unit() -> None:
     with pytest.raises(ValueError, match="explicit table unit"):
         extract_decision_driver_facts(
