@@ -27,7 +27,7 @@
   },
   "parser": {
     "module": "src/tech_sentiment/official_filing_decision_drivers_v1.py",
-    "parser_version": "official-filing-decision-drivers-v1-cngaap-direct-lines",
+    "parser_version": "official-filing-decision-drivers-v2-cngaap-tax-prefix",
     "fact_types": [
       "OPERATING_PROFIT_CN_GAAP",
       "TOTAL_PROFIT_CN_GAAP",

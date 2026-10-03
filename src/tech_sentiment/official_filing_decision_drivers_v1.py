@@ -12,7 +12,7 @@ from .official_filing_facts import (
     filing_period_end_from_title,
 )
 
-DECISION_DRIVER_PARSER_VERSION = "official-filing-decision-drivers-v1-cngaap-direct-lines"
+DECISION_DRIVER_PARSER_VERSION = "official-filing-decision-drivers-v2-cngaap-tax-prefix"
 
 # Direct consolidated income-statement observations only. Names deliberately
 # retain CN_GAAP so downstream research cannot silently relabel them as EBIT,
@@ -20,7 +20,7 @@ DECISION_DRIVER_PARSER_VERSION = "official-filing-decision-drivers-v1-cngaap-dir
 DECISION_DRIVER_FACT_LABELS: Mapping[str, tuple[str, ...]] = {
     "OPERATING_PROFIT_CN_GAAP": ("营业利润",),
     "TOTAL_PROFIT_CN_GAAP": ("利润总额",),
-    "INCOME_TAX_EXPENSE_CN_GAAP": ("所得税费用",),
+    "INCOME_TAX_EXPENSE_CN_GAAP": ("所得税费用", "减:所得税费用"),
 }
 
 
