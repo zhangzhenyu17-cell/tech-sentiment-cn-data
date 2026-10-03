@@ -90,6 +90,11 @@ def test_workflow_is_manual_only_and_uses_bounded_sharded_full_capture() -> None
     assert "max-parallel: 4" in text
     assert "mode == 'pilot'" in text
     assert "mode == 'full'" in text
+    assert "mode == 'repair'" in text
+    assert "actions: read" in text
+    assert "RECOVERY_SOURCE_RUN_ID: \"37097668812\"" in text
+    assert "shard: [2, 3, 11, 14, 26, 31]" in text
+    assert "gh run download \"$RECOVERY_SOURCE_RUN_ID\"" in text
     assert "--require-no-hard-failures" in text
 
 
@@ -141,6 +146,9 @@ def test_aggregate_builds_hash_manifest_without_private_semantics(tmp_path: Path
                 {
                     "schema_version": "investment-decision-driver-shard-v1",
                     "parser_version": DECISION_DRIVER_PARSER_VERSION,
+                    "source_commit": ("a" * 40 if i == 0 else "b" * 40),
+                    "shard_index": i,
+                    "shard_count": 2,
                     "historical_forward_outcome_read": False,
                     "prospective_forward_outcome_read": False,
                 }
@@ -148,6 +156,11 @@ def test_aggregate_builds_hash_manifest_without_private_semantics(tmp_path: Path
             + "\n",
             encoding="utf-8",
         )
+
+    test_contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    test_contract["execution"]["full_shards"] = 2
+    contract_path = tmp_path / "contract.json"
+    contract_path.write_text(json.dumps(test_contract) + "\n", encoding="utf-8")
 
     out = tmp_path / "out"
     completed = subprocess.run(
@@ -159,7 +172,7 @@ def test_aggregate_builds_hash_manifest_without_private_semantics(tmp_path: Path
             "--shard-root",
             str(shard_root),
             "--contract",
-            str(CONTRACT),
+            str(contract_path),
             "--out-dir",
             str(out),
             "--require-no-hard-failures",
@@ -174,6 +187,9 @@ def test_aggregate_builds_hash_manifest_without_private_semantics(tmp_path: Path
     assert manifest["status"] == "PUBLIC_OUTCOME_BLIND_RAW_DRIVER_BUNDLE"
     assert manifest["scope_symbol_count"] == 629
     assert manifest["hard_failure_rows"] == 0
+    assert manifest["shard_indices"] == [0, 1]
+    assert manifest["source_commits"] == ["a" * 40, "b" * 40]
+    assert manifest["shard_source_commits"] == {"0": "a" * 40, "1": "b" * 40}
     assert manifest["private_model_semantics_included"] is False
     assert manifest["historical_forward_outcome_read"] is False
     assert manifest["prospective_forward_outcome_read"] is False
@@ -182,3 +198,16 @@ def test_aggregate_builds_hash_manifest_without_private_semantics(tmp_path: Path
     assert manifest["trading_authority_changed"] is False
     for filename, digest in manifest["files"].items():
         assert hashlib.sha256((out / filename).read_bytes()).hexdigest() == digest
+
+
+def test_recovery_contract_is_exact_and_does_not_expand_authority() -> None:
+    contract = _contract()
+    recovery = contract["recovery"]
+    assert recovery["source_run_id"] == 37097668812
+    assert recovery["source_head_sha"] == "b4fbbdc4096fdb18f331f0ddb809c8dafbf544c2"
+    assert recovery["repair_shards"] == [2, 3, 11, 14, 26, 31]
+    assert recovery["policy"] == "REPAIR_ONLY_AFFECTED_SHARDS_REUSE_OTHER_PINNED_SUCCESS_ARTIFACTS"
+    assert recovery["outcome_read"] is False
+    assert recovery["evidence_qualification_change"] is False
+    assert recovery["production_change"] is False
+    assert recovery["trading_authority_change"] is False

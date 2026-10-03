@@ -110,5 +110,29 @@
     "portfolio_action": false,
     "trading_authority": false,
     "automatic_execution": false
+  },
+  "recovery": {
+    "source_run_id": 37097668812,
+    "source_head_sha": "b4fbbdc4096fdb18f331f0ddb809c8dafbf544c2",
+    "reason": "FINAL_AGGREGATE_FOUND_10_HARD_FAILURE_ROWS_AFTER_32_OF_32_SHARDS_SUCCEEDED",
+    "repair_shards": [
+      2,
+      3,
+      11,
+      14,
+      26,
+      31
+    ],
+    "failure_signatures": {
+      "ZeroDivisionError: float floor division by zero": 6,
+      "KeyError: '/Contents'": 1,
+      "IndexError: list index out of range": 1,
+      "HTTPError: HTTP Error 404: Not Found": 2
+    },
+    "policy": "REPAIR_ONLY_AFFECTED_SHARDS_REUSE_OTHER_PINNED_SUCCESS_ARTIFACTS",
+    "outcome_read": false,
+    "evidence_qualification_change": false,
+    "production_change": false,
+    "trading_authority_change": false
   }
 }

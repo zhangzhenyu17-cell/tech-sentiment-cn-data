@@ -48,7 +48,7 @@
   },
   "inherited_source_sha256": {
     "src/tech_sentiment/filing_materialization.py": "5d1e359ea8f4fea79b1eea2e2feed51192b1db185a38917c3f0c4081af9e479e",
-    "src/tech_sentiment/official_filing_facts.py": "e55aa95a5b0da64622bf8c9a31b5f339546284ce3a6ba7ea0ad7d8740045fe28",
+    "src/tech_sentiment/official_filing_facts.py": "a074cebe6140b350a73120330bbac6ab9499006f1e75540f9ee4d6331dc40ec3",
     "src/tech_sentiment/fundamental_pit_state.py": "faf36cb1326ac9a4c07308c9e4451ed9fe786de52516f1aa0f387352118a0be7",
     "src/tech_sentiment/cninfo_direct.py": "df3d3ce30cc23b2a648b37548af6bd0dbdec08bf6e772ce10790877cc1ac2611",
     "src/tech_sentiment/pit_public_materialization.py": "d4b78aa3985a37900b1841cf31def9e607247fc02baa63048830ec46233cb2f4",
@@ -98,6 +98,18 @@
     "fundamental_state_qualification_claimed": false,
     "outcome_read": false,
     "pairwise_builder_run": false,
+    "evidence_qualification_changed": false,
+    "production_changed": false,
+    "trading_authority_changed": false
+  },
+  "source_digest_refresh_2026_10_03": {
+    "path": "src/tech_sentiment/official_filing_facts.py",
+    "previous_sha256": "e55aa95a5b0da64622bf8c9a31b5f339546284ce3a6ba7ea0ad7d8740045fe28",
+    "current_sha256": "a074cebe6140b350a73120330bbac6ab9499006f1e75540f9ee4d6331dc40ec3",
+    "reason": "MECHANICAL_DECISION_DRIVER_TAIL_RECOVERY_PDF_ENGINE_FALLBACK_AND_EXACT_CNINFO_DOUBLE_404_DATA_GAP_CLASSIFICATION",
+    "fundamental_semantics_changed": false,
+    "scope_changed": false,
+    "outcome_read": false,
     "evidence_qualification_changed": false,
     "production_changed": false,
     "trading_authority_changed": false
