@@ -117,7 +117,7 @@ jobs:
             ${{ env.CACHE_PREFIX }}-pilot-${{ github.sha }}-
       - name: Materialize representative pilot
         run: |
-          python scripts/materialize_investment_decision_driver_shard_v1.py             --symbols-csv stage/shared/pilot_scope.csv             --calendar-csv stage/shared/trading_calendar.csv             --source-commit "$GITHUB_SHA"             --shard-index 0             --shard-count 1             --checkpoint-dir .cache/investment_decision_driver/pilot             --out-dir stage/pilot
+          python scripts/materialize_investment_decision_driver_shard_v1.py             --symbols-csv stage/shared/pilot_scope.csv             --calendar-csv stage/shared/calendar/trading_calendar.csv             --source-commit "$GITHUB_SHA"             --shard-index 0             --shard-count 1             --checkpoint-dir .cache/investment_decision_driver/pilot             --out-dir stage/pilot
       - name: Save pilot checkpoint
         if: always()
         uses: actions/cache/save@v4
@@ -183,7 +183,7 @@ jobs:
       - name: Materialize full shard
         id: materialize
         run: |
-          python scripts/materialize_investment_decision_driver_shard_v1.py             --symbols-csv data/reference/investment_decision_chain_v1_driver_scope_2026-09-30.csv             --calendar-csv stage/shared/trading_calendar.csv             --source-commit "$GITHUB_SHA"             --shard-index "${{ matrix.shard }}"             --shard-count "$FULL_SHARDS"             --checkpoint-dir ".cache/investment_decision_driver/full-${{ matrix.shard }}"             --out-dir "stage/full-${{ matrix.shard }}"
+          python scripts/materialize_investment_decision_driver_shard_v1.py             --symbols-csv data/reference/investment_decision_chain_v1_driver_scope_2026-09-30.csv             --calendar-csv stage/shared/calendar/trading_calendar.csv             --source-commit "$GITHUB_SHA"             --shard-index "${{ matrix.shard }}"             --shard-count "$FULL_SHARDS"             --checkpoint-dir ".cache/investment_decision_driver/full-${{ matrix.shard }}"             --out-dir "stage/full-${{ matrix.shard }}"
       - name: Save shard checkpoint
         if: ${{ always() && steps.materialize.outcome != 'skipped' }}
         uses: actions/cache/save@v4
