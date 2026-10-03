@@ -338,6 +338,13 @@
         "automatic_triggers_allowed": false,
         "necessity": "Materialize direct CN-GAAP operating-profit, total-profit and income-tax-expense PIT primitives for the already-frozen four-domain Decision Chain input scope, with pilot-first resumable public capture.",
         "research_boundary": "OUTCOME_BLIND_PUBLIC_DRIVER_PRIMITIVES_ONLY_NO_PRIVATE_MODEL_NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
+      },
+      {
+        "path": ".github/workflows/investment-decision-accounting-balance-sheet-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": false,
+        "necessity": "Materialize direct consolidated CN-GAAP balance-sheet PIT primitives for the already-frozen 629-entity Decision Chain scope, preserving raw public facts and provenance without private operating/financing semantics.",
+        "research_boundary": "OUTCOME_BLIND_PUBLIC_BALANCE_SHEET_PRIMITIVES_ONLY_NO_PRIVATE_REFORMULATION_NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
       }
     ]
   }

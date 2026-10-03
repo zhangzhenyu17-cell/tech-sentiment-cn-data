@@ -168,9 +168,24 @@ def test_external_patterns_are_adapted_without_runtime_dependencies() -> None:
         "necessity": "Capture only newly available official numeric filings inside the already-frozen five-membership union; reuse A/B and baseline rather than restart full historical queries.",
         "research_boundary": "PUBLIC_DISCLOSURE_INCREMENT_ONLY_NO_STATE_QUALIFICATION_NO_PAIRWISE_NO_EVIDENCE_PROMOTION",
     }
+    assert by_path[".github/workflows/investment-decision-accounting-balance-sheet-v1.yml"] == {
+        "path": ".github/workflows/investment-decision-accounting-balance-sheet-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": False,
+        "necessity": (
+            "Materialize direct consolidated CN-GAAP balance-sheet PIT primitives for the "
+            "already-frozen 629-entity Decision Chain scope, preserving raw public facts and "
+            "provenance without private operating/financing semantics."
+        ),
+        "research_boundary": (
+            "OUTCOME_BLIND_PUBLIC_BALANCE_SHEET_PRIMITIVES_ONLY_NO_PRIVATE_REFORMULATION_"
+            "NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
+        ),
+    }
     assert [entry for entry in allowlist if entry["path"] not in {
         ".github/workflows/cross-sector-price-refresh-v1.yml",
         ".github/workflows/cross-sector-fundamental-date-increment-v1.yml",
+        ".github/workflows/investment-decision-accounting-balance-sheet-v1.yml",
     }] == [
         {
             "path": ".github/workflows/cross-sector-current-fundamental-v1.yml",
