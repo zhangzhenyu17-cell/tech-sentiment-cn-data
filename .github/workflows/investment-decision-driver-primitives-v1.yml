@@ -146,6 +146,7 @@ jobs:
           assert manifest["trading_authority_changed"] is False
           PY
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: investment-decision-driver-primitives-v1-pilot
           path: stage/pilot
