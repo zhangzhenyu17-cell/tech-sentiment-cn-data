@@ -73,6 +73,7 @@ _SOFT_DATA_INSUFFICIENCY_MARKERS = (
     "official filing has no extended PIT primitives with locally proven CNY units",
     "decision-driver filing text does not contain an explicit table unit declaration",
     "official filing has no decision-driver primitives with locally proven CNY units",
+    "official filing has no direct consolidated balance-sheet primitives with locally proven CNY units",
 )
 
 

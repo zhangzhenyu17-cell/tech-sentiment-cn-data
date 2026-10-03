@@ -367,3 +367,13 @@ def test_exact_cninfo_double_404_marker_is_soft_data_insufficiency():
 
 def test_pdf_engine_exception_itself_remains_hard_until_extract_pdf_text_exhausts_fallbacks():
     assert materializer._severity(ZeroDivisionError("float floor division by zero")) == "HARD_FAILURE"
+
+
+def test_accounting_balance_sheet_no_direct_primitive_is_soft_data_insufficiency() -> None:
+    from tech_sentiment.extended_filing_materialization import _severity
+
+    error = ValueError(
+        "official filing has no direct consolidated balance-sheet primitives "
+        "with locally proven CNY units"
+    )
+    assert _severity(error) == "SOFT_DATA_INSUFFICIENCY"
