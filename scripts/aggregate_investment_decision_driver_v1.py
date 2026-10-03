@@ -51,6 +51,20 @@ def main() -> int:
     manifests = sorted(args.shard_root.rglob("stage_manifest.json"))
     if not manifests:
         raise ValueError("no shard manifests")
+    manifest_rows = [json.loads(path.read_text(encoding="utf-8")) for path in manifests]
+    expected_shards = int(contract.get("execution", {}).get("full_shards", 0) or 0)
+    shard_indices = [int(item.get("shard_index")) for item in manifest_rows]
+    if expected_shards <= 0:
+        raise ValueError("full shard count missing from contract")
+    if len(manifests) != expected_shards or sorted(shard_indices) != list(range(expected_shards)):
+        raise ValueError("shard manifest identity/completeness drift")
+    shard_source_commits = {
+        str(int(item["shard_index"])): str(item.get("source_commit") or "")
+        for item in manifest_rows
+    }
+    if any(len(value) != 40 for value in shard_source_commits.values()):
+        raise ValueError("shard source commit provenance missing")
+    source_commits = sorted(set(shard_source_commits.values()))
 
     if len(facts):
         facts = facts.drop_duplicates(
@@ -97,6 +111,9 @@ def main() -> int:
         "decision_date": contract["decision_date"],
         "scope_symbol_count": len(symbols),
         "shard_manifest_count": len(manifests),
+        "shard_indices": sorted(shard_indices),
+        "source_commits": source_commits,
+        "shard_source_commits": shard_source_commits,
         "fact_types": list(FACT_TYPES),
         "fact_entity_counts": entity_counts,
         "hard_failure_rows": hard_failures,

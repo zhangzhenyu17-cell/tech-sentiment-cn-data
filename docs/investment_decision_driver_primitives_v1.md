@@ -73,3 +73,15 @@ full aggregate：
 ## 6. 权限边界
 
 本模块不读取任何 forward outcome，不进行 full historical outcome research、OOS/holdout、参数/阈值/权重/feature/ML 搜索，不改变 evidence qualification、Production、Strategic Budget、仓位或 trading authority。
+## 7. 2026-10-03 Full Tail Recovery
+
+原 full run `37097668812` 的 32/32 shard job 均成功，但 final aggregate 在全局 fail-closed 检查中发现 10 条 `HARD_FAILURE`，因此正确拒绝生成 final bundle。
+
+根因审计：
+
+- 8 条来自 PDF embedded-text engine 的局部异常（6× `ZeroDivisionError`、1× `KeyError('/Contents')`、1× `IndexError`）；原 extractor 没有在单一 engine exception 后继续同一官方 PDF bytes 的后备 text engines。修复后，各 engine exception 只影响本 engine，仍严格要求 explicit unit，不启用 OCR。
+- 2 条来自 2024 半年报的 CNINFO immutable static URL 与由同一 bulletin id/date 推导的 CNINFO 官方 download endpoint 均返回 404。这类 exact-source bilateral 404 被定义为 `SOFT_DATA_INSUFFICIENCY`；不搜索替代文档、不更换 provider、不补 0。
+
+恢复遵循 GitHub v1.4 最小重跑：仅重算 shard `2, 3, 11, 14, 26, 31`，其余 26 个 shard 复用 Run `37097668812` 的 pinned 成功 artifact。recovery aggregate 必须显式记录每个 shard 的 `source_commit`，并继续要求全局 `hard_failure_rows = 0`。
+
+该 recovery 不读取 outcome，不改变 evidence qualification、Production、Strategic Budget、target weight 或 trading authority。

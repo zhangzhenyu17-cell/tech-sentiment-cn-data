@@ -589,12 +589,13 @@ def download_official_document(
     """Download one exact official filing version and bind it to a content hash.
 
     CNINFO's immutable static HTTPS attachment can return HTTP 403 to non-browser
-    infrastructure even when the same exact bulletin remains available through
-    CNINFO's official HTTPS download endpoint.  Only that deterministic,
-    same-provider endpoint is allowed as a fallback, and only for a 403 from
-    static.cninfo.com.cn.  The bulletin id and announcement date are derived
-    from the immutable attachment URL; no search, substitution, or HTTP
-    transport downgrade is permitted.
+    infrastructure, or HTTP 404 when an older static object is no longer served,
+    even though the same exact bulletin may remain available through CNINFO's
+    official HTTPS download endpoint. Only that deterministic, same-provider
+    endpoint is allowed as a fallback. The bulletin id and announcement date are
+    derived from the immutable attachment URL; no search, substitution, or HTTP
+    transport downgrade is permitted. A confirmed 404 from both exact CNINFO
+    endpoints is a public-source data gap, not an engineering parser failure.
     """
 
     _canonical_host(url)
@@ -607,7 +608,7 @@ def download_official_document(
         )
     except HTTPError as exc:
         fallback = _cninfo_https_download_fallback(url)
-        if exc.code != 403 or fallback is None:
+        if exc.code not in {403, 404} or fallback is None:
             raise
         retrieval_url = fallback
         try:
@@ -617,7 +618,11 @@ def download_official_document(
                 backoff_seconds=0.5,
             )
         except HTTPError as fallback_exc:
-            if fallback_exc.code != 403:
+            if exc.code == 404 and fallback_exc.code == 404:
+                raise ValueError(
+                    "official filing immutable attachment unavailable from exact CNINFO endpoints"
+                ) from fallback_exc
+            if fallback_exc.code != 403 or exc.code != 403:
                 raise
             try:
                 content, retrieval_url = _download_cninfo_with_https_session(
@@ -761,10 +766,11 @@ def extract_pdf_text(content: bytes) -> str:
     3. pdfplumber/pdfminer;
     4. PyMuPDF.
 
-    A fallback is selected only when it restores an explicit table-unit
-    declaration. All paths read the same immutable official PDF bytes. OCR,
-    image inference, unit inference and non-official substitute documents are
-    deliberately absent.
+    A parser-engine exception is local to that engine and must not prevent the
+    remaining engines from reading the same immutable official PDF bytes. A
+    fallback is selected only when it restores an explicit table-unit
+    declaration. OCR, image inference, unit inference and non-official
+    substitute documents remain deliberately absent.
     """
 
     try:
@@ -772,51 +778,56 @@ def extract_pdf_text(content: bytes) -> str:
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("pypdf is required for official filing parsing") from exc
 
-    reader = PdfReader(io.BytesIO(content), strict=False)
-
-    def _collect(*, layout: bool) -> str:
-        parts: list[str] = []
-        for page in reader.pages:
-            text = (
-                page.extract_text(extraction_mode="layout")
-                if layout
-                else page.extract_text()
-            ) or ""
-            if text.strip():
-                parts.append(text)
-        return "\n".join(parts).strip()
-
     candidates: list[str] = []
+    engine_errors: list[Exception] = []
+    reader = None
+    try:
+        reader = PdfReader(io.BytesIO(content), strict=False)
+    except Exception as exc:
+        engine_errors.append(exc)
 
-    layout_text = _collect(layout=True)
-    if layout_text:
-        candidates.append(layout_text)
-        if _has_explicit_unit_declaration(_normalize_text_lines(layout_text)):
-            return layout_text
+    if reader is not None:
+        def _collect(*, layout: bool) -> str:
+            parts: list[str] = []
+            for page in reader.pages:
+                text = (
+                    page.extract_text(extraction_mode="layout")
+                    if layout
+                    else page.extract_text()
+                ) or ""
+                if text.strip():
+                    parts.append(text)
+            return "\n".join(parts).strip()
 
-    plain_text = _collect(layout=False)
-    if plain_text:
-        candidates.append(plain_text)
-        if _has_explicit_unit_declaration(_normalize_text_lines(plain_text)):
-            return plain_text
+        for layout in (True, False):
+            try:
+                text = _collect(layout=layout)
+            except Exception as exc:
+                engine_errors.append(exc)
+                continue
+            if text:
+                candidates.append(text)
+                if _has_explicit_unit_declaration(_normalize_text_lines(text)):
+                    return text
 
-    miner_text = _pdfplumber_text(content)
-    if miner_text:
-        candidates.append(miner_text)
-        if _has_explicit_unit_declaration(_normalize_text_lines(miner_text)):
-            return miner_text
-
-    mupdf_text = _pymupdf_text(content)
-    if mupdf_text:
-        candidates.append(mupdf_text)
-        if _has_explicit_unit_declaration(_normalize_text_lines(mupdf_text)):
-            return mupdf_text
+    for extractor in (_pdfplumber_text, _pymupdf_text):
+        try:
+            text = extractor(content)
+        except Exception as exc:
+            engine_errors.append(exc)
+            continue
+        if text:
+            candidates.append(text)
+            if _has_explicit_unit_declaration(_normalize_text_lines(text)):
+                return text
 
     if candidates:
-        # Preserve the primary text layer for diagnostics when every parser
-        # fails the explicit-unit gate; downstream fact extraction remains
-        # fail-closed and will never infer a unit.
+        # Preserve the first readable text layer for diagnostics when every
+        # engine fails the explicit-unit gate. Downstream fact extraction stays
+        # fail-closed and never infers a unit.
         return candidates[0]
+    if engine_errors:
+        raise ValueError("official filing has no extractable text layer") from engine_errors[-1]
     raise ValueError("official filing has no extractable text layer")
 
 

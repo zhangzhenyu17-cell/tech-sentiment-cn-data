@@ -356,3 +356,14 @@ def test_materializer_preflight_document_limit_uses_same_selector_but_one_docume
     assert result.summary["max_financial_documents_per_symbol"] == 1
     assert result.coverage.iloc[0]["financial_documents"] == 1
     assert result.coverage.iloc[0]["parsed_documents"] == 1
+
+
+def test_exact_cninfo_double_404_marker_is_soft_data_insufficiency():
+    exc = ValueError(
+        "official filing immutable attachment unavailable from exact CNINFO endpoints"
+    )
+    assert materializer._severity(exc) == "SOFT_DATA_INSUFFICIENCY"
+
+
+def test_pdf_engine_exception_itself_remains_hard_until_extract_pdf_text_exhausts_fallbacks():
+    assert materializer._severity(ZeroDivisionError("float floor division by zero")) == "HARD_FAILURE"

@@ -11,9 +11,11 @@ on:
         options:
           - pilot
           - full
+          - repair
 
 permissions:
   contents: read
+  actions: read
 
 env:
   TARGET_START_DATE: "2026-01-01"
@@ -21,6 +23,7 @@ env:
   CALENDAR_START_DATE: "2025-01-01"
   FULL_SHARDS: "32"
   CACHE_PREFIX: "investment-decision-driver-primitives-v1"
+  RECOVERY_SOURCE_RUN_ID: "37097668812"
 
 jobs:
   preflight:
@@ -224,6 +227,151 @@ jobs:
           cp reference/investment_decision_chain_operating_driver_primitives_v1.json stage/final/
           cp data/reference/investment_decision_chain_v1_driver_scope_2026-09-30.csv stage/final/
       - uses: actions/upload-artifact@v4
+        with:
+          name: investment-decision-driver-primitives-v1-full
+          path: stage/final
+          if-no-files-found: error
+          retention-days: 90
+
+  repair:
+    if: ${{ inputs.mode == 'repair' }}
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [2, 3, 11, 14, 26, 31]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - uses: actions/download-artifact@v4
+        with:
+          name: investment-decision-driver-shared-v1
+          path: stage/shared
+      - name: Restore repair checkpoint
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/investment_decision_driver/repair-${{ matrix.shard }}
+          key: ${{ env.CACHE_PREFIX }}-repair-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ env.CACHE_PREFIX }}-repair-${{ matrix.shard }}-${{ github.sha }}-
+      - name: Materialize affected shard only
+        id: materialize
+        run: |
+          python scripts/materialize_investment_decision_driver_shard_v1.py \
+            --symbols-csv data/reference/investment_decision_chain_v1_driver_scope_2026-09-30.csv \
+            --calendar-csv stage/shared/calendar/trading_calendar.csv \
+            --source-commit "$GITHUB_SHA" \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count "$FULL_SHARDS" \
+            --checkpoint-dir ".cache/investment_decision_driver/repair-${{ matrix.shard }}" \
+            --out-dir "stage/repair-${{ matrix.shard }}"
+      - name: Save repair checkpoint
+        if: ${{ always() && steps.materialize.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/investment_decision_driver/repair-${{ matrix.shard }}
+          key: ${{ env.CACHE_PREFIX }}-repair-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Upload repaired shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: investment-decision-driver-primitives-v1-repair-shard-${{ matrix.shard }}
+          path: stage/repair-${{ matrix.shard }}
+          if-no-files-found: warn
+          retention-days: 30
+
+  recovery_aggregate:
+    if: ${{ always() && inputs.mode == 'repair' && needs.repair.result == 'success' }}
+    needs: repair
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[data]"
+      - name: Download repaired shards from current run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: investment-decision-driver-primitives-v1-repair-shard-*
+          path: stage/repair
+          merge-multiple: false
+      - name: Download pinned successful shards from failed source run
+        run: |
+          mkdir -p stage/base-shards
+          gh run download "$RECOVERY_SOURCE_RUN_ID" \
+            -p 'investment-decision-driver-primitives-v1-shard-*' \
+            -D stage/base-shards
+      - name: Compose exact 32-shard recovery set
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import shutil
+
+          source_run = 37097668812
+          repair_indices = [2, 3, 11, 14, 26, 31]
+          base = Path('stage/base-shards')
+          repair = Path('stage/repair')
+          out = Path('stage/shards')
+          out.mkdir(parents=True, exist_ok=True)
+
+          for index in range(32):
+              name = f'investment-decision-driver-primitives-v1-shard-{index}'
+              src = base / name
+              if not src.is_dir():
+                  raise SystemExit(f'missing pinned source-run shard: {index}')
+              shutil.copytree(src, out / name)
+
+          for index in repair_indices:
+              repaired = repair / f'investment-decision-driver-primitives-v1-repair-shard-{index}'
+              if not repaired.is_dir():
+                  raise SystemExit(f'missing repaired shard: {index}')
+              target = out / f'investment-decision-driver-primitives-v1-shard-{index}'
+              shutil.rmtree(target)
+              shutil.copytree(repaired, target)
+
+          manifests = []
+          for index in range(32):
+              path = out / f'investment-decision-driver-primitives-v1-shard-{index}' / 'stage_manifest.json'
+              if not path.is_file():
+                  raise SystemExit(f'missing stage manifest after recovery composition: {index}')
+              manifest = json.loads(path.read_text(encoding='utf-8'))
+              if int(manifest['shard_index']) != index or int(manifest['shard_count']) != 32:
+                  raise SystemExit(f'shard identity drift: {index}')
+              manifests.append(manifest)
+
+          old = [m for m in manifests if m['source_commit'] == 'b4fbbdc4096fdb18f331f0ddb809c8dafbf544c2']
+          new = [m for m in manifests if m['source_commit'] == '${{ github.sha }}']
+          if len(old) != 26 or len(new) != 6:
+              raise SystemExit(f'recovery provenance cardinality drift: old={len(old)} new={len(new)}')
+          print({'source_run_id': source_run, 'reused_shards': len(old), 'repaired_shards': len(new)})
+          PY
+      - name: Aggregate exact recovered public bundle
+        run: |
+          python scripts/aggregate_investment_decision_driver_v1.py \
+            --scope-csv data/reference/investment_decision_chain_v1_driver_scope_2026-09-30.csv \
+            --shard-root stage/shards \
+            --contract reference/investment_decision_chain_operating_driver_primitives_v1.json \
+            --out-dir stage/final \
+            --require-no-hard-failures
+          cp reference/investment_decision_chain_operating_driver_primitives_v1.json stage/final/
+          cp data/reference/investment_decision_chain_v1_driver_scope_2026-09-30.csv stage/final/
+      - name: Upload recovered canonical full bundle
+        uses: actions/upload-artifact@v4
         with:
           name: investment-decision-driver-primitives-v1-full
           path: stage/final

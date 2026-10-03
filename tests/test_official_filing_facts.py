@@ -250,6 +250,75 @@ def test_pdf_text_uses_pymupdf_when_other_text_engines_lose_explicit_unit(monkey
     assert facts["NET_PROFIT_PARENT"] == 62_716_443_738.27
 
 
+def test_pdf_text_continues_to_pdfplumber_when_pypdf_reader_crashes(monkeypatch):
+    class BrokenReader:
+        def __init__(self, stream, strict=False):
+            raise ZeroDivisionError("float floor division by zero")
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=BrokenReader))
+    monkeypatch.setattr(
+        filing_module,
+        "_pdfplumber_text",
+        lambda content: "合并利润表\n单位：人民币元\n营业利润 100 90",
+    )
+    monkeypatch.setattr(
+        filing_module,
+        "_pymupdf_text",
+        lambda content: (_ for _ in ()).throw(AssertionError("should not reach pymupdf")),
+    )
+
+    text = extract_pdf_text(b"%PDF-broken-pypdf")
+    assert "单位：人民币元" in text
+
+
+def test_pdf_text_continues_across_engine_exceptions_until_pymupdf(monkeypatch):
+    class BrokenPage:
+        def extract_text(self, extraction_mode=None):
+            if extraction_mode == "layout":
+                raise KeyError("/Contents")
+            raise IndexError("list index out of range")
+
+    class BrokenReader:
+        def __init__(self, stream, strict=False):
+            self.pages = [BrokenPage()]
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=BrokenReader))
+    monkeypatch.setattr(
+        filing_module,
+        "_pdfplumber_text",
+        lambda content: (_ for _ in ()).throw(ZeroDivisionError("float floor division by zero")),
+    )
+    monkeypatch.setattr(
+        filing_module,
+        "_pymupdf_text",
+        lambda content: "合并利润表\n单位：人民币万元\n营业利润 12 10",
+    )
+
+    text = extract_pdf_text(b"%PDF-multi-engine-errors")
+    assert "单位：人民币万元" in text
+
+
+def test_pdf_text_all_engine_failures_collapse_to_unextractable_data_gap(monkeypatch):
+    class BrokenReader:
+        def __init__(self, stream, strict=False):
+            raise ZeroDivisionError("float floor division by zero")
+
+    monkeypatch.setitem(sys.modules, "pypdf", SimpleNamespace(PdfReader=BrokenReader))
+    monkeypatch.setattr(
+        filing_module,
+        "_pdfplumber_text",
+        lambda content: (_ for _ in ()).throw(KeyError("/Contents")),
+    )
+    monkeypatch.setattr(
+        filing_module,
+        "_pymupdf_text",
+        lambda content: (_ for _ in ()).throw(IndexError("list index out of range")),
+    )
+
+    with pytest.raises(ValueError, match="official filing has no extractable text layer"):
+        extract_pdf_text(b"%PDF-all-engines-broken")
+
+
 def test_three_line_spaced_explicit_wanyuan_unit_is_normalized_to_cny():
     text = """
     单 位 ：
@@ -874,21 +943,43 @@ def test_cninfo_static_403_uses_only_official_https_download_fallback():
     assert len(downloaded.sha256) == 64
 
 
-def test_non_cninfo_or_non_403_download_failure_does_not_substitute_source():
+def test_cninfo_double_404_is_explicit_public_source_data_gap_without_substitution():
     calls: list[str] = []
 
     def opener(request, timeout):
         calls.append(request.full_url)
         raise HTTPError(request.full_url, 404, "Not Found", hdrs=None, fp=None)
 
-    with pytest.raises(HTTPError):
-        download_official_document(
-            "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF",
-            opener=opener,
-        )
+    original = "https://static.cninfo.com.cn/finalpage/2024-08-29/1221028605.PDF"
+    with pytest.raises(
+        ValueError,
+        match="immutable attachment unavailable from exact CNINFO endpoints",
+    ):
+        download_official_document(original, opener=opener)
+
     assert calls == [
-        "https://static.cninfo.com.cn/finalpage/2026-09-16/1225568832.PDF"
+        original,
+        (
+            "https://www.cninfo.com.cn/new/announcement/download"
+            "?bulletinId=1221028605&announceTime=2024-08-29"
+        ),
     ]
+
+
+def test_non_cninfo_404_still_fails_closed_without_source_substitution():
+    calls: list[str] = []
+
+    def opener(request, timeout):
+        calls.append(request.full_url)
+        raise HTTPError(request.full_url, 404, "Not Found", hdrs=None, fp=None)
+
+    original = (
+        "https://www.sse.com.cn/disclosure/listedinfo/announcement/c/new/"
+        "2026-09-16/600000_test.pdf"
+    )
+    with pytest.raises(HTTPError):
+        download_official_document(original, opener=opener)
+    assert calls == [original]
 
 
 def test_cninfo_fallback_retries_transient_transport_failure_only():
