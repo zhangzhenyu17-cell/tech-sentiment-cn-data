@@ -345,6 +345,13 @@
         "automatic_triggers_allowed": false,
         "necessity": "Materialize direct consolidated CN-GAAP balance-sheet PIT primitives for the already-frozen 629-entity Decision Chain scope, preserving raw public facts and provenance without private operating/financing semantics.",
         "research_boundary": "OUTCOME_BLIND_PUBLIC_BALANCE_SHEET_PRIMITIVES_ONLY_NO_PRIVATE_REFORMULATION_NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
+      },
+      {
+        "path": ".github/workflows/investment-decision-nonrecurring-disclosure-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": false,
+        "necessity": "Materialize issuer-explicit non-recurring disclosure table rows for the already-frozen 629-entity Decision Chain scope, preserving raw public row identities and provenance without private core/unusual classification.",
+        "research_boundary": "OUTCOME_BLIND_PUBLIC_EXPLICIT_NONRECURRING_DISCLOSURE_ONLY_NO_PRIVATE_CLASSIFICATION_NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
       }
     ]
   }

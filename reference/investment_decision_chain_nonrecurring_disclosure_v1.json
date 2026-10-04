@@ -1,0 +1,89 @@
+{
+  "contract_id": "INVESTMENT_DECISION_CHAIN_NONRECURRING_DISCLOSURE_V1",
+  "contract_version": 1,
+  "status": "FROZEN_OUTCOME_BLIND_PUBLIC_PIT_EXPLICIT_NONRECURRING_DISCLOSURE_CAPTURE",
+  "decision_date": "2026-09-30",
+  "scope": {
+    "path": "data/reference/investment_decision_chain_v1_driver_scope_2026-09-30.csv",
+    "symbol_count": 629,
+    "sha256": "32f9f8693b8c8a28b11172adb828bb1f055c429c66385fa50d1957882e9ff763",
+    "new_universe_allowed": false,
+    "new_domain_allowed": false,
+    "new_benchmark_allowed": false
+  },
+  "parser": {
+    "parser_version": "official-filing-nonrecurring-disclosure-v2-sse-szse-regulatory-table",
+    "fact_types": [
+      "NR_NON_CURRENT_ASSET_DISPOSAL",
+      "NR_GOVERNMENT_GRANT",
+      "NR_FINANCIAL_ASSET_FAIR_VALUE_AND_DISPOSAL",
+      "NR_NONFINANCIAL_FUND_OCCUPATION_FEE",
+      "NR_ENTRUSTED_INVESTMENT_OR_ASSET_MANAGEMENT",
+      "NR_EXTERNAL_ENTRUSTED_LOAN",
+      "NR_FORCE_MAJEURE_ASSET_LOSS",
+      "NR_SEPARATELY_TESTED_RECEIVABLE_IMPAIRMENT_REVERSAL",
+      "NR_BARGAIN_PURCHASE_GAIN",
+      "NR_COMMON_CONTROL_COMBINATION_PRECOMBINATION_PROFIT",
+      "NR_NONMONETARY_ASSET_EXCHANGE",
+      "NR_DEBT_RESTRUCTURING",
+      "NR_DISCONTINUATION_ONE_OFF_COST",
+      "NR_LAW_ACCOUNTING_CHANGE_ONE_OFF_EFFECT",
+      "NR_CANCEL_MODIFY_EQUITY_INCENTIVE_ONE_OFF_SHARE_PAYMENT",
+      "NR_CASH_SETTLED_SHARE_PAYMENT_FAIR_VALUE_CHANGE",
+      "NR_INVESTMENT_PROPERTY_FAIR_VALUE_CHANGE",
+      "NR_MANIFESTLY_UNFAIR_TRANSACTION_GAIN",
+      "NR_NONCORE_CONTINGENCY_GAIN_LOSS",
+      "NR_ENTRUSTED_OPERATION_MANAGEMENT_FEE",
+      "NR_OTHER_NON_OPERATING_INCOME_EXPENSE",
+      "NR_OTHER_DEFINED_ITEM",
+      "NR_INCOME_TAX_EFFECT",
+      "NR_MINORITY_INTEREST_EFFECT_AFTER_TAX",
+      "NR_REPORTED_NET_TOTAL"
+    ],
+    "fact_type_count": 25,
+    "raw_explicit_disclosure_rows_only": true,
+    "private_core_unusual_classification_included": false,
+    "synthetic_unusual_aggregate_included": false,
+    "missing_values_zero_imputed": false
+  },
+  "pilot": {
+    "symbols": [
+      "000001",
+      "300750",
+      "600276",
+      "600519",
+      "600893",
+      "688001",
+      "688041"
+    ],
+    "symbol_count": 7,
+    "representative_required_fact_types": [
+      "NR_REPORTED_NET_TOTAL",
+      "NR_INCOME_TAX_EFFECT",
+      "NR_NON_CURRENT_ASSET_DISPOSAL"
+    ],
+    "pass_rule": "NO_HARD_FAILURE_AND_AT_LEAST_ONE_VALID_ROW_FOR_EACH_REPRESENTATIVE_REQUIRED_FACT_TYPE_ACROSS_PILOT"
+  },
+  "execution": {
+    "workflow": ".github/workflows/investment-decision-nonrecurring-disclosure-v1.yml",
+    "workflow_dispatch_only": true,
+    "automatic_triggers_allowed": false,
+    "full_shards": 32,
+    "checkpointed": true
+  },
+  "authority": {
+    "historical_forward_outcome_read": false,
+    "prospective_forward_outcome_read": false,
+    "predictive_research_run": false,
+    "parameter_search": false,
+    "threshold_search": false,
+    "feature_or_subset_search": false,
+    "evidence_qualification_change": false,
+    "production_change": false,
+    "strategic_budget_change": false,
+    "target_weight_generation": false,
+    "portfolio_action": false,
+    "automatic_execution": false,
+    "trading_authority": false
+  }
+}

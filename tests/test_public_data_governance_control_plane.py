@@ -182,10 +182,25 @@ def test_external_patterns_are_adapted_without_runtime_dependencies() -> None:
             "NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
         ),
     }
+    assert by_path[".github/workflows/investment-decision-nonrecurring-disclosure-v1.yml"] == {
+        "path": ".github/workflows/investment-decision-nonrecurring-disclosure-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": False,
+        "necessity": (
+            "Materialize issuer-explicit non-recurring disclosure table rows for the "
+            "already-frozen 629-entity Decision Chain scope, preserving raw public row "
+            "identities and provenance without private core/unusual classification."
+        ),
+        "research_boundary": (
+            "OUTCOME_BLIND_PUBLIC_EXPLICIT_NONRECURRING_DISCLOSURE_ONLY_NO_PRIVATE_"
+            "CLASSIFICATION_NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
+        ),
+    }
     assert [entry for entry in allowlist if entry["path"] not in {
         ".github/workflows/cross-sector-price-refresh-v1.yml",
         ".github/workflows/cross-sector-fundamental-date-increment-v1.yml",
         ".github/workflows/investment-decision-accounting-balance-sheet-v1.yml",
+        ".github/workflows/investment-decision-nonrecurring-disclosure-v1.yml",
     }] == [
         {
             "path": ".github/workflows/cross-sector-current-fundamental-v1.yml",
