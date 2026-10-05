@@ -74,6 +74,7 @@ _SOFT_DATA_INSUFFICIENCY_MARKERS = (
     "decision-driver filing text does not contain an explicit table unit declaration",
     "official filing has no decision-driver primitives with locally proven CNY units",
     "official filing has no direct consolidated balance-sheet primitives with locally proven CNY units",
+    "official filing has no consolidated balance-sheet row evidence with locally proven CNY units",
     "official filing has no explicit non-recurring disclosure primitives with locally proven CNY units",
     "official filing non-recurring disclosure table lacks an explicit amount unit",
 )

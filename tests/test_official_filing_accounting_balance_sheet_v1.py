@@ -6,8 +6,11 @@ import pytest
 from tech_sentiment.official_filing_accounting_balance_sheet_v1 import (
     ACCOUNTING_BALANCE_SHEET_FACT_LABELS,
     ACCOUNTING_BALANCE_SHEET_PARSER_VERSION,
+    ACCOUNTING_BALANCE_SHEET_ROW_EVIDENCE_PARSER_VERSION,
     build_accounting_balance_sheet_fact_rows,
+    build_accounting_balance_sheet_row_evidence_rows,
     extract_accounting_balance_sheet_facts,
+    extract_accounting_balance_sheet_row_evidence,
 )
 
 
@@ -146,3 +149,77 @@ def test_rows_preserve_pit_and_parser_identity() -> None:
     assert rows["unit"].eq("CNY").all()
     assert rows["period_end"].eq(pd.Timestamp("2025-06-30")).all()
     assert rows["evidence_available_date"].eq(pd.Timestamp("2025-08-22")).all()
+
+
+def test_row_evidence_preserves_numeric_source_cell_without_private_semantics() -> None:
+    evidence = extract_accounting_balance_sheet_row_evidence(_text())
+    cash = evidence["MONETARY_FUNDS"]
+    assert cash["source_row_label"] == "货币资金"
+    assert cash["current_cell_kind"] == "NUMERIC"
+    assert cash["current_value_cny"] == pytest.approx(123_450_000.0)
+    assert cash["zero_interpretation_applied"] is False
+    assert cash["private_classification_applied"] is False
+    assert len(cash["source_row_sha256"]) == 64
+
+
+def test_row_evidence_records_position_proven_dash_but_never_turns_it_into_zero() -> None:
+    text = """
+    2025年半年度报告
+    合并资产负债表
+    单位：人民币万元
+    项目 期末余额 期初余额
+    货币资金 - 100
+    短期借款 20 10
+    """
+    evidence = extract_accounting_balance_sheet_row_evidence(text)
+    cash = evidence["MONETARY_FUNDS"]
+    assert cash["row_layout_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN"
+    assert cash["current_cell_kind"] == "DASH"
+    assert cash["current_cell_token"] == "-"
+    assert cash["current_value_cny"] is None
+    assert cash["prior_cell_kind"] == "NUMERIC"
+    assert cash["zero_interpretation_applied"] is False
+    facts = extract_accounting_balance_sheet_facts(text)
+    assert "MONETARY_FUNDS" not in facts
+
+
+def test_row_evidence_with_note_column_requires_provable_note_or_amount_layout() -> None:
+    text = """
+    2025年半年度报告
+    合并资产负债表
+    单位：人民币万元
+    项目 附注 期末余额 期初余额
+    货币资金 1 - 100
+    应收账款 - 50
+    """
+    evidence = extract_accounting_balance_sheet_row_evidence(text)
+    cash = evidence["MONETARY_FUNDS"]
+    assert cash["row_layout_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE"
+    assert cash["note_reference"] == "1"
+    assert cash["current_cell_kind"] == "DASH"
+    receivables = evidence["ACCOUNTS_RECEIVABLE"]
+    assert receivables["row_layout_state"] == "ROW_PRESENT_LAYOUT_AMBIGUOUS"
+    assert receivables["current_cell_kind"] is None
+    assert receivables["current_value_cny"] is None
+
+
+def test_row_evidence_rows_preserve_document_provenance_and_parser_identity() -> None:
+    rows = build_accounting_balance_sheet_row_evidence_rows(
+        entity_id="600276.SH",
+        title="恒瑞医药2025年半年度报告",
+        evidence_available_date="2025-08-22",
+        publication_timestamp="2025-08-21T18:00:00+08:00",
+        source_identity="CNINFO_OFFICIAL_DISCLOSURE",
+        provider="cninfo",
+        document_id="doc-1",
+        revision_id="rev-1",
+        document_url="https://static.cninfo.com.cn/doc.pdf",
+        document_sha256="a" * 64,
+        text=_text(),
+    )
+    assert not rows.empty
+    assert rows["parser_version"].eq(ACCOUNTING_BALANCE_SHEET_ROW_EVIDENCE_PARSER_VERSION).all()
+    assert rows["document_sha256"].eq("a" * 64).all()
+    assert rows["period_end"].eq(pd.Timestamp("2025-06-30")).all()
+    assert rows["zero_interpretation_applied"].eq(False).all()
+    assert rows["private_classification_applied"].eq(False).all()

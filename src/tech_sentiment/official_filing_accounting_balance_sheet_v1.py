@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Iterable, Mapping
+import hashlib
+import re
+from typing import Any, Iterable, Mapping
 
 import pandas as pd
 
@@ -8,17 +10,26 @@ from .official_filing_extended_pit import (
     _compact_line,
     _direct_amount_value_after_label,
     _explicit_statement_unit,
+    _ordered_numeric_or_dash_cells,
+    _physical_line_starts_label,
     _statement_boundaries,
     _statement_header_has_note_column,
+    _target_logical_row_window,
 )
 from .official_filing_facts import (
     FILING_FACT_COLUMNS,
+    _AMOUNT_UNIT_SCALE,
     _normalize_text_lines,
+    _parse_numeric_token,
+    _wrapped_label_match,
     filing_period_end_from_title,
 )
 
 ACCOUNTING_BALANCE_SHEET_PARSER_VERSION = (
     "official-filing-accounting-balance-sheet-v1-direct-consolidated"
+)
+ACCOUNTING_BALANCE_SHEET_ROW_EVIDENCE_PARSER_VERSION = (
+    "official-filing-accounting-balance-sheet-row-evidence-v1"
 )
 
 # Direct consolidated balance-sheet observations only. The names below are
@@ -110,6 +121,165 @@ def _direct_consolidated_balance_sheet_value(
     return None
 
 
+def _direct_consolidated_balance_sheet_row_evidence(
+    lines: list[str],
+    labels: Iterable[str],
+) -> dict[str, Any] | None:
+    """Capture source-row cell evidence without interpreting dash/blank as zero.
+
+    The row must be in an explicitly unit-scoped consolidated balance sheet.
+    Current/prior cell ownership is recorded only when the same column-layout
+    constraints used by the direct numeric parser are provable.  A DASH cell is
+    preserved as a source token and never converted to a numeric value.
+    """
+
+    label_options = tuple(str(label) for label in labels)
+    boundaries = _statement_boundaries(lines)
+    for offset, (start, token) in enumerate(boundaries):
+        if token != "资产负债表":
+            continue
+        if "合并资产负债表" not in _compact_line(lines[start]):
+            continue
+        end = boundaries[offset + 1][0] if offset + 1 < len(boundaries) else len(lines)
+        unit = _explicit_statement_unit(lines, start=start, end=end)
+        if unit is None:
+            continue
+        scale = _AMOUNT_UNIT_SCALE.get(str(unit))
+        if scale is None:
+            continue
+        has_note_column = _statement_header_has_note_column(lines, start=start, end=end)
+        block = lines[start:end]
+        for index in range(len(block)):
+            if not _physical_line_starts_label(block[index], label_options):
+                continue
+            logical_row = _target_logical_row_window(block, index, label_options)
+            label_match = _wrapped_label_match(logical_row, label_options)
+            if label_match is None:
+                continue
+            compact_row = re.sub(r"\s+", "", logical_row)
+            matched_label = next(
+                (label for label in label_options if re.sub(r"\s+", "", label) in compact_row),
+                label_options[0],
+            )
+            suffix = logical_row[label_match.end() :]
+            cells = _ordered_numeric_or_dash_cells(suffix)
+            note_reference: str | None = None
+            amount_cells: list[tuple[int, str, str]] | None = None
+            layout_state = "ROW_PRESENT_LAYOUT_AMBIGUOUS"
+
+            if has_note_column:
+                if (
+                    len(cells) == 3
+                    and cells[0][1] == "NUMERIC"
+                    and re.fullmatch(r"\d{1,4}", cells[0][2].strip()) is not None
+                ):
+                    note_reference = cells[0][2].strip()
+                    amount_cells = cells[1:]
+                    layout_state = "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE"
+                elif (
+                    len(cells) == 2
+                    and cells[0][1] == "NUMERIC"
+                    and re.fullmatch(r"\d{1,4}", cells[0][2].strip()) is None
+                ):
+                    amount_cells = cells
+                    layout_state = "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_BLANK"
+            else:
+                if len(cells) == 2:
+                    amount_cells = cells
+                    layout_state = "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN"
+
+            current_kind = None
+            current_token = None
+            current_value_cny = None
+            prior_kind = None
+            prior_token = None
+            if amount_cells is not None and len(amount_cells) == 2:
+                current_kind = amount_cells[0][1]
+                current_token = amount_cells[0][2]
+                prior_kind = amount_cells[1][1]
+                prior_token = amount_cells[1][2]
+                if current_kind == "NUMERIC":
+                    try:
+                        parsed = _parse_numeric_token(current_token)
+                    except ValueError:
+                        layout_state = "ROW_PRESENT_CURRENT_NUMERIC_TOKEN_INVALID"
+                    else:
+                        if pd.notna(parsed):
+                            current_value_cny = float(parsed) * float(scale)
+            return {
+                "source_row_label": matched_label,
+                "statement_unit": str(unit),
+                "statement_has_note_column": bool(has_note_column),
+                "note_reference": note_reference,
+                "row_layout_state": layout_state,
+                "current_cell_kind": current_kind,
+                "current_cell_token": current_token,
+                "current_value_cny": current_value_cny,
+                "prior_cell_kind": prior_kind,
+                "prior_cell_token": prior_token,
+                "source_row_sha256": hashlib.sha256(logical_row.encode("utf-8")).hexdigest(),
+                "zero_interpretation_applied": False,
+                "private_classification_applied": False,
+            }
+    return None
+
+
+def extract_accounting_balance_sheet_row_evidence(text: str) -> dict[str, dict[str, Any]]:
+    lines = _normalize_text_lines(text)
+    evidence: dict[str, dict[str, Any]] = {}
+    for fact_type, labels in ACCOUNTING_BALANCE_SHEET_FACT_LABELS.items():
+        row = _direct_consolidated_balance_sheet_row_evidence(lines, labels)
+        if row is not None:
+            evidence[fact_type] = row
+    if not evidence:
+        raise ValueError(
+            "official filing has no consolidated balance-sheet row evidence "
+            "with locally proven CNY units"
+        )
+    return evidence
+
+
+def build_accounting_balance_sheet_row_evidence_rows(
+    *,
+    entity_id: str,
+    title: str,
+    evidence_available_date: object,
+    publication_timestamp: object,
+    source_identity: str,
+    provider: str,
+    document_id: str,
+    revision_id: str,
+    document_url: str,
+    document_sha256: str,
+    text: str,
+) -> pd.DataFrame:
+    period_end = filing_period_end_from_title(title)
+    evidence = extract_accounting_balance_sheet_row_evidence(text)
+    publication = pd.Timestamp(pd.to_datetime(publication_timestamp, errors="raise"))
+    rows: list[dict[str, object]] = []
+    for fact_type, row in sorted(evidence.items()):
+        rows.append(
+            {
+                "entity_id": str(entity_id),
+                "period_end": period_end,
+                "fact_type": fact_type,
+                "value": row["current_value_cny"],
+                "unit": "CNY",
+                "evidence_available_date": pd.Timestamp(evidence_available_date).normalize(),
+                "publication_timestamp": publication.isoformat(),
+                "source_identity": str(source_identity),
+                "provider": str(provider),
+                "document_id": str(document_id),
+                "revision_id": str(revision_id),
+                "document_url": str(document_url),
+                "document_sha256": str(document_sha256),
+                "parser_version": ACCOUNTING_BALANCE_SHEET_ROW_EVIDENCE_PARSER_VERSION,
+                **row,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def extract_accounting_balance_sheet_facts(text: str) -> dict[str, float]:
     lines = _normalize_text_lines(text)
     facts: dict[str, float] = {}
@@ -170,6 +340,9 @@ def build_accounting_balance_sheet_fact_rows(
 __all__ = [
     "ACCOUNTING_BALANCE_SHEET_FACT_LABELS",
     "ACCOUNTING_BALANCE_SHEET_PARSER_VERSION",
+    "ACCOUNTING_BALANCE_SHEET_ROW_EVIDENCE_PARSER_VERSION",
     "build_accounting_balance_sheet_fact_rows",
+    "build_accounting_balance_sheet_row_evidence_rows",
     "extract_accounting_balance_sheet_facts",
+    "extract_accounting_balance_sheet_row_evidence",
 ]
