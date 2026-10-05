@@ -279,6 +279,16 @@
       "registration_state": "NEW_MANUAL_ONLY_PUBLIC_MATERIALIZATION_EXPLICITLY_ALLOWLISTED",
       "public_workflow_success_grants_private_qualification": false,
       "may_promote_evidence": false
+    },
+    {
+      "product_id": "INVESTMENT_DECISION_ACCOUNTING_BALANCE_SHEET_ROW_EVIDENCE_V1",
+      "contract_path": "reference/investment_decision_chain_accounting_balance_sheet_row_evidence_v1.json",
+      "producer_path": ".github/workflows/investment-decision-accounting-balance-sheet-row-evidence-v1.yml",
+      "logical_dataset": "frozen 629-entity public balance-sheet source-row and cell evidence",
+      "private_consumer_boundary": "Raw source-row/cell evidence only; private zero-proof qualification and operating/financing classification require separate private intake and remain fail-closed",
+      "registration_state": "NEW_MANUAL_ONLY_PUBLIC_MATERIALIZATION_EXPLICITLY_ALLOWLISTED",
+      "public_workflow_success_grants_private_qualification": false,
+      "may_promote_evidence": false
     }
   ],
   "ci_enforcement": {
@@ -352,6 +362,13 @@
         "automatic_triggers_allowed": false,
         "necessity": "Materialize issuer-explicit non-recurring disclosure table rows for the already-frozen 629-entity Decision Chain scope, preserving raw public row identities and provenance without private core/unusual classification.",
         "research_boundary": "OUTCOME_BLIND_PUBLIC_EXPLICIT_NONRECURRING_DISCLOSURE_ONLY_NO_PRIVATE_CLASSIFICATION_NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
+      },
+      {
+        "path": ".github/workflows/investment-decision-accounting-balance-sheet-row-evidence-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": false,
+        "necessity": "Capture source-row and current/prior cell evidence for the already-frozen 629-entity balance-sheet primitive scope so private classification proofs can be source-backed without interpreting missing or dash cells as zero.",
+        "research_boundary": "OUTCOME_BLIND_PUBLIC_BALANCE_SHEET_ROW_EVIDENCE_ONLY_NO_ZERO_INTERPRETATION_NO_PRIVATE_CLASSIFICATION_NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
       }
     ]
   }

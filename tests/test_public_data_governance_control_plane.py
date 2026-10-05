@@ -196,11 +196,26 @@ def test_external_patterns_are_adapted_without_runtime_dependencies() -> None:
             "CLASSIFICATION_NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
         ),
     }
+    assert by_path[".github/workflows/investment-decision-accounting-balance-sheet-row-evidence-v1.yml"] == {
+        "path": ".github/workflows/investment-decision-accounting-balance-sheet-row-evidence-v1.yml",
+        "trigger_policy": "WORKFLOW_DISPATCH_ONLY",
+        "automatic_triggers_allowed": False,
+        "necessity": (
+            "Capture source-row and current/prior cell evidence for the already-frozen "
+            "629-entity balance-sheet primitive scope so private classification proofs can "
+            "be source-backed without interpreting missing or dash cells as zero."
+        ),
+        "research_boundary": (
+            "OUTCOME_BLIND_PUBLIC_BALANCE_SHEET_ROW_EVIDENCE_ONLY_NO_ZERO_INTERPRETATION_"
+            "NO_PRIVATE_CLASSIFICATION_NO_EVIDENCE_PROMOTION_NO_TARGET_WEIGHT"
+        ),
+    }
     assert [entry for entry in allowlist if entry["path"] not in {
         ".github/workflows/cross-sector-price-refresh-v1.yml",
         ".github/workflows/cross-sector-fundamental-date-increment-v1.yml",
         ".github/workflows/investment-decision-accounting-balance-sheet-v1.yml",
         ".github/workflows/investment-decision-nonrecurring-disclosure-v1.yml",
+        ".github/workflows/investment-decision-accounting-balance-sheet-row-evidence-v1.yml",
     }] == [
         {
             "path": ".github/workflows/cross-sector-current-fundamental-v1.yml",
