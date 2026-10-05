@@ -304,9 +304,37 @@ jobs:
               fi
             done
           fi
+          HANDOFF_READY=false
+          HANDOFF_NAME="$RAW_TAG"
+          MATCH_COUNT=0
           if [ "$COMPLETE" = "true" ]; then
-            echo "Complete immutable public raw release already exists: $RAW_TAG"
+            while IFS=$'\t' read -r RUN_ID CONCLUSION; do
+              [ -n "$RUN_ID" ] || continue
+              [ "$CONCLUSION" = "success" ] || continue
+              ARTIFACT_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?name=${HANDOFF_NAME}&per_page=100")"
+              while IFS=$'\t' read -r EXPIRED DIGEST; do
+                [ "$EXPIRED" = "false" ] || continue
+                case "$DIGEST" in
+                  sha256:*) MATCH_COUNT=$((MATCH_COUNT + 1)) ;;
+                esac
+              done < <(jq -r '.artifacts[]? | [.expired, (.digest // "")] | @tsv' <<<"$ARTIFACT_JSON")
+            done < <(
+              gh run list \
+                --workflow prospective-context-raw-preopen-v2.yml \
+                --limit 100 \
+                --json databaseId,conclusion \
+                --jq '.[] | [.databaseId, (.conclusion // "")] | @tsv'
+            )
+            if [ "$MATCH_COUNT" -eq 1 ]; then
+              HANDOFF_READY=true
+            fi
+          fi
+          if [ "$COMPLETE" = "true" ] && [ "$HANDOFF_READY" = "true" ]; then
+            echo "Complete immutable public raw release and unique successful SHA-256 handoff already exist: $RAW_TAG"
             exit 0
+          fi
+          if [ "$COMPLETE" = "true" ]; then
+            echo "PUBLIC_RAW_HANDOFF_INCOMPLETE: durable release exists but exact successful unique SHA-256 handoff is missing; recovery dispatch remains eligible."
           fi
 
           ACTIVE="$(
