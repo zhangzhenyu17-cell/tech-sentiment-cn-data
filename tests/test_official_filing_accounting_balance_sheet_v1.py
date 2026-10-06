@@ -499,3 +499,66 @@ def test_layout_proof_skips_balance_sheet_change_analysis_and_uses_exact_stateme
     proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="NOTES_RECEIVABLE")
     assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_POSITION_PROVEN"
     assert proof["current_value_cny"] == pytest.approx(10.0)
+
+
+def test_layout_proof_strips_delimited_parenthesized_note_reference() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    2025年12月31日
+    单位：元 币种：人民币
+    项目 附注 2025年12月31日 2024年12月31日
+    货币资金 七、（1） 14,557,574,646.66 10,978,262,688.04
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="MONETARY_FUNDS")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE"
+    assert proof["note_reference"] == "七、(1)"
+    assert proof["current_value_cny"] == pytest.approx(14_557_574_646.66)
+
+
+def test_layout_proof_uses_common_shift_to_prove_blank_note_two_amount_cells() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    2025年12月31日
+    单位：元 币种：人民币
+           项目                 附注          期末余额                  期初余额
+      开发支出                                               0                         0
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="DEVELOPMENT_EXPENDITURE")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_LARGE_GAP_PROVEN_NOTE_BLANK"
+    assert proof["current_cell_token"] == "0"
+    assert proof["prior_cell_token"] == "0"
+
+
+def test_layout_proof_recovers_two_spaced_digit_amount_chunks_only_with_large_gaps() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    2025年12月31日
+    单位：元
+    项目                                      期末余额                         期初余额
+    货币资金        1  0,  07  4,  02  8,  50  4.  63        9,249,724,836.53
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="MONETARY_FUNDS")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_LARGE_GAP_PROVEN"
+    assert proof["current_value_cny"] == pytest.approx(10_074_028_504.63)
+    assert proof["prior_cell_token"] == "9,249,724,836.53"
+
+
+def test_layout_proof_uses_partial_second_date_anchor_when_day_suffix_wraps() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    2025年12月31日
+    单位：元 币种：人民币
+                      项目                       附注    2025 年 12月  31日    2024年 12 月 31
+                                                                         日
+      开发支出                                                                       5,728,094.32
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="DEVELOPMENT_EXPENDITURE")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_POSITION_PROVEN"
+    assert proof["current_cell_kind"] == "BLANK"
+    assert proof["prior_cell_kind"] == "NUMERIC"
+    assert proof["prior_cell_token"] == "5,728,094.32"
+    assert proof["current_value_cny"] is None
