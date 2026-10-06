@@ -356,3 +356,54 @@ def test_layout_proof_does_not_positionally_treat_note_id_as_amount_when_note_an
     assert proof["current_cell_kind"] == "BLANK"
     assert proof["current_value_cny"] is None
     assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_accepts_chinese_parenthesized_note_reference_without_using_it_as_amount() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    单位：人民币元
+    项目 附注 期末余额 期初余额
+    货币资金 七（1） 31,597,464,469.62 32,830,782,585.55
+    负债合计 100 90
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="MONETARY_FUNDS")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE"
+    assert proof["note_reference"] == "七(1)"
+    assert proof["current_cell_token"] == "31,597,464,469.62"
+    assert proof["prior_cell_token"] == "32,830,782,585.55"
+    assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_accepts_chinese_dot_note_reference_with_two_amount_cells() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    单位：人民币元
+    项目 附注 期末余额 期初余额
+    应付债券 七.46 0 0
+    负债合计 100 90
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="BONDS_PAYABLE")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE"
+    assert proof["note_reference"] == "七.46"
+    assert proof["current_cell_kind"] == "NUMERIC"
+    assert proof["current_value_cny"] == 0
+    assert proof["prior_cell_kind"] == "NUMERIC"
+    assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_keeps_textual_note_plus_one_amount_unresolved() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    单位：人民币元
+    项目 附注 期末余额
+    期初余额
+    应付债券 七.46 500
+    负债合计 1000 900
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="BONDS_PAYABLE")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED"
+    assert proof["current_value_cny"] is None
+    assert proof["zero_interpretation_applied"] is False
