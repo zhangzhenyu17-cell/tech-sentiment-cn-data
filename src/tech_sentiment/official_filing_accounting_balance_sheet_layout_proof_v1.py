@@ -27,7 +27,7 @@ from .official_filing_facts import (
 
 
 ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION = (
-    "official-filing-accounting-balance-sheet-layout-proof-v3-note-reference-variants"
+    "official-filing-accounting-balance-sheet-layout-proof-v4-note-prefix-and-title-safe"
 )
 
 _CURRENT_HEADER_TOKENS = (
@@ -48,7 +48,7 @@ _PRIOR_HEADER_TOKENS = (
 _BALANCE_SHEET_DATE_RE = re.compile(r"20\d{2}年\d{1,2}月\d{1,2}日")
 _BALANCE_SHEET_SPACED_DATE_RE = re.compile(r"20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日")
 _TEXTUAL_NOTE_REFERENCE_RE = re.compile(
-    r"^\s*(?P<note>[一二三四五六七八九十百]+(?:[、.．]\s*\d{1,4}|(?:[（(]\s*\d{1,4}\s*[）)])+))"
+    r"^\s*(?P<note>[一二三四五六七八九十百]+\s*(?:[-－–—、.．]\s*\d{1,4}|(?:[（(]\s*\d{1,4}\s*[）)])+))"
 )
 _PAREN_NOTE_TOKEN_RE = re.compile(r"^[（(]\s*(?P<number>\d{1,4})\s*[）)]$")
 _PAREN_NOTE_FIND_RE = re.compile(r"[（(]\s*(?P<number>\d{1,4})\s*[）)]")
@@ -59,6 +59,20 @@ def _explicit_textual_note_reference(text: str) -> str | None:
     if match is None:
         return None
     return re.sub(r"\s+", "", match.group("note"))
+
+
+def _strip_explicit_textual_note_reference(text: str) -> tuple[str | None, str]:
+    match = _TEXTUAL_NOTE_REFERENCE_RE.match(str(text))
+    if match is None:
+        return None, str(text)
+    note = re.sub(r"\s+", "", match.group("note"))
+    return note, str(text)[match.end():]
+
+
+def _is_exact_consolidated_balance_sheet_title(line: str) -> bool:
+    compact = _compact_line(line)
+    compact = re.sub(r"^(?:\d+|[一二三四五六七八九十百]+)[、.．]", "", compact, count=1)
+    return compact == "合并资产负债表"
 
 
 def _parenthesized_note_token_sequence(note_reference: str | None) -> list[str]:
@@ -231,17 +245,6 @@ def _classify_cells(
 
     if textual_note_reference is not None:
         amount_cells = list(cells)
-        expected_note_tokens = _parenthesized_note_token_sequence(textual_note_reference)
-        if expected_note_tokens:
-            if len(amount_cells) < len(expected_note_tokens):
-                return ("ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED", None, None)
-            observed = [
-                _normalized_parenthesized_token(cell[2])
-                for cell in amount_cells[: len(expected_note_tokens)]
-            ]
-            if observed != expected_note_tokens:
-                return ("ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED", None, None)
-            amount_cells = amount_cells[len(expected_note_tokens) :]
         if len(amount_cells) == 0:
             return (
                 "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_ONLY_AMOUNTS_BLANK",
@@ -303,7 +306,7 @@ def _layout_evidence_for_labels(
     for offset, (start, token) in enumerate(boundaries):
         if token != "资产负债表":
             continue
-        if "合并资产负债表" not in _compact_line(lines[start]):
+        if not _is_exact_consolidated_balance_sheet_title(lines[start]):
             continue
         end = boundaries[offset + 1][0] if offset + 1 < len(boundaries) else len(lines)
         unit = _explicit_statement_unit(lines, start=start, end=end)
@@ -335,12 +338,11 @@ def _layout_evidence_for_labels(
                 label_options[0],
             )
             suffix = logical_row[label_match.end() :]
-            cells = _ordered_numeric_or_dash_cells(suffix)
-            textual_note_reference = (
-                _explicit_textual_note_reference(suffix)
-                if has_note_column
-                else None
-            )
+            textual_note_reference = None
+            cell_suffix = suffix
+            if has_note_column:
+                textual_note_reference, cell_suffix = _strip_explicit_textual_note_reference(suffix)
+            cells = _ordered_numeric_or_dash_cells(cell_suffix)
             positional = None
             if amount_columns_declared and column_anchors is not None and logical_row == block[index]:
                 physical_cells = _ordered_numeric_or_dash_cells(block[index])

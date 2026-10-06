@@ -451,3 +451,51 @@ def test_bulk_layout_proof_matches_single_fact_semantics() -> None:
         assert bulk[fact_type] == extract_accounting_balance_sheet_layout_proof(
             _text(), fact_type=fact_type
         )
+
+
+def test_layout_proof_strips_hyphenated_chinese_note_reference_before_amount_cells() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    2025 年 12 月 31 日
+    单位：元 币种：人民币
+    项目 附注 2025年12月31日 2024年12月31日
+    货币资金 七-1 6,367,991,239.76 8,667,063,566.99
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="MONETARY_FUNDS")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE"
+    assert proof["note_reference"] == "七-1"
+    assert proof["current_value_cny"] == pytest.approx(6_367_991_239.76)
+
+
+def test_layout_proof_strips_parenthesized_chinese_note_reference_before_amount_cells() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    2025 年 12 月 31 日
+    单位：元 币种：人民币
+    项目 附注 2025年12月31日 2024年12月31日
+    货币资金 七 (1) 17,140,010,938.17 13,255,671,486.27
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="MONETARY_FUNDS")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE"
+    assert proof["note_reference"] == "七(1)"
+    assert proof["current_value_cny"] == pytest.approx(17_140_010_938.17)
+
+
+def test_layout_proof_skips_balance_sheet_change_analysis_and_uses_exact_statement() -> None:
+    text = """
+    1、合并资产负债表项目
+    单位：元
+    项目 2026年6月30日 2025年12月31日 变动金额 变动比例 变动说明
+    应收票据 - 58,052,380.37 -58,052,380.37 -100.00%
+
+    1、合并资产负债表
+    2026年6月30日
+    单位：元
+    项目 期末余额 期初余额
+    应收票据 10 20
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="NOTES_RECEIVABLE")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_POSITION_PROVEN"
+    assert proof["current_value_cny"] == pytest.approx(10.0)
