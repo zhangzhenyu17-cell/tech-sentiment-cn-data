@@ -20,7 +20,224 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  sealed_handoff_recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      sealed_complete: ${{ steps.detect.outputs.sealed_complete }}
+    steps:
+      - name: Detect complete sealed exact public raw release
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MARKET_SESSION_DATE: ${{ inputs.market_session_date }}
+          DECISION_DATE: ${{ inputs.decision_date }}
+        run: |
+          set -euo pipefail
+          TAG="prospective-context-raw-preopen-v2-${MARKET_SESSION_DATE}-for-${DECISION_DATE}"
+          COMPLETE=false
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            ASSETS="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
+            COMPLETE=true
+            for REQUIRED in "$TAG.tar.gz" "$TAG.sha256" "$TAG.manifest.json"; do
+              if ! grep -Fxq "$REQUIRED" <<<"$ASSETS"; then
+                COMPLETE=false
+                echo "Sealed exact raw release is incomplete: missing $REQUIRED"
+              fi
+            done
+          fi
+          echo "sealed_complete=$COMPLETE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ "$COMPLETE" = "true" ]; then
+            echo "Complete sealed exact public raw release exists; use handoff-only recovery and do not rebuild immutable raw: $TAG"
+          else
+            echo "No complete sealed exact public raw release; normal Formal V3 assembly remains eligible: $TAG"
+          fi
+
+      - name: Restore and validate sealed exact public raw handoff
+        if: steps.detect.outputs.sealed_complete == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MARKET_SESSION_DATE: ${{ inputs.market_session_date }}
+          DECISION_DATE: ${{ inputs.decision_date }}
+          TAG: ${{ steps.detect.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/prospective_context_preopen_packages
+          gh release download "$TAG" \
+            --pattern "$TAG.tar.gz" \
+            --pattern "$TAG.sha256" \
+            --pattern "$TAG.manifest.json" \
+            --dir dist/prospective_context_preopen_packages
+
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import shutil
+          import tarfile
+          from datetime import datetime, time
+          from pathlib import Path, PurePosixPath
+          from zoneinfo import ZoneInfo
+
+          tag = os.environ["TAG"]
+          market_session_date = os.environ["MARKET_SESSION_DATE"]
+          decision_date = os.environ["DECISION_DATE"]
+          package_root = Path("dist/prospective_context_preopen_packages")
+          archive = package_root / f"{tag}.tar.gz"
+          checksum = package_root / f"{tag}.sha256"
+          manifest_path = package_root / f"{tag}.manifest.json"
+
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          expected_manifest = {
+              "release_tag": tag,
+              "market_session_date": market_session_date,
+              "decision_date": decision_date,
+              "formal_capture_contract": "prospective_capture_timing_v3",
+              "schema_version": "prospective-context-public-raw-preopen-package-v2",
+              "historical_replay_allowed": False,
+              "private_model_semantics_materialized": False,
+              "retroactive_evidence_qualification_allowed": False,
+          }
+          for key, expected in expected_manifest.items():
+              if manifest.get(key) != expected:
+                  raise SystemExit(f"SEALED_FORMAL_V3_MANIFEST_DRIFT: {key}={manifest.get(key)!r} expected={expected!r}")
+          if manifest.get("archive") != archive.name:
+              raise SystemExit("SEALED_FORMAL_V3_ARCHIVE_NAME_DRIFT")
+
+          checksum_parts = checksum.read_text(encoding="utf-8").strip().split()
+          if len(checksum_parts) != 2 or checksum_parts[1] != archive.name:
+              raise SystemExit("SEALED_FORMAL_V3_CHECKSUM_FORMAT_INVALID")
+          archive_sha = hashlib.sha256(archive.read_bytes()).hexdigest()
+          if checksum_parts[0] != archive_sha:
+              raise SystemExit("SEALED_FORMAL_V3_ARCHIVE_CHECKSUM_MISMATCH")
+          if manifest.get("archive_sha256") != archive_sha:
+              raise SystemExit("SEALED_FORMAL_V3_MANIFEST_ARCHIVE_SHA_MISMATCH")
+
+          zone = ZoneInfo("Asia/Shanghai")
+          decision = datetime.fromisoformat(decision_date).date()
+          artifact_deadline = datetime.combine(decision, time(9, 15), tzinfo=zone)
+          if datetime.now(zone) > artifact_deadline:
+              raise SystemExit("FORMAL_V3_HANDOFF_RECOVERY_DEADLINE_PASSED_0915")
+
+          extract_root = Path("sealed-extract")
+          shutil.rmtree(extract_root, ignore_errors=True)
+          extract_root.mkdir(parents=True)
+          with tarfile.open(archive, "r:gz") as tf:
+              members = tf.getmembers()
+              for member in members:
+                  p = PurePosixPath(member.name)
+                  if p.is_absolute() or ".." in p.parts or not p.parts or p.parts[0] != "prospective_context_raw":
+                      raise SystemExit(f"SEALED_FORMAL_V3_ARCHIVE_PATH_INVALID: {member.name}")
+                  if not (member.isdir() or member.isfile()):
+                      raise SystemExit(f"SEALED_FORMAL_V3_ARCHIVE_MEMBER_TYPE_INVALID: {member.name}")
+                  target = extract_root.joinpath(*p.parts)
+                  if member.isdir():
+                      target.mkdir(parents=True, exist_ok=True)
+                      continue
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  src = tf.extractfile(member)
+                  if src is None:
+                      raise SystemExit(f"SEALED_FORMAL_V3_ARCHIVE_MEMBER_UNREADABLE: {member.name}")
+                  target.write_bytes(src.read())
+
+          raw_root = extract_root / "prospective_context_raw"
+          receipt_path = raw_root / "PUBLIC_RAW_CONTEXT_RECEIPT.json"
+          if not receipt_path.is_file():
+              raise SystemExit("SEALED_FORMAL_V3_RECEIPT_MISSING")
+          receipt_bytes = receipt_path.read_bytes()
+          receipt_sha = hashlib.sha256(receipt_bytes).hexdigest()
+          if manifest.get("capture_receipt_sha256") != receipt_sha:
+              raise SystemExit("SEALED_FORMAL_V3_RECEIPT_SHA_MISMATCH")
+          receipt = json.loads(receipt_bytes)
+
+          expected_receipt = {
+              "operation_date": market_session_date,
+              "end_date": market_session_date,
+              "timing_mode": "FORMAL_V3",
+              "formal_capture_contract": "prospective_capture_timing_v3",
+              "historical_replay_allowed": False,
+              "retroactive_evidence_qualification_allowed": False,
+              "private_model_semantics_materialized": False,
+              "outcome_read": False,
+              "portfolio_or_holdings_data_included": False,
+              "status": "PUBLIC_RAW_FORWARD_CAPTURE_COMPLETE",
+          }
+          for key, expected in expected_receipt.items():
+              if receipt.get(key) != expected:
+                  raise SystemExit(f"SEALED_FORMAL_V3_RECEIPT_DRIFT: {key}={receipt.get(key)!r} expected={expected!r}")
+
+          timing = receipt.get("preopen_timing") or {}
+          if timing.get("market_session_date") != market_session_date or timing.get("decision_date") != decision_date:
+              raise SystemExit("SEALED_FORMAL_V3_PREOPEN_IDENTITY_DRIFT")
+          if timing.get("formal_artifact_deadline_asia_shanghai") != f"{decision_date}T09:15:00+08:00":
+              raise SystemExit("SEALED_FORMAL_V3_ARTIFACT_DEADLINE_DRIFT")
+          if timing.get("formal_source_cutoff_asia_shanghai") != f"{decision_date}T08:45:00+08:00":
+              raise SystemExit("SEALED_FORMAL_V3_SOURCE_CUTOFF_DRIFT")
+          if timing.get("first_eligible_execution_at") != f"{decision_date}T09:30:00+08:00":
+              raise SystemExit("SEALED_FORMAL_V3_FIRST_EXECUTION_DRIFT")
+          if timing.get("forward_outcomes_read") is not False:
+              raise SystemExit("SEALED_FORMAL_V3_FORWARD_OUTCOME_FLAG_DRIFT")
+
+          expected_sources = {"SSE_588000", "SZSE_159915", "SSE_TURNOVER", "SZSE_TURNOVER"}
+          sources = receipt.get("formal_v3_source_observations") or {}
+          if set(sources) != expected_sources:
+              raise SystemExit("SEALED_FORMAL_V3_SOURCE_SET_DRIFT")
+          cutoff = datetime.combine(decision, time(8, 45), tzinfo=zone)
+          for source, payload in sources.items():
+              if payload.get("observation_timestamp_semantics") != "SOURCE_FETCH_COMPLETION_TIME":
+                  raise SystemExit(f"SEALED_FORMAL_V3_SOURCE_TIMESTAMP_SEMANTICS_DRIFT: {source}")
+              observed = datetime.fromisoformat(str(payload.get("first_observed_at_asia_shanghai") or ""))
+              if observed.tzinfo is None or observed.astimezone(zone) > cutoff:
+                  raise SystemExit(f"SEALED_FORMAL_V3_SOURCE_AFTER_0845_CUTOFF: {source}")
+
+          listed = set()
+          for item in receipt.get("files") or []:
+              rel = Path(str(item.get("path") or ""))
+              if rel.is_absolute() or ".." in rel.parts or not rel.parts:
+                  raise SystemExit(f"SEALED_FORMAL_V3_RECEIPT_FILE_PATH_INVALID: {rel}")
+              path = raw_root / rel
+              if not path.is_file():
+                  raise SystemExit(f"SEALED_FORMAL_V3_RECEIPT_FILE_MISSING: {rel}")
+              data = path.read_bytes()
+              if len(data) != int(item.get("bytes")):
+                  raise SystemExit(f"SEALED_FORMAL_V3_RECEIPT_FILE_SIZE_MISMATCH: {rel}")
+              if hashlib.sha256(data).hexdigest() != item.get("sha256"):
+                  raise SystemExit(f"SEALED_FORMAL_V3_RECEIPT_FILE_SHA_MISMATCH: {rel}")
+              listed.add(rel.as_posix())
+          actual = {p.relative_to(raw_root).as_posix() for p in raw_root.rglob("*") if p.is_file()}
+          expected_actual = listed | {"PUBLIC_RAW_CONTEXT_RECEIPT.json"}
+          if actual != expected_actual:
+              raise SystemExit("SEALED_FORMAL_V3_ARCHIVE_FILE_SURFACE_DRIFT")
+
+          handoff_root = Path("dist/prospective_context_raw_preopen_v2")
+          shutil.rmtree(handoff_root, ignore_errors=True)
+          shutil.copytree(raw_root, handoff_root)
+          print("SEALED_FORMAL_V3_HANDOFF_ONLY_RECOVERY_VERIFIED")
+          PY
+
+      - name: Upload sealed exact public raw handoff recovery artifact
+        if: steps.detect.outputs.sealed_complete == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.detect.outputs.tag }}
+          path: |
+            dist/prospective_context_raw_preopen_v2/
+            dist/prospective_context_preopen_packages/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Record sealed handoff-only recovery
+        if: steps.detect.outputs.sealed_complete == 'true'
+        run: |
+          echo "SEALED_FORMAL_V3_HANDOFF_ONLY_RECOVERY_COMPLETE"
+          echo "No raw source was re-fetched, reassembled, backfilled, or requalified."
+
   capture:
+    needs: sealed_handoff_recovery
+    if: needs.sealed_handoff_recovery.outputs.sealed_complete != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
