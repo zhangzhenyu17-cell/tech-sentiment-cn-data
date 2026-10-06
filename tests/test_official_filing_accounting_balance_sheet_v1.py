@@ -3,6 +3,11 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from tech_sentiment.official_filing_accounting_balance_sheet_layout_proof_v1 import (
+    ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION,
+    extract_accounting_balance_sheet_layout_proof,
+)
+
 from tech_sentiment.official_filing_accounting_balance_sheet_v1 import (
     ACCOUNTING_BALANCE_SHEET_FACT_LABELS,
     ACCOUNTING_BALANCE_SHEET_PARSER_VERSION,
@@ -223,3 +228,131 @@ def test_row_evidence_rows_preserve_document_provenance_and_parser_identity() ->
     assert rows["period_end"].eq(pd.Timestamp("2025-06-30")).all()
     assert rows["zero_interpretation_applied"].eq(False).all()
     assert rows["private_classification_applied"].eq(False).all()
+
+
+def test_layout_proof_recognizes_note_blank_two_dash_amount_cells_without_zero() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    单位：人民币元
+    项目 附注 期末余额 期初余额
+    应付债券 - -
+    负债合计 100 90
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="BONDS_PAYABLE")
+    assert proof["parser_version"] == ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION
+    assert proof["statement_amount_columns_declared"] is True
+    assert proof["statement_has_note_column"] is True
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_BLANK"
+    assert proof["current_cell_kind"] == "DASH"
+    assert proof["prior_cell_kind"] == "DASH"
+    assert proof["current_value_cny"] is None
+    assert proof["zero_interpretation_applied"] is False
+    assert proof["private_classification_applied"] is False
+
+
+def test_layout_proof_recognizes_exact_blank_row_but_does_not_impute_zero() -> None:
+    text = """
+    2025年半年度报告
+    合并资产负债表
+    单位：人民币万元
+    项目 期末余额 期初余额
+    交易性金融资产
+    应收账款 20 10
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="TRADING_FINANCIAL_ASSETS")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_POSITION_PROVEN_BLANK_BOTH"
+    assert proof["current_cell_kind"] == "BLANK"
+    assert proof["prior_cell_kind"] == "BLANK"
+    assert proof["current_value_cny"] is None
+    assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_keeps_note_plus_single_amount_unresolved() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    单位：人民币元
+    项目 附注 期末余额 期初余额
+    应付债券 12 500
+    负债合计 1000 900
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="BONDS_PAYABLE")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_NOTE_PLUS_SINGLE_AMOUNT_UNRESOLVED"
+    assert proof["current_cell_kind"] is None
+    assert proof["current_value_cny"] is None
+    assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_accepts_two_explicit_balance_sheet_date_columns() -> None:
+    text = """
+    2024年年度报告
+    合并资产负债表
+    2024 年 12 月 31 日
+    单位：人民币元
+    项目 附注 2024 年 12 月 31 日 2023 年 12 月 31 日
+    应付债券 - -
+    负债合计 100 90
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="BONDS_PAYABLE")
+    assert proof["statement_amount_columns_declared"] is True
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_BLANK"
+    assert proof["current_cell_kind"] == "DASH"
+    assert proof["prior_cell_kind"] == "DASH"
+    assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_uses_header_positions_to_assign_single_prior_amount() -> None:
+    text = """
+    2024年年度报告
+    合并资产负债表
+    2024 年 12 月 31 日
+    单位：人民币元
+              项目                      附注            2024 年 12 月 31 日         2023 年 12 月 31 日
+    使用权资产                                                                             8,759,664.03
+    资产总计                                             100,000,000.00              90,000,000.00
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="RIGHT_OF_USE_ASSETS")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_POSITION_PROVEN"
+    assert proof["current_cell_kind"] == "BLANK"
+    assert proof["prior_cell_kind"] == "NUMERIC"
+    assert proof["prior_cell_token"] == "8,759,664.03"
+    assert proof["current_value_cny"] is None
+    assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_position_route_keeps_blank_current_as_blank_not_zero() -> None:
+    text = """
+    2024年年度报告
+    合并资产负债表
+    2024 年 12 月 31 日
+    单位：人民币元
+              项目                      附注            2024 年 12 月 31 日         2023 年 12 月 31 日
+    长期借款                                                                           638,279,169.17
+    负债合计                                             100,000,000.00              90,000,000.00
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="LONG_TERM_BORROWINGS")
+    assert proof["current_cell_kind"] == "BLANK"
+    assert proof["prior_cell_kind"] == "NUMERIC"
+    assert proof["current_value_cny"] is None
+    assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_does_not_positionally_treat_note_id_as_amount_when_note_anchor_is_on_other_header_line() -> None:
+    text = """
+    2024年年度报告
+    合并资产负债表
+    单位：人民币元
+              项目                      附注
+                                      2024 年 12 月 31 日         2023 年 12 月 31 日
+    应付债券                            12
+    负债合计                                             100,000,000.00              90,000,000.00
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="BONDS_PAYABLE")
+    assert proof["statement_has_note_column"] is True
+    assert proof["statement_amount_columns_declared"] is True
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_ONLY_AMOUNTS_BLANK"
+    assert proof["note_reference"] == "12"
+    assert proof["current_cell_kind"] == "BLANK"
+    assert proof["current_value_cny"] is None
+    assert proof["zero_interpretation_applied"] is False
