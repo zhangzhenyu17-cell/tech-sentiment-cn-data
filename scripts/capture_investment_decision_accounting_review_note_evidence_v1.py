@@ -1,5 +1,6 @@
 from __future__ import annotations
 import argparse,hashlib,json
+from concurrent.futures import ProcessPoolExecutor,as_completed
 from pathlib import Path
 import pandas as pd
 from tech_sentiment.official_filing_accounting_review_note_evidence_v1 import PARSER_VERSION,extract_review_note_section
@@ -12,7 +13,7 @@ def sha(b:bytes)->str:return hashlib.sha256(b).hexdigest()
 def doc_text(*,doc_id:str,url:str,expected:str,cache:Path)->str:
     pd_=cache/'documents'; td=cache/'text'; pd_.mkdir(parents=True,exist_ok=True); td.mkdir(parents=True,exist_ok=True)
     pp=pd_/f'{expected}.pdf'; tp=td/f'{expected}.txt'
-    if pp.exists(): content=pp.read_bytes();
+    if pp.exists(): content=pp.read_bytes()
     else:
         d=download_official_document(url)
         if d.sha256!=expected: raise ValueError(f'document sha mismatch: {doc_id}')
@@ -21,27 +22,36 @@ def doc_text(*,doc_id:str,url:str,expected:str,cache:Path)->str:
     if tp.exists(): return tp.read_text(encoding='utf-8')
     text=extract_pdf_text(content); tp.write_text(text,encoding='utf-8'); return text
 
+def capture_group(records:list[dict[str,str]],cache_dir:str)->tuple[list[dict],list[dict]]:
+    first=records[0]; did=str(first['document_id']); rows=[]; errors=[]
+    try:
+        for field in ('document_url','document_sha256'):
+            if len({str(r[field]) for r in records})!=1: raise ValueError(f'document identity drift: {did}:{field}')
+        text=doc_text(doc_id=did,url=str(first['document_url']),expected=str(first['document_sha256']),cache=Path(cache_dir))
+    except Exception as exc:
+        return [],[{'entity_id':str(first['entity_id']),'period_end':'','fact_type':'DOCUMENT','document_id':did,'error':f'{type(exc).__name__}: {exc}'}]
+    for r in records:
+        try:
+            ev=extract_review_note_section(text,note_reference=str(r['note_reference']),source_row_label=str(r['source_row_label']))
+            rows.append({'schema_version':SCHEMA,'entity_id':str(r['entity_id']),'period_end':str(r['period_end']),'fact_type':str(r['fact_type']),'note_reference':str(r['note_reference']),'source_row_label':str(r['source_row_label']),'current_value_cny':str(r['current_value_cny']),'evidence_available_date':str(r['evidence_available_date']),'publication_timestamp':str(r['publication_timestamp']),'source_identity':str(r['source_identity']),'provider':str(r['provider']),'document_id':did,'revision_id':str(r['revision_id']),'document_url':str(r['document_url']),'document_sha256':str(r['document_sha256']),'source_row_sha256':str(r['source_row_sha256']),**ev})
+        except Exception as exc:
+            errors.append({'entity_id':str(r['entity_id']),'period_end':str(r['period_end']),'fact_type':str(r['fact_type']),'document_id':did,'error':f'{type(exc).__name__}: {exc}'})
+    return rows,errors
+
 def main()->int:
-    p=argparse.ArgumentParser(); p.add_argument('--request-csv',type=Path,required=True); p.add_argument('--source-commit',required=True); p.add_argument('--out-dir',type=Path,required=True); p.add_argument('--cache-dir',type=Path,required=True); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument('--request-csv',type=Path,required=True); p.add_argument('--source-commit',required=True); p.add_argument('--out-dir',type=Path,required=True); p.add_argument('--cache-dir',type=Path,required=True); p.add_argument('--max-workers',type=int,default=4); a=p.parse_args()
+    if a.max_workers<1 or a.max_workers>4: raise ValueError('max-workers must be between 1 and 4')
     req=pd.read_csv(a.request_csv,dtype=str,keep_default_na=False)
     if not req['schema_version'].eq(REQ_SCHEMA).all(): raise ValueError('note request schema drift')
-    rows=[]; errors=[]; cache={}
-    for r in req.to_dict('records'):
-        try:
-            did=str(r['document_id'])
-            if did not in cache:
-                cache[did]=doc_text(doc_id=did,url=str(r['document_url']),expected=str(r['document_sha256']),cache=a.cache_dir)
-            ev=extract_review_note_section(cache[did],note_reference=str(r['note_reference']),source_row_label=str(r['source_row_label']))
-            rows.append({
-                'schema_version':SCHEMA,'entity_id':str(r['entity_id']),'period_end':str(r['period_end']),'fact_type':str(r['fact_type']),
-                'note_reference':str(r['note_reference']),'source_row_label':str(r['source_row_label']),'current_value_cny':str(r['current_value_cny']),
-                'evidence_available_date':str(r['evidence_available_date']),'publication_timestamp':str(r['publication_timestamp']),
-                'source_identity':str(r['source_identity']),'provider':str(r['provider']),'document_id':did,'revision_id':str(r['revision_id']),
-                'document_url':str(r['document_url']),'document_sha256':str(r['document_sha256']),'source_row_sha256':str(r['source_row_sha256']),
-                **ev,
-            })
-        except Exception as exc:
-            errors.append({'entity_id':str(r['entity_id']),'period_end':str(r['period_end']),'fact_type':str(r['fact_type']),'document_id':str(r['document_id']),'error':f'{type(exc).__name__}: {exc}'})
+    groups=[g.to_dict('records') for _,g in req.groupby('document_id',sort=True)]
+    rows=[]; errors=[]; completed=0
+    with ProcessPoolExecutor(max_workers=a.max_workers) as ex:
+        futs={ex.submit(capture_group,g,str(a.cache_dir)):str(g[0]['document_id']) for g in groups}
+        for f in as_completed(futs):
+            try:r,e=f.result()
+            except Exception as exc:r,e=[],[{'entity_id':'','period_end':'','fact_type':'DOCUMENT','document_id':futs[f],'error':f'{type(exc).__name__}: {exc}'}]
+            rows.extend(r); errors.extend(e); completed+=1
+            print(json.dumps({'event':'REVIEW_NOTE_CAPTURE_PROGRESS','completed_documents':completed,'total_documents':len(groups),'captured_rows':len(rows),'error_rows':len(errors)},ensure_ascii=False),flush=True)
     out=pd.DataFrame(rows); err=pd.DataFrame(errors,columns=['entity_id','period_end','fact_type','document_id','error'])
     if len(out): out=out.sort_values(['entity_id','period_end','fact_type']).reset_index(drop=True)
     a.out_dir.mkdir(parents=True,exist_ok=True); op=a.out_dir/'accounting_review_note_evidence.csv'; ep=a.out_dir/'errors.csv'; out.to_csv(op,index=False); err.to_csv(ep,index=False)
