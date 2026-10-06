@@ -222,7 +222,7 @@ jobs:
         if: steps.detect.outputs.sealed_complete == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: prospective-context-raw-preopen-v2-${{ inputs.market_session_date }}-for-${{ inputs.decision_date }}
+          name: ${{ steps.detect.outputs.tag }}
           path: |
             dist/prospective_context_raw_preopen_v2/
             dist/prospective_context_preopen_packages/
