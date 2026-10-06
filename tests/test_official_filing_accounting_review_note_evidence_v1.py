@@ -1,7 +1,14 @@
 from tech_sentiment.official_filing_accounting_review_note_evidence_v1 import extract_review_note_section
 
 def test_extracts_exact_top_level_note_and_stops_at_next_note():
- text='''财务报表附注\n1、货币资金\n项目 期末余额\n库存现金 10\n银行存款 90\n2、交易性金融资产\n项目 期末余额\n债券 5'''
+ text='''财务报表附注
+1、货币资金
+项目 期末余额
+库存现金 10
+银行存款 90
+2、交易性金融资产
+项目 期末余额
+债券 5'''
  x=extract_review_note_section(text,note_reference='1',source_row_label='货币资金')
  assert x['note_heading']=='1、货币资金'
  assert '银行存款 90' in x['note_section_text']
@@ -9,7 +16,13 @@ def test_extracts_exact_top_level_note_and_stops_at_next_note():
  assert x['private_classification_applied'] is False
 
 def test_toc_like_earlier_candidate_does_not_override_last_actual_note():
- text='''目录\n1、货币资金 10\n财务报表附注\n1、货币资金\n受限制的货币资金 20\n2、其他应收款\n押金 1'''
+ text='''目录
+1、货币资金 10
+财务报表附注
+1、货币资金
+受限制的货币资金 20
+2、其他应收款
+押金 1'''
  x=extract_review_note_section(text,note_reference='1',source_row_label='货币资金')
  assert '受限制的货币资金 20' in x['note_section_text']
 
@@ -47,8 +60,26 @@ def test_label_fallback_prefers_consolidated_statement_item_notes_over_accountin
 
 
 def test_exact_requested_note_still_works_without_consolidated_section_marker():
- text="""任意报告文本\n7、其他流动资产\n待抵扣进项税 12\n8、其他非流动资产\n项目 1"""
+ text="""任意报告文本
+7、其他流动资产
+待抵扣进项税 12
+8、其他非流动资产
+项目 1"""
  x=extract_review_note_section(text,note_reference='7',source_row_label='其他流动资产')
  assert x['resolved_note_reference']=='7'
  assert x['note_reference_match'] is True
  assert '待抵扣进项税 12' in x['note_section_text']
+
+
+def test_chapter_prefixed_note_reference_notation_is_normalized_without_fallback():
+ text="""七、合并财务报表项目注释
+29、递延所得税资产
+可抵扣暂时性差异 12
+30、其他非流动资产
+项目 1"""
+ for ref in ('七(29)','七、(29)','七-29','七.29','七（29）'):
+  x=extract_review_note_section(text,note_reference=ref,source_row_label='递延所得税资产')
+  assert x['requested_note_reference']==ref
+  assert x['resolved_note_reference']=='29'
+  assert x['note_reference_match'] is True
+  assert '可抵扣暂时性差异 12' in x['note_section_text']
