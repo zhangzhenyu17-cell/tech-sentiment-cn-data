@@ -30,6 +30,7 @@ jobs:
         id: detect
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           MARKET_SESSION_DATE: ${{ inputs.market_session_date }}
           DECISION_DATE: ${{ inputs.decision_date }}
         run: |
@@ -58,6 +59,7 @@ jobs:
         if: steps.detect.outputs.sealed_complete == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           MARKET_SESSION_DATE: ${{ inputs.market_session_date }}
           DECISION_DATE: ${{ inputs.decision_date }}
           TAG: ${{ steps.detect.outputs.tag }}
