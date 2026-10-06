@@ -8,7 +8,8 @@ _TOP_HEADING_RE=re.compile(r'^\s*(?P<num>\d{1,3})\s*[、.．]\s*(?P<title>.+?)\s
 _CHAPTER_NOTE_REF_RE=re.compile(
     r'^\s*[一二三四五六七八九十百]+'
     r'(?:(?:[、.．\-]\s*[（(]?\s*(?P<n1>\d{1,3})\s*[）)]?)|'
-    r'(?:\s*[（(]\s*(?P<n2>\d{1,3})\s*[）)]))\s*$'
+    r'(?:\s*[（(]\s*(?P<n2>\d{1,3})\s*[）)]))'
+    r'(?:\s*[（(]\s*\d{1,3}\s*[）)])?\s*$'
 )
 
 def _compact(v:object)->str: return ''.join(str(v).split())
