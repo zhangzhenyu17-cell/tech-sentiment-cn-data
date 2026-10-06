@@ -27,7 +27,7 @@ from .official_filing_facts import (
 
 
 ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION = (
-    "official-filing-accounting-balance-sheet-layout-proof-v4-note-prefix-and-title-safe"
+    "official-filing-accounting-balance-sheet-layout-proof-v5-residual-column-safe"
 )
 
 _CURRENT_HEADER_TOKENS = (
@@ -47,8 +47,9 @@ _PRIOR_HEADER_TOKENS = (
 
 _BALANCE_SHEET_DATE_RE = re.compile(r"20\d{2}年\d{1,2}月\d{1,2}日")
 _BALANCE_SHEET_SPACED_DATE_RE = re.compile(r"20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日")
+_BALANCE_SHEET_SPACED_DATE_ANCHOR_RE = re.compile(r"20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}(?:\s*日)?")
 _TEXTUAL_NOTE_REFERENCE_RE = re.compile(
-    r"^\s*(?P<note>[一二三四五六七八九十百]+\s*(?:[-－–—、.．]\s*\d{1,4}|(?:[（(]\s*\d{1,4}\s*[）)])+))"
+    r"^\s*(?P<note>[一二三四五六七八九十百]+\s*(?:(?:[-－–—、.．]\s*)?(?:[（(]\s*\d{1,4}\s*[）)])+|[-－–—、.．]\s*\d{1,4}))"
 )
 _PAREN_NOTE_TOKEN_RE = re.compile(r"^[（(]\s*(?P<number>\d{1,4})\s*[）)]$")
 _PAREN_NOTE_FIND_RE = re.compile(r"[（(]\s*(?P<number>\d{1,4})\s*[）)]")
@@ -144,7 +145,7 @@ def _statement_column_anchors(
         if current_pos >= 0 and prior_pos > current_pos:
             note_pos = line.find("附注")
             return (current_pos, prior_pos, note_pos if note_pos >= 0 else None)
-        dates = list(_BALANCE_SHEET_SPACED_DATE_RE.finditer(line))
+        dates = list(_BALANCE_SHEET_SPACED_DATE_ANCHOR_RE.finditer(line))
         if len(dates) >= 2:
             current_pos = dates[0].start()
             prior_pos = dates[1].start()
@@ -211,6 +212,35 @@ def _scaled_numeric(token: str | None, unit: str) -> float | None:
 
 def _blank_cell() -> tuple[int, str, str]:
     return (-1, "BLANK", "")
+
+
+def _large_gap_two_amount_cells(
+    line: str,
+    labels: Iterable[str],
+) -> list[tuple[int, str, str]] | None:
+    """Recover two amount cells from PDF glyph-spacing corruption, fail closed.
+
+    Some official PDFs insert 1-2 spaces between digits while retaining very
+    large horizontal gaps between the label/current/prior columns. Recovery is
+    allowed only for an exact three-chunk physical row (label + two amounts)
+    separated by at least eight spaces. Each amount chunk, after whitespace
+    removal, must itself be exactly one numeric/dash token.
+    """
+
+    chunks = [chunk.strip() for chunk in re.split(r"\s{8,}", str(line)) if chunk.strip()]
+    if len(chunks) != 3:
+        return None
+    label_chunk = _compact_line(chunks[0])
+    if not any(label_chunk == _compact_line(label) for label in labels):
+        return None
+    recovered: list[tuple[int, str, str]] = []
+    for position, chunk in enumerate(chunks[1:]):
+        compact = re.sub(r"\s+", "", chunk)
+        cells = _ordered_numeric_or_dash_cells(compact)
+        if len(cells) != 1 or cells[0][2] != compact:
+            return None
+        recovered.append((position, cells[0][1], cells[0][2]))
+    return recovered
 
 
 def _classify_cells(
@@ -364,6 +394,25 @@ def _layout_evidence_for_labels(
                     amount_columns_declared=amount_columns_declared,
                     textual_note_reference=textual_note_reference,
                 )
+                if amount_columns_declared and logical_row == block[index]:
+                    recovered = _large_gap_two_amount_cells(block[index], label_options)
+                    if (
+                        recovered is not None
+                        and not has_note_column
+                        and layout_state == "ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED"
+                    ):
+                        layout_state = "ROW_PRESENT_AMOUNT_COLUMNS_LARGE_GAP_PROVEN"
+                        note_reference = None
+                        amount_cells = recovered
+                    elif (
+                        recovered is not None
+                        and has_note_column
+                        and textual_note_reference is None
+                        and layout_state == "ROW_PRESENT_NOTE_PLUS_SINGLE_AMOUNT_UNRESOLVED"
+                    ):
+                        layout_state = "ROW_PRESENT_AMOUNT_COLUMNS_LARGE_GAP_PROVEN_NOTE_BLANK"
+                        note_reference = None
+                        amount_cells = recovered
 
             current_kind = current_token = current_value_cny = None
             prior_kind = prior_token = None
