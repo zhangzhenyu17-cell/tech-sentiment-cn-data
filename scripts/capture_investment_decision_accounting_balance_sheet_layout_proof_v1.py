@@ -13,6 +13,7 @@ import pandas as pd
 from tech_sentiment.official_filing_accounting_balance_sheet_layout_proof_v1 import (
     ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION,
     extract_accounting_balance_sheet_layout_proof,
+    extract_accounting_balance_sheet_layout_proofs,
 )
 from tech_sentiment.official_filing_accounting_balance_sheet_v1 import (
     ACCOUNTING_BALANCE_SHEET_FACT_LABELS,
@@ -186,13 +187,20 @@ def _capture_group(
 
     rows: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    requested_fact_types = sorted(set(group["fact_type"].astype(str)))
+    proofs = extract_accounting_balance_sheet_layout_proofs(
+        text,
+        fact_types=requested_fact_types,
+    )
     for request in group.to_dict("records"):
         fact_type = str(request["fact_type"])
         try:
-            proof = extract_accounting_balance_sheet_layout_proof(
-                text,
-                fact_type=fact_type,
-            )
+            proof = proofs.get(fact_type)
+            if proof is None:
+                raise ValueError(
+                    "official filing has no exact consolidated balance-sheet layout evidence "
+                    f"for {fact_type}"
+                )
             row_hash_match = (
                 str(proof["logical_row_sha256"])
                 == str(request["source_row_sha256"])

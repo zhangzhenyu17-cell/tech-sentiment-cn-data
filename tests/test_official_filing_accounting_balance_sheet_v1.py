@@ -6,6 +6,7 @@ import pytest
 from tech_sentiment.official_filing_accounting_balance_sheet_layout_proof_v1 import (
     ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION,
     extract_accounting_balance_sheet_layout_proof,
+    extract_accounting_balance_sheet_layout_proofs,
 )
 
 from tech_sentiment.official_filing_accounting_balance_sheet_v1 import (
@@ -407,3 +408,46 @@ def test_layout_proof_keeps_textual_note_plus_one_amount_unresolved() -> None:
     assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED"
     assert proof["current_value_cny"] is None
     assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_accepts_compound_parenthesized_note_reference() -> None:
+    text = """
+    2025年年度报告
+    合并资产负债表
+    单位：人民币元
+    项目 附注 期末余额 期初余额
+    应收账款 七（5）（71） 481,587,422 422,932,937
+    资产总计 1000 900
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="ACCOUNTS_RECEIVABLE")
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE"
+    assert proof["note_reference"] == "七(5)(71)"
+    assert proof["current_cell_token"] == "481,587,422"
+    assert proof["prior_cell_token"] == "422,932,937"
+    assert proof["zero_interpretation_applied"] is False
+
+
+def test_layout_proof_accepts_year_start_count_header() -> None:
+    text = """
+    2026年第一季度报告
+    合并资产负债表
+    金额单位：人民币元
+    项目 期末数 年初数
+    货币资金 8,885,636,676.51 9,305,381,624.06
+    资产总计 1000 900
+    """
+    proof = extract_accounting_balance_sheet_layout_proof(text, fact_type="MONETARY_FUNDS")
+    assert proof["statement_amount_columns_declared"] is True
+    assert proof["layout_proof_state"] == "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN"
+    assert proof["current_cell_token"] == "8,885,636,676.51"
+    assert proof["prior_cell_token"] == "9,305,381,624.06"
+
+
+def test_bulk_layout_proof_matches_single_fact_semantics() -> None:
+    fact_types = ["MONETARY_FUNDS", "ACCOUNTS_RECEIVABLE", "BONDS_PAYABLE"]
+    bulk = extract_accounting_balance_sheet_layout_proofs(_text(), fact_types=fact_types)
+    assert set(bulk) == set(fact_types)
+    for fact_type in fact_types:
+        assert bulk[fact_type] == extract_accounting_balance_sheet_layout_proof(
+            _text(), fact_type=fact_type
+        )
