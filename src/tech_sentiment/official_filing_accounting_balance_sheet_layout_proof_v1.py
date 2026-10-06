@@ -27,7 +27,7 @@ from .official_filing_facts import (
 
 
 ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION = (
-    "official-filing-accounting-balance-sheet-layout-proof-v2-textual-note-reference"
+    "official-filing-accounting-balance-sheet-layout-proof-v3-note-reference-variants"
 )
 
 _CURRENT_HEADER_TOKENS = (
@@ -40,6 +40,7 @@ _PRIOR_HEADER_TOKENS = (
     "期初余额",
     "期初数",
     "年初余额",
+    "年初数",
     "上年年末余额",
     "上期期末余额",
 )
@@ -47,9 +48,10 @@ _PRIOR_HEADER_TOKENS = (
 _BALANCE_SHEET_DATE_RE = re.compile(r"20\d{2}年\d{1,2}月\d{1,2}日")
 _BALANCE_SHEET_SPACED_DATE_RE = re.compile(r"20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日")
 _TEXTUAL_NOTE_REFERENCE_RE = re.compile(
-    r"^\s*(?P<note>[一二三四五六七八九十百]+(?:[、.．]\s*\d{1,4}|[（(]\s*\d{1,4}\s*[）)]))"
+    r"^\s*(?P<note>[一二三四五六七八九十百]+(?:[、.．]\s*\d{1,4}|(?:[（(]\s*\d{1,4}\s*[）)])+))"
 )
 _PAREN_NOTE_TOKEN_RE = re.compile(r"^[（(]\s*(?P<number>\d{1,4})\s*[）)]$")
+_PAREN_NOTE_FIND_RE = re.compile(r"[（(]\s*(?P<number>\d{1,4})\s*[）)]")
 
 
 def _explicit_textual_note_reference(text: str) -> str | None:
@@ -59,15 +61,17 @@ def _explicit_textual_note_reference(text: str) -> str | None:
     return re.sub(r"\s+", "", match.group("note"))
 
 
-def _cell_is_parenthesized_note_token(token: str, note_reference: str | None) -> bool:
+def _parenthesized_note_token_sequence(note_reference: str | None) -> list[str]:
     if note_reference is None:
-        return False
+        return []
+    return [f"({match.group('number')})" for match in _PAREN_NOTE_FIND_RE.finditer(str(note_reference))]
+
+
+def _normalized_parenthesized_token(token: str) -> str | None:
     match = _PAREN_NOTE_TOKEN_RE.fullmatch(str(token).strip())
     if match is None:
-        return False
-    number = match.group("number")
-    compact = re.sub(r"\s+", "", note_reference)
-    return f"({number})" in compact or f"（{number}）" in compact
+        return None
+    return f"({match.group('number')})"
 
 
 def _require(condition: bool, message: str) -> None:
@@ -204,10 +208,11 @@ def _classify_cells(
 ) -> tuple[str, str | None, list[tuple[int, str, str]] | None]:
     """Classify raw row cells without treating blank or dash as zero.
 
-    The function proves current/prior ownership only when the statement header
-    explicitly declares both amount columns. A blank row remains blank; a dash
-    remains a dash. Chinese note references such as 七(1) or 七.46 are used only
-    to identify the note cell boundary; they never supply an amount value.
+    Current/prior ownership is accepted only after the statement header proves
+    both amount columns. Textual note references such as 七(1), 七.46, or
+    七(4)(71) are stripped only when their exact parenthesized token sequence is
+    present at the front of the row cells. Remaining cells must be exactly two
+    amount cells; otherwise the row stays unresolved.
     """
 
     if not amount_columns_declared:
@@ -224,58 +229,58 @@ def _classify_cells(
             return ("ROW_PRESENT_AMOUNT_COLUMNS_PROVEN", None, cells)
         return ("ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED", None, None)
 
-    if len(cells) == 0:
-        return (
-            "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_AND_AMOUNTS_BLANK",
-            textual_note_reference,
-            [_blank_cell(), _blank_cell()],
-        )
-
-    if len(cells) == 1:
-        _, kind, token = cells[0]
-        if _cell_is_parenthesized_note_token(token, textual_note_reference):
+    if textual_note_reference is not None:
+        amount_cells = list(cells)
+        expected_note_tokens = _parenthesized_note_token_sequence(textual_note_reference)
+        if expected_note_tokens:
+            if len(amount_cells) < len(expected_note_tokens):
+                return ("ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED", None, None)
+            observed = [
+                _normalized_parenthesized_token(cell[2])
+                for cell in amount_cells[: len(expected_note_tokens)]
+            ]
+            if observed != expected_note_tokens:
+                return ("ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED", None, None)
+            amount_cells = amount_cells[len(expected_note_tokens) :]
+        if len(amount_cells) == 0:
             return (
                 "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_ONLY_AMOUNTS_BLANK",
                 textual_note_reference,
                 [_blank_cell(), _blank_cell()],
             )
-        if (
-            textual_note_reference is None
-            and kind == "NUMERIC"
-            and re.fullmatch(r"\d{1,4}", token.strip())
-        ):
+        if len(amount_cells) == 2:
+            return (
+                "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE",
+                textual_note_reference,
+                amount_cells,
+            )
+        return ("ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED", None, None)
+
+    if len(cells) == 0:
+        return (
+            "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_AND_AMOUNTS_BLANK",
+            None,
+            [_blank_cell(), _blank_cell()],
+        )
+    if len(cells) == 1:
+        _, kind, token = cells[0]
+        if kind == "NUMERIC" and re.fullmatch(r"\d{1,4}", token.strip()):
             return (
                 "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_ONLY_AMOUNTS_BLANK",
                 token.strip(),
                 [_blank_cell(), _blank_cell()],
             )
         return ("ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED", None, None)
-
     if len(cells) == 2:
         _, first_kind, first_token = cells[0]
-        if textual_note_reference is not None:
-            if _cell_is_parenthesized_note_token(first_token, textual_note_reference):
-                return ("ROW_PRESENT_NOTE_PLUS_SINGLE_AMOUNT_UNRESOLVED", None, None)
-            return (
-                "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE",
-                textual_note_reference,
-                cells,
-            )
         if (
             first_kind == "NUMERIC"
             and re.fullmatch(r"\d{1,4}", first_token.strip()) is not None
         ):
             return ("ROW_PRESENT_NOTE_PLUS_SINGLE_AMOUNT_UNRESOLVED", None, None)
         return ("ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_NOTE_BLANK", None, cells)
-
     if len(cells) == 3:
         _, note_kind, note_token = cells[0]
-        if _cell_is_parenthesized_note_token(note_token, textual_note_reference):
-            return (
-                "ROW_PRESENT_AMOUNT_COLUMNS_PROVEN_WITH_NOTE",
-                textual_note_reference,
-                cells[1:],
-            )
         if (
             note_kind == "NUMERIC"
             and re.fullmatch(r"\d{1,4}", note_token.strip()) is not None
@@ -286,7 +291,6 @@ def _classify_cells(
                 cells[1:],
             )
         return ("ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED", None, None)
-
     return ("ROW_PRESENT_AMOUNT_COLUMN_OWNERSHIP_UNRESOLVED", None, None)
 
 
@@ -396,31 +400,49 @@ def _layout_evidence_for_labels(
     return None
 
 
+def extract_accounting_balance_sheet_layout_proofs(
+    text: str,
+    *,
+    fact_types: Iterable[str],
+) -> dict[str, dict[str, Any]]:
+    requested = sorted({str(value) for value in fact_types})
+    unsupported = set(requested) - set(ACCOUNTING_BALANCE_SHEET_FACT_LABELS)
+    _require(not unsupported, f"unsupported balance-sheet fact types: {sorted(unsupported)}")
+    lines = _layout_text_lines(text)
+    output: dict[str, dict[str, Any]] = {}
+    for fact_type in requested:
+        evidence = _layout_evidence_for_labels(
+            lines,
+            ACCOUNTING_BALANCE_SHEET_FACT_LABELS[fact_type],
+        )
+        if evidence is None:
+            continue
+        evidence["fact_type"] = fact_type
+        evidence["parser_version"] = ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION
+        output[fact_type] = evidence
+    return output
+
+
 def extract_accounting_balance_sheet_layout_proof(
     text: str,
     *,
     fact_type: str,
 ) -> dict[str, Any]:
-    _require(
-        fact_type in ACCOUNTING_BALANCE_SHEET_FACT_LABELS,
-        f"unsupported balance-sheet fact type: {fact_type}",
+    output = extract_accounting_balance_sheet_layout_proofs(
+        text,
+        fact_types=[fact_type],
     )
-    lines = _layout_text_lines(text)
-    evidence = _layout_evidence_for_labels(
-        lines,
-        ACCOUNTING_BALANCE_SHEET_FACT_LABELS[fact_type],
-    )
+    evidence = output.get(str(fact_type))
     if evidence is None:
         raise ValueError(
             "official filing has no exact consolidated balance-sheet layout evidence "
             f"for {fact_type}"
         )
-    evidence["fact_type"] = fact_type
-    evidence["parser_version"] = ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION
     return evidence
 
 
 __all__ = [
     "ACCOUNTING_BALANCE_SHEET_LAYOUT_PROOF_PARSER_VERSION",
     "extract_accounting_balance_sheet_layout_proof",
+    "extract_accounting_balance_sheet_layout_proofs",
 ]
