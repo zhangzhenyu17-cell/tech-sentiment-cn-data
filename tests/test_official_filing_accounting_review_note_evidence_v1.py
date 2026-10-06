@@ -83,3 +83,16 @@ def test_chapter_prefixed_note_reference_notation_is_normalized_without_fallback
   assert x['resolved_note_reference']=='29'
   assert x['note_reference_match'] is True
   assert '可抵扣暂时性差异 12' in x['note_section_text']
+
+
+def test_chapter_note_reference_with_trailing_locator_uses_first_note_number():
+ text="""七、合并财务报表项目注释
+9、其他应收款
+押金及保证金 12
+10、存货
+项目 1"""
+ x=extract_review_note_section(text,note_reference='七(9)(71)',source_row_label='其他应收款')
+ assert x['requested_note_reference']=='七(9)(71)'
+ assert x['resolved_note_reference']=='9'
+ assert x['note_reference_match'] is True
+ assert '押金及保证金 12' in x['note_section_text']
