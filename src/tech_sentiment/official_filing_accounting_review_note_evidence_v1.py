@@ -15,7 +15,15 @@ def extract_review_note_section(text:str,*,note_reference:str,source_row_label:s
     note=str(note_reference).strip(); label=_compact(source_row_label)
     if not re.fullmatch(r'\d{1,3}',note): raise ValueError(f'unsupported note reference: {note!r}')
     lines=_lines(text); target=int(note); candidates=[]; label_candidates=[]
+    note_section_starts=[i for i,line in enumerate(lines) if '合并财务报表' in _compact(line) and ('项目注释' in _compact(line) or '项目附注' in _compact(line))]
+    floor=note_section_starts[-1] if note_section_starts else 0
+    ceiling=len(lines)
+    for i in range(floor+1,len(lines)):
+        c=_compact(lines[i])
+        if '母公司财务报表' in c and ('项目注释' in c or '项目附注' in c):
+            ceiling=i; break
     for i,line in enumerate(lines):
+        if i<floor or i>=ceiling: continue
         m=_TOP_HEADING_RE.match(line)
         if not m: continue
         window=''.join(_compact(x) for x in lines[i:min(len(lines),i+3)])

@@ -25,3 +25,22 @@ def test_exact_label_fallback_records_reference_mismatch_without_silent_correcti
  assert x['requested_note_reference']=='42'
  assert x['note_reference_match'] is False
  assert '二、递延所得税负债 90' in x['note_section_text']
+
+
+def test_label_fallback_prefers_consolidated_statement_item_notes_over_accounting_policy():
+ text="""三、重要会计政策和会计估计
+30、递延所得税资产和递延所得税负债
+会计政策文字
+五、合并财务报表重要项目注释
+23．递延所得税资产、递延所得税负债
+二、递延所得税负债 90
+24．其他非流动资产
+项目 1
+十四、母公司财务报表主要项目注释
+23．递延所得税资产、递延所得税负债
+母公司金额 10"""
+ x=extract_review_note_section(text,note_reference='42',source_row_label='递延所得税负债')
+ assert x['resolved_note_reference']=='23'
+ assert x['note_reference_match'] is False
+ assert '二、递延所得税负债 90' in x['note_section_text']
+ assert '母公司金额' not in x['note_section_text']
