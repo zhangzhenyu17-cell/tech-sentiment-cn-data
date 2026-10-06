@@ -5,11 +5,25 @@ from .official_filing_facts import _normalize_pdf_unicode
 
 PARSER_VERSION='official-filing-accounting-review-note-evidence-v1-exact-heading'
 _TOP_HEADING_RE=re.compile(r'^\s*(?P<num>\d{1,3})\s*[、.．]\s*(?P<title>.+?)\s*$')
+_CHAPTER_NOTE_REF_RE=re.compile(
+    r'^\s*[一二三四五六七八九十百]+'
+    r'(?:(?:[、.．\-]\s*[（(]?\s*(?P<n1>\d{1,3})\s*[）)]?)|'
+    r'(?:\s*[（(]\s*(?P<n2>\d{1,3})\s*[）)]))\s*$'
+)
 
 def _compact(v:object)->str: return ''.join(str(v).split())
 def _lines(text:str)->list[str]:
     clean=_normalize_pdf_unicode(text).replace('：',':').replace('．','.').replace('，',',')
     return [line.rstrip() for line in clean.splitlines() if line.strip()]
+
+def _normalized_note_reference(value:object)->str:
+    raw=str(value).strip()
+    if re.fullmatch(r'\d{1,3}',raw):
+        return raw
+    m=_CHAPTER_NOTE_REF_RE.fullmatch(raw)
+    if m:
+        return str(m.group('n1') or m.group('n2'))
+    raise ValueError(f'unsupported note reference: {raw!r}')
 
 def _consolidated_item_note_bounds(lines:list[str])->tuple[int,int]|None:
     starts=[]
@@ -32,8 +46,9 @@ def _consolidated_item_note_bounds(lines:list[str])->tuple[int,int]|None:
 
 
 def extract_review_note_section(text:str,*,note_reference:str,source_row_label:str)->dict[str,Any]:
-    note=str(note_reference).strip(); label=_compact(source_row_label)
-    if not re.fullmatch(r'\d{1,3}',note): raise ValueError(f'unsupported note reference: {note!r}')
+    requested_note=str(note_reference).strip()
+    note=_normalized_note_reference(requested_note)
+    label=_compact(source_row_label)
     lines=_lines(text); target=int(note); candidates=[]; label_candidates=[]
 
     # Normal route: preserve the previously successful global exact-number
@@ -64,7 +79,7 @@ def extract_review_note_section(text:str,*,note_reference:str,source_row_label:s
                 fallback=[item for item in fallback if floor<=item[0]<ceiling]
                 nums={num for _,num in fallback}
         if len(nums)!=1:
-            raise ValueError(f'official filing note heading not found or label fallback ambiguous: {note}:{source_row_label}')
+            raise ValueError(f'official filing note heading not found or label fallback ambiguous: {requested_note}:{source_row_label}')
         resolved=next(iter(nums)); candidates=[i for i,num in fallback if num==resolved]; matched=False
 
     start=candidates[-1]
@@ -77,7 +92,7 @@ def extract_review_note_section(text:str,*,note_reference:str,source_row_label:s
     if not section: raise ValueError('empty note section')
     if label not in _compact(section[:max(len(section),1)]): raise ValueError('note section label mismatch')
     return {
-        'requested_note_reference':note,
+        'requested_note_reference':requested_note,
         'resolved_note_reference':str(resolved),
         'note_reference_match':matched,
         'note_heading':lines[start].strip(),
