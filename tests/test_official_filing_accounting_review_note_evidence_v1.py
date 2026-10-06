@@ -44,3 +44,11 @@ def test_label_fallback_prefers_consolidated_statement_item_notes_over_accountin
  assert x['note_reference_match'] is False
  assert '二、递延所得税负债 90' in x['note_section_text']
  assert '母公司金额' not in x['note_section_text']
+
+
+def test_exact_requested_note_still_works_without_consolidated_section_marker():
+ text="""任意报告文本\n7、其他流动资产\n待抵扣进项税 12\n8、其他非流动资产\n项目 1"""
+ x=extract_review_note_section(text,note_reference='7',source_row_label='其他流动资产')
+ assert x['resolved_note_reference']=='7'
+ assert x['note_reference_match'] is True
+ assert '待抵扣进项税 12' in x['note_section_text']

@@ -11,30 +11,62 @@ def _lines(text:str)->list[str]:
     clean=_normalize_pdf_unicode(text).replace('：',':').replace('．','.').replace('，',',')
     return [line.rstrip() for line in clean.splitlines() if line.strip()]
 
-def extract_review_note_section(text:str,*,note_reference:str,source_row_label:str)->dict[str,Any]:
-    note=str(note_reference).strip(); label=_compact(source_row_label)
-    if not re.fullmatch(r'\d{1,3}',note): raise ValueError(f'unsupported note reference: {note!r}')
-    lines=_lines(text); target=int(note); candidates=[]; label_candidates=[]
-    note_section_starts=[i for i,line in enumerate(lines) if '合并财务报表' in _compact(line) and ('项目注释' in _compact(line) or '项目附注' in _compact(line))]
-    floor=note_section_starts[-1] if note_section_starts else 0
+def _consolidated_item_note_bounds(lines:list[str])->tuple[int,int]|None:
+    starts=[]
+    for i,line in enumerate(lines):
+        c=_compact(line)
+        if '合并财务报表' in c and ('项目注释' in c or '项目附注' in c):
+            starts.append(i)
+    if not starts:
+        return None
+    # Prefer the last explicit consolidated item-note heading.  This is used
+    # only for label fallback after the requested note number failed globally.
+    floor=starts[-1]
     ceiling=len(lines)
     for i in range(floor+1,len(lines)):
         c=_compact(lines[i])
         if '母公司财务报表' in c and ('项目注释' in c or '项目附注' in c):
-            ceiling=i; break
+            ceiling=i
+            break
+    return floor,ceiling
+
+
+def extract_review_note_section(text:str,*,note_reference:str,source_row_label:str)->dict[str,Any]:
+    note=str(note_reference).strip(); label=_compact(source_row_label)
+    if not re.fullmatch(r'\d{1,3}',note): raise ValueError(f'unsupported note reference: {note!r}')
+    lines=_lines(text); target=int(note); candidates=[]; label_candidates=[]
+
+    # Normal route: preserve the previously successful global exact-number
+    # lookup.  Do not require a report-specific section marker here.
     for i,line in enumerate(lines):
-        if i<floor or i>=ceiling: continue
         m=_TOP_HEADING_RE.match(line)
         if not m: continue
         window=''.join(_compact(x) for x in lines[i:min(len(lines),i+3)])
         if label and label not in window: continue
-        label_candidates.append((i,int(m.group('num'))))
-        if int(m.group('num'))==target: candidates.append(i)
+        item=(i,int(m.group('num')))
+        label_candidates.append(item)
+        if item[1]==target: candidates.append(i)
+
     resolved=target; matched=True
     if not candidates:
-        nums={num for _,num in label_candidates}
-        if len(nums)!=1: raise ValueError(f'official filing note heading not found or label fallback ambiguous: {note}:{source_row_label}')
-        resolved=next(iter(nums)); candidates=[i for i,num in label_candidates if num==resolved]; matched=False
+        # Fallback is deliberately narrower than the normal route.  A source
+        # statement can carry a mistaken note reference (real example: the
+        # same number points to two different balance-sheet rows).  We may
+        # recover only by exact row-label heading evidence, and when multiple
+        # note numbers share that label we narrow to the consolidated statement
+        # item-note block.  We never silently rewrite the requested reference.
+        fallback=label_candidates
+        nums={num for _,num in fallback}
+        if len(nums)!=1:
+            bounds=_consolidated_item_note_bounds(lines)
+            if bounds is not None:
+                floor,ceiling=bounds
+                fallback=[item for item in fallback if floor<=item[0]<ceiling]
+                nums={num for _,num in fallback}
+        if len(nums)!=1:
+            raise ValueError(f'official filing note heading not found or label fallback ambiguous: {note}:{source_row_label}')
+        resolved=next(iter(nums)); candidates=[i for i,num in fallback if num==resolved]; matched=False
+
     start=candidates[-1]
     end=min(len(lines),start+500)
     for j in range(start+1,min(len(lines),start+500)):
@@ -56,5 +88,6 @@ def extract_review_note_section(text:str,*,note_reference:str,source_row_label:s
         'private_classification_applied':False,
         'outcome_read':False,
     }
+
 
 __all__=['PARSER_VERSION','extract_review_note_section']
