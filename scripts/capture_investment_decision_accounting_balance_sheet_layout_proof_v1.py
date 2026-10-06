@@ -74,6 +74,56 @@ def _document_identity(group: pd.DataFrame) -> tuple[str, str, str]:
     return document_id, url, digest
 
 
+def _extract_balance_sheet_layout_text(content: bytes) -> str:
+    """Extract only official consolidated balance-sheet page windows when possible.
+
+    PyMuPDF is used only as a fast page locator over the same immutable PDF
+    bytes. Evidence text itself is still extracted with pypdf layout mode, the
+    same engine used by the frozen row-evidence parser. If the locator cannot
+    establish candidate pages, the conservative full-document extractor is
+    used unchanged.
+    """
+    try:
+        import fitz
+        from pypdf import PdfReader
+        import io
+    except ImportError:
+        return extract_pdf_text(content)
+
+    candidates: list[int] = []
+    try:
+        doc = fitz.open(stream=content, filetype="pdf")
+        try:
+            for index, page in enumerate(doc):
+                compact = "".join((page.get_text("text") or "").split())
+                if "合并资产负债表" in compact:
+                    candidates.append(index)
+        finally:
+            doc.close()
+    except Exception:
+        return extract_pdf_text(content)
+    if not candidates:
+        return extract_pdf_text(content)
+
+    try:
+        reader = PdfReader(io.BytesIO(content), strict=False)
+        page_ids: set[int] = set()
+        for index in candidates:
+            for page_id in range(max(0, index - 1), min(len(reader.pages), index + 9)):
+                page_ids.add(page_id)
+        parts: list[str] = []
+        for page_id in sorted(page_ids):
+            text = reader.pages[page_id].extract_text(extraction_mode="layout") or ""
+            if text.strip():
+                parts.append(text)
+        targeted = "\n".join(parts).strip()
+        if targeted and "合并资产负债表" in "".join(targeted.split()):
+            return targeted
+    except Exception:
+        pass
+    return extract_pdf_text(content)
+
+
 def _document_text(
     *,
     document_id: str,
@@ -108,7 +158,7 @@ def _document_text(
         content = downloaded.content
         pdf_path.write_bytes(content)
 
-    text = extract_pdf_text(content)
+    text = _extract_balance_sheet_layout_text(content)
     text_path.write_text(text, encoding="utf-8")
     return text
 
