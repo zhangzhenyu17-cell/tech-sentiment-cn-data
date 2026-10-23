@@ -85,7 +85,7 @@ jobs:
           if not session:
               local_clock = now.time().replace(tzinfo=None)
               if event == "schedule" and not (
-                  local_clock >= time(23, 45) or local_clock <= time(14, 30)
+                  local_clock >= time(15, 15) or local_clock <= time(14, 30)
               ):
                   should_run = False
                   reason = "OUTSIDE_V3_SCHEDULED_COLLECTION_RUNTIME"
