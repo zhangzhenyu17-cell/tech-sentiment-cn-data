@@ -30,6 +30,8 @@ def test_v3_workflow_collects_after_0530_for_formal_capture_without_source_level
     assert 'cron: "15,20,25,30,35,40,45 0 * * *"' in text
     assert 'cron: "15 1,2,4,6 * * *"' in text
     assert "time(14, 30)" in text
+    assert "local_clock >= time(15, 15) or local_clock <= time(14, 30)" in text
+    assert "local_clock >= time(23, 45)" not in text
     assert "05:30" not in text
     assert "prospective-source-observation-v3-" in text
     assert "GITHUB_HOSTED" in text
