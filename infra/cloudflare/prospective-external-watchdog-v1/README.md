@@ -29,8 +29,13 @@ through 09:05.
 
 If an orchestrator run is queued or in progress, the Worker does nothing. If
 any orchestrator run was created within the last 25 minutes, the Worker does
-nothing. Only when no active or recent delivery exists does it dispatch the
-existing public orchestrator.
+nothing. After that check, it also suppresses redundant dispatch when a current-
+window exact T/T+1 public raw release has all three immutable assets **and** a
+unique, unexpired SHA-256 Actions handoff from a successful raw workflow run.
+This is a read-only suppression check, not trading-calendar or qualification
+authority. If the proof is incomplete or GitHub reads fail, the existing public
+orchestrator remains responsible for all exact-pair and source guards. The
+previous T raw never suppresses the next T post-close collection.
 
 Any late GitHub native schedule delivery after an external dispatch remains
 safe because the orchestrator and downstream collectors retain their existing
