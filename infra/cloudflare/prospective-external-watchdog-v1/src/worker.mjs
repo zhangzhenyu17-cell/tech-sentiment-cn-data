@@ -250,7 +250,7 @@ async function dispatchOrchestrator(fetchImpl, cfg, token) {
 
 
 function completedRawWindowIdentity(tag, nowMs) {
-  const match = /^prospective-context-raw-preopen-v2-(\\d{4}-\\d{2}-\\d{2})-for-(\\d{4}-\\d{2}-\\d{2})$/.exec(tag || "");
+  const match = /^prospective-context-raw-preopen-v2-(\d{4}-\d{2}-\d{2})-for-(\d{4}-\d{2}-\d{2})$/.exec(tag || "");
   if (!match) return null;
   const [, session, decision] = match;
   if (session >= decision) return null;
