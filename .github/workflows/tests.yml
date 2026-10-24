@@ -23,3 +23,8 @@ jobs:
         run: python scripts/audit_public_tree.py
       - name: Test
         run: pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test external watchdog
+        run: node --test infra/cloudflare/prospective-external-watchdog-v1/test/worker.test.mjs

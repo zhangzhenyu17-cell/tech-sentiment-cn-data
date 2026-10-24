@@ -266,9 +266,9 @@ test("missing GitHub delivery dispatches only the existing public orchestrator",
 
   const result = await runWatchdog({ nowMs, env, fetchImpl });
   assert.equal(result.action, "DISPATCHED_ORCHESTRATOR");
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3);
   assert.match(
-    requests[1].url,
+    requests[2].url,
     /prospective-public-daily-orchestrator-v1\.yml\/dispatches$/,
   );
 });
@@ -280,4 +280,87 @@ test("outside wrapper window performs no GitHub request", async () => {
   };
   const result = await runWatchdog({ nowMs, env, fetchImpl });
   assert.equal(result.action, "NOOP_OUTSIDE_FORMAL_WRAPPER_WINDOW");
+});
+
+function rawHandoffFixture(nowMs, { missingDigest = false } = {}) {
+  const tag = "prospective-context-raw-preopen-v2-2026-10-23-for-2026-10-26";
+  const requests = [];
+  const fetchImpl = async (url, init = {}) => {
+    const target = String(url);
+    requests.push({ target, method: init.method || "GET" });
+    if (target.includes("/releases?")) {
+      return new Response(JSON.stringify([{
+        tag_name: tag,
+        assets: [".tar.gz", ".sha256", ".manifest.json"]
+          .map((suffix) => ({ name: tag + suffix })),
+      }]), { status: 200 });
+    }
+    if (target.includes("/actions/workflows/prospective-context-raw-preopen-v2.yml/runs")) {
+      return new Response(JSON.stringify({
+        total_count: 1,
+        workflow_runs: [{
+          id: 39980472251,
+          status: "completed",
+          conclusion: "success",
+          created_at: "2026-10-23T15:41:46Z",
+        }],
+      }), { status: 200 });
+    }
+    if (target.includes("/actions/runs/39980472251/artifacts")) {
+      return new Response(JSON.stringify({
+        total_count: 1,
+        artifacts: [{
+          id: 12515786530,
+          name: tag,
+          expired: false,
+          expires_at: "2027-01-21T15:41:47Z",
+          digest: missingDigest ? null : "sha256:" + "a".repeat(64),
+          workflow_run: { id: 39980472251 },
+        }],
+      }), { status: 200 });
+    }
+    if (target.includes("/dispatches")) {
+      return new Response(null, { status: 204 });
+    }
+    return new Response(JSON.stringify({
+      workflow_runs: [{
+        id: 100,
+        status: "completed",
+        conclusion: "success",
+        created_at: "2026-10-23T14:00:00Z",
+      }],
+    }), { status: 200 });
+  };
+  return { nowMs, tag, requests, fetchImpl };
+}
+
+test("complete exact public raw release and unique SHA-256 handoff suppress weekend duplicates", async () => {
+  const fixture = rawHandoffFixture(epoch("2026-10-25T00:30:00+08:00"));
+  const result = await runWatchdog({
+    nowMs: fixture.nowMs, env, fetchImpl: fixture.fetchImpl,
+  });
+  assert.equal(result.action, "NOOP_COMPLETED_PUBLIC_RAW_HANDOFF");
+  assert.equal(result.completed_release_tag, fixture.tag);
+  assert.equal(result.handoff_artifact_id, 12515786530);
+  assert.equal(fixture.requests.some((request) => request.method === "POST"), false);
+});
+
+test("previous T raw does not suppress next T post-close collection", async () => {
+  const fixture = rawHandoffFixture(epoch("2026-10-26T15:40:00+08:00"));
+  const result = await runWatchdog({
+    nowMs: fixture.nowMs, env, fetchImpl: fixture.fetchImpl,
+  });
+  assert.equal(result.action, "DISPATCHED_ORCHESTRATOR");
+  assert.equal(fixture.requests.filter((request) => request.method === "POST").length, 1);
+});
+
+test("release alone without valid SHA-256 handoff never suppresses dispatch", async () => {
+  const fixture = rawHandoffFixture(
+    epoch("2026-10-25T00:30:00+08:00"), { missingDigest: true },
+  );
+  const result = await runWatchdog({
+    nowMs: fixture.nowMs, env, fetchImpl: fixture.fetchImpl,
+  });
+  assert.equal(result.action, "DISPATCHED_ORCHESTRATOR");
+  assert.equal(fixture.requests.filter((request) => request.method === "POST").length, 1);
 });

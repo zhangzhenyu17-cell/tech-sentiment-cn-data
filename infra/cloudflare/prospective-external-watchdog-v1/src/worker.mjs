@@ -248,6 +248,95 @@ async function dispatchOrchestrator(fetchImpl, cfg, token) {
   return text ? JSON.parse(text) : {};
 }
 
+
+function completedRawWindowIdentity(tag, nowMs) {
+  const match = /^prospective-context-raw-preopen-v2-(\d{4}-\d{2}-\d{2})-for-(\d{4}-\d{2}-\d{2})$/.exec(tag || "");
+  if (!match) return null;
+  const [, session, decision] = match;
+  if (session >= decision) return null;
+  const localDate = new Date(nowMs + SHANGHAI_OFFSET_MS).toISOString().slice(0, 10);
+  const minute = shanghaiMinuteOfDay(nowMs);
+  if (localDate === session && minute >= ACTIVE_START_MINUTE) {
+    return { session, decision, tag };
+  }
+  if (session < localDate && localDate < decision) {
+    return { session, decision, tag };
+  }
+  if (localDate === decision && minute <= ACTIVE_END_MINUTE) {
+    return { session, decision, tag };
+  }
+  return null;
+}
+
+// Read-only suppression only: this never qualifies evidence or chooses a trading
+// calendar identity. If proof is missing or an API read fails, the existing
+// authoritative public orchestrator retains all exact-pair and source guards.
+async function completedRawHandoffForCurrentWindow(fetchImpl, cfg, token, nowMs) {
+  const prefix = "https://api.github.com/repos/" + cfg.owner + "/" + cfg.repo;
+  const releases = await githubJson(
+    fetchImpl, prefix + "/releases?per_page=50", token,
+  );
+  if (!Array.isArray(releases)) return null;
+  const candidates = releases
+    .map((release) => ({
+      release,
+      identity: completedRawWindowIdentity(release.tag_name, nowMs),
+    }))
+    .filter(({ identity }) => identity !== null)
+    .sort((a, b) => b.identity.session.localeCompare(a.identity.session));
+  if (candidates.length === 0) return null;
+
+  const { release, identity } = candidates[0];
+  const assetNames = (release.assets || []).map((asset) => asset.name);
+  const required = [".tar.gz", ".sha256", ".manifest.json"]
+    .map((suffix) => identity.tag + suffix);
+  if (!required.every((name) => assetNames.filter((value) => value === name).length === 1)) {
+    return null;
+  }
+
+  const workflowUrl = new URL(
+    prefix + "/actions/workflows/prospective-context-raw-preopen-v2.yml/runs",
+  );
+  workflowUrl.searchParams.set("branch", cfg.ref);
+  workflowUrl.searchParams.set("status", "success");
+  workflowUrl.searchParams.set("per_page", "100");
+  const payload = await githubJson(fetchImpl, workflowUrl.toString(), token);
+  if (!Array.isArray(payload?.workflow_runs) || payload.total_count > 100) {
+    return null;
+  }
+
+  const startMs = Date.parse(identity.session + "T15:00:00+08:00");
+  const deadlineMs = Date.parse(identity.decision + "T09:15:00+08:00");
+  let match = null;
+  for (const run of payload.workflow_runs) {
+    if (run.status !== "completed" || run.conclusion !== "success") continue;
+    const created = Date.parse(run.created_at || "");
+    if (!Number.isFinite(created) || created < startMs || created > deadlineMs) {
+      continue;
+    }
+    const artifacts = await githubJson(
+      fetchImpl, prefix + "/actions/runs/" + run.id + "/artifacts?per_page=100", token,
+    );
+    if (!Array.isArray(artifacts?.artifacts) || artifacts.total_count > 100) {
+      return null;
+    }
+    for (const artifact of artifacts.artifacts) {
+      if (artifact.name !== identity.tag) continue;
+      const digestOk = /^sha256:[0-9a-f]{64}$/i.test(artifact.digest || "");
+      const expires = Date.parse(artifact.expires_at || "");
+      if (
+        match !== null || artifact.expired !== false || !digestOk ||
+        !Number.isFinite(expires) || expires <= nowMs ||
+        artifact.workflow_run?.id !== run.id
+      ) {
+        return null;
+      }
+      match = { tag: identity.tag, run_id: run.id, artifact_id: artifact.id };
+    }
+  }
+  return match;
+}
+
 function newestCreatedAt(runs) {
   let newest = null;
   for (const run of runs) {
@@ -321,6 +410,28 @@ export async function runWatchdog({ nowMs, env, fetchImpl = fetch }) {
       latest_run_created_at: latest?.created_at ?? null,
       latest_run_age_minutes: Number(ageMinutes.toFixed(2)),
       latest_run_url: latest?.html_url ?? null,
+    };
+  }
+
+  // Suppress redundant weekend/overnight delivery only after exact durable
+  // release AND a unique unexpired successful SHA-256 Actions handoff.
+  // API uncertainty is fail-open to the existing authoritative wrapper.
+  let completedHandoff = null;
+  try {
+    completedHandoff = await completedRawHandoffForCurrentWindow(
+      fetchImpl, cfg, auth.token, nowMs,
+    );
+  } catch (error) {
+    console.warn("PUBLIC_RAW_HANDOFF_SUPPRESSION_CHECK_UNAVAILABLE: " + String(error?.message || error));
+  }
+  if (completedHandoff !== null) {
+    return {
+      ...base,
+      ...authState,
+      action: "NOOP_COMPLETED_PUBLIC_RAW_HANDOFF",
+      completed_release_tag: completedHandoff.tag,
+      handoff_run_id: completedHandoff.run_id,
+      handoff_artifact_id: completedHandoff.artifact_id,
     };
   }
 
