@@ -41,13 +41,17 @@ jobs:
         run: |
           python - <<'PY'
           import os
-          from datetime import date
+          from datetime import date, datetime, time
+          from zoneinfo import ZoneInfo
           target = date.fromisoformat(os.environ["MARKET_DATE"])
           start = date.fromisoformat(os.environ["START_DATE"])
           if target.isoformat() != os.environ["MARKET_DATE"] or start.isoformat() != os.environ["START_DATE"]:
               raise SystemExit("dates must be exact YYYY-MM-DD")
-          if target > date.today():
-              raise SystemExit("future public capture date rejected")
+          now = datetime.now(ZoneInfo("Asia/Shanghai"))
+          if target > now.date():
+              raise SystemExit("future Shanghai market session rejected")
+          if target == now.date() and now.time() < time(15, 0):
+              raise SystemExit("A-share session is not completed; intraday index bars rejected")
           if start >= target:
               raise SystemExit("start_date must precede market_date")
           PY
