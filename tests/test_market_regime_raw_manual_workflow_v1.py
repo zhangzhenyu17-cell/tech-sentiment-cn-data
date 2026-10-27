@@ -16,6 +16,9 @@ def test_market_regime_raw_capture_workflow_manual_only_and_fail_closed():
     assert "contents: read" in text
     assert "scripts/materialize_market_regime_v0_public_input.py" in text
     assert "requested exact session unavailable" in text
+    assert "ZoneInfo(\"Asia/Shanghai\")" in text
+    assert "now.time() < time(15, 0)" in text
+    assert "intraday index bars rejected" in text
     assert "manifest[\"latest_market_date\"] == requested" in text
     assert "sha256" in text
     assert "contains_private_evidence" in text
