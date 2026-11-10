@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
+import textwrap
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,3 +71,26 @@ def test_reuse_guard_does_not_weaken_immutable_identity_checks() -> None:
     for required in ("${BASE}.tar.gz", "${BASE}.sha256", "${BASE}.manifest.json"):
         assert required in dated
     assert "IMMUTABLE_DATED_BUNDLE_INCOMPLETE_AFTER_HEAL" in dated
+
+
+def test_exact_requested_bundle_rejects_prior_market_date(tmp_path):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "market_bundle_manifest.json").write_text(
+        json.dumps({"target_date": "2026-11-10", "market_date": "2026-11-09"}),
+        encoding="utf-8",
+    )
+    step = _step_block(WORKFLOW.read_text(encoding="utf-8"), "Resolve immutable dated bundle identity")
+    script = textwrap.dedent(step.split("python - <<'PY'\n", 1)[1].rsplit("          PY", 1)[0])
+    receipt = tmp_path / "receipt"
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        env={**os.environ, "REQUESTED_EXACT_TARGET_DATE": "2026-11-10", "GITHUB_OUTPUT": str(receipt)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "EXACT_BUNDLE_MARKET_DATE_MISMATCH" in result.stderr
+    assert not receipt.exists()

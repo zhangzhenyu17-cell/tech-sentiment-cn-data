@@ -28,3 +28,7 @@ jobs:
           node-version: "22"
       - name: Test external watchdog
         run: node --test infra/cloudflare/prospective-external-watchdog-v1/test/worker.test.mjs
+      - name: Test pinned market bundle provider contract
+        run: |
+          python -m pip install -c constraints/market-bundle.txt akshare
+          python scripts/check_market_bundle_provider_contract.py
